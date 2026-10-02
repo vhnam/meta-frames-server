@@ -1,0 +1,3755 @@
+openapi: 3.0.3
+info:
+  title: Meta-Frame API
+  version: 0.3.0
+  description: |
+    REST API for tracking rolls of film: gear, stock, shooting, processing and scans.
+
+    **Creating records.** `POST /cameras|lenses|film-stocks|labs` assigns the id. `PUT /{resource}/{id}` is the
+    idempotent create-or-update for clients that generate their own ids.
+
+    **Deleting.** Nothing is physically deleted: `DELETE` sets `deleted_at` and the record disappears from
+    every read. A deleted id stays reserved. Deleting something that is still in use is a `409`.
+
+    **Audit.** Every change is recorded with its before/after row. Send `X-Actor: <name>` on any request to
+    attribute the change; read the trail at `GET /audit-logs`.
+
+    **Errors** always have the shape `{ code, message }`.
+servers:
+  - url: http://localhost:8080
+tags:
+  - { name: System, description: Liveness check }
+  - { name: Cameras, description: Camera bodies and their lenses }
+  - { name: Lenses, description: Lenses }
+  - { name: Film stocks, description: Film stocks and inventory }
+  - { name: Labs, description: Labs that process film }
+  - { name: Rolls, description: "Rolls of film, from stock to shot, plus frames" }
+  - { name: Processing, description: Sending rolls for development and scanning }
+  - { name: Scans, description: Scan images }
+  - { name: Stats, description: Search and statistics }
+  - { name: Audit, description: Who changed what }
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      operationId: getHealth
+      summary: Liveness check (does not touch the database)
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+              examples:
+                up:
+                  summary: Service is up
+                  value:
+                    status: ok
+
+  /cameras:
+    get:
+      tags: [Cameras]
+      operationId: listCameras
+      summary: List cameras with their loaded roll (UC-09)
+      parameters:
+        - { name: activeOnly, in: query, schema: { type: boolean, default: false } }
+      responses:
+        "200":
+          description: Cameras
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Camera" } }
+              examples:
+                cameras:
+                  summary: One loaded and one idle camera
+                  value:
+                    - id: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                      brand: Nikon
+                      model: FM2
+                      mount: F
+                      description: "Black body, bought 2019"
+                      hasFixedLens: false
+                      isActive: true
+                      loadedRoll:
+                        rollId: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+                        stockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                        stockBrand: Kodak
+                        stockName: Portra 400
+                        shotIso: 800
+                        startedAt: "2026-09-01"
+                        daysLoaded: 31
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+                    - id: 0b9e4c52-3a1f-4d85-8c36-9e5a7d2f1b02
+                      brand: Canon
+                      model: Canonet QL17
+                      hasFixedLens: true
+                      builtInLensId: 9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d
+                      isActive: true
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Cameras]
+      operationId: createCamera
+      summary: Create a camera; the server assigns its id (UC-01, UC-07)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CameraInput" }
+            examples:
+              interchangeableLens:
+                summary: Interchangeable-lens camera (needs a mount)
+                value:
+                  brand: Nikon
+                  model: FM2
+                  mount: F
+                  description: "Black body, bought 2019"
+                  hasFixedLens: false
+              fixedLens:
+                summary: Fixed-lens camera (creates its built-in lens)
+                value:
+                  brand: Canon
+                  model: Canonet QL17
+                  hasFixedLens: true
+                  fixedLens:
+                    focalLength: 40
+                    maxAperture: 1.7
+                    brand: Canon
+                    model: "40mm f/1.7"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Camera" }
+              examples:
+                interchangeableLens:
+                  summary: Interchangeable-lens camera
+                  value:
+                    id: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                    brand: Nikon
+                    model: FM2
+                    mount: F
+                    description: "Black body, bought 2019"
+                    hasFixedLens: false
+                    isActive: true
+                    createdAt: "2026-09-01T08:30:00Z"
+                    updatedAt: "2026-09-20T10:00:00Z"
+                fixedLens:
+                  summary: Fixed-lens camera with its built-in lens id
+                  value:
+                    id: 0b9e4c52-3a1f-4d85-8c36-9e5a7d2f1b02
+                    brand: Canon
+                    model: Canonet QL17
+                    hasFixedLens: true
+                    builtInLensId: 9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d
+                    isActive: true
+                    createdAt: "2026-09-01T08:30:00Z"
+                    updatedAt: "2026-09-20T10:00:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
+  /cameras/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Cameras]
+      operationId: getCamera
+      responses:
+        "200":
+          description: Camera
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Camera" }
+              examples:
+                loaded:
+                  summary: Camera holding a roll
+                  value:
+                    id: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                    brand: Nikon
+                    model: FM2
+                    mount: F
+                    description: "Black body, bought 2019"
+                    hasFixedLens: false
+                    isActive: true
+                    loadedRoll:
+                      rollId: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+                      stockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                      stockBrand: Kodak
+                      stockName: Portra 400
+                      shotIso: 800
+                      startedAt: "2026-09-01"
+                      daysLoaded: 31
+                    createdAt: "2026-09-01T08:30:00Z"
+                    updatedAt: "2026-09-20T10:00:00Z"
+                idle:
+                  summary: Camera with no roll
+                  value:
+                    id: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                    brand: Nikon
+                    model: FM2
+                    mount: F
+                    description: "Black body, bought 2019"
+                    hasFixedLens: false
+                    isActive: true
+                    createdAt: "2026-09-01T08:30:00Z"
+                    updatedAt: "2026-09-20T10:00:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Cameras]
+      operationId: putCamera
+      summary: Create or update a camera (UC-01, UC-02, UC-07). Idempotent upsert.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CameraInput" }
+            examples:
+              interchangeableLens:
+                summary: Interchangeable-lens camera (needs a mount)
+                value:
+                  brand: Nikon
+                  model: FM2
+                  mount: F
+                  description: "Black body, bought 2019"
+                  hasFixedLens: false
+              fixedLens:
+                summary: Fixed-lens camera (creates its built-in lens)
+                value:
+                  brand: Canon
+                  model: Canonet QL17
+                  hasFixedLens: true
+                  fixedLens:
+                    focalLength: 40
+                    maxAperture: 1.7
+                    brand: Canon
+                    model: "40mm f/1.7"
+              update:
+                summary: Edit an existing camera
+                value:
+                  brand: Nikon
+                  model: FM3A
+                  mount: F
+                  hasFixedLens: false
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Camera" }
+              examples:
+                updated:
+                  summary: Updated camera
+                  value:
+                    id: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                    brand: Nikon
+                    model: FM2
+                    mount: F
+                    description: "Black body, bought 2019"
+                    hasFixedLens: false
+                    isActive: true
+                    createdAt: "2026-09-01T08:30:00Z"
+                    updatedAt: "2026-09-20T10:00:00Z"
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Camera" }
+              examples:
+                created:
+                  summary: Created camera
+                  value:
+                    id: 0b9e4c52-3a1f-4d85-8c36-9e5a7d2f1b02
+                    brand: Canon
+                    model: Canonet QL17
+                    hasFixedLens: true
+                    builtInLensId: 9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d
+                    isActive: true
+                    createdAt: "2026-09-01T08:30:00Z"
+                    updatedAt: "2026-09-20T10:00:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+    delete:
+      tags: [Cameras]
+      operationId: deleteCamera
+      summary: Delete a camera that never held a roll, together with its built-in lens
+      responses:
+        "204": { description: Deleted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /cameras/{id}/active:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Cameras]
+      operationId: setCameraActive
+      summary: Activate or deactivate a camera (UC-03)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ActiveInput" }
+            examples:
+              deactivate:
+                summary: Retire a camera
+                value:
+                  isActive: false
+              activate:
+                summary: Bring it back
+                value:
+                  isActive: true
+      responses:
+        "200":
+          description: Camera
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Camera" }
+              examples:
+                deactivated:
+                  summary: Camera retired
+                  value:
+                    id: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                    brand: Nikon
+                    model: FM2
+                    mount: F
+                    description: "Black body, bought 2019"
+                    hasFixedLens: false
+                    isActive: false
+                    createdAt: "2026-09-01T08:30:00Z"
+                    updatedAt: "2026-09-20T10:00:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /cameras/{id}/lenses:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Cameras]
+      operationId: listCameraLenses
+      responses:
+        "200":
+          description: Lenses linked to the camera
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Lens" } }
+              examples:
+                lenses:
+                  summary: Lenses linked to the camera
+                  value:
+                    - id: a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
+                      brand: Nikon
+                      model: Nikkor 50mm f/1.4 AI-S
+                      mount: F
+                      description: Sharp from f/2
+                      focalLength: 50
+                      maxAperture: 1.4
+                      isBuiltIn: false
+                      isActive: true
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+                    - id: c5e91b77-2d3a-4f08-a6b4-8d1e7c3f9a04
+                      brand: Nikon
+                      model: Nikkor 28mm f/2.8 AI-S
+                      mount: F
+                      focalLength: 28
+                      maxAperture: 2.8
+                      isBuiltIn: false
+                      isActive: true
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Cameras]
+      operationId: setCameraLenses
+      summary: Replace the set of lenses linked to a camera (UC-08)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CameraLensesInput" }
+            examples:
+              twoLenses:
+                summary: Link two lenses (replaces the current set)
+                value:
+                  lensIds:
+                    - a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
+                    - c5e91b77-2d3a-4f08-a6b4-8d1e7c3f9a04
+              none:
+                summary: Unlink every lens
+                value:
+                  lensIds: []
+      responses:
+        "200":
+          description: Lenses now linked
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Lens" } }
+              examples:
+                lenses:
+                  summary: The new set of linked lenses
+                  value:
+                    - id: a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
+                      brand: Nikon
+                      model: Nikkor 50mm f/1.4 AI-S
+                      mount: F
+                      description: Sharp from f/2
+                      focalLength: 50
+                      maxAperture: 1.4
+                      isBuiltIn: false
+                      isActive: true
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+                    - id: c5e91b77-2d3a-4f08-a6b4-8d1e7c3f9a04
+                      brand: Nikon
+                      model: Nikkor 28mm f/2.8 AI-S
+                      mount: F
+                      focalLength: 28
+                      maxAperture: 2.8
+                      isBuiltIn: false
+                      isActive: true
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
+  /lenses:
+    get:
+      tags: [Lenses]
+      operationId: listLenses
+      parameters:
+        - { name: activeOnly, in: query, schema: { type: boolean, default: false } }
+        - { name: preferMount, in: query, description: Lenses with this mount are listed first, schema: { type: string } }
+      responses:
+        "200":
+          description: Lenses
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Lens" } }
+              examples:
+                lenses:
+                  summary: "Lenses, preferred mount first"
+                  value:
+                    - id: a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
+                      brand: Nikon
+                      model: Nikkor 50mm f/1.4 AI-S
+                      mount: F
+                      description: Sharp from f/2
+                      focalLength: 50
+                      maxAperture: 1.4
+                      isBuiltIn: false
+                      isActive: true
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+                    - id: c5e91b77-2d3a-4f08-a6b4-8d1e7c3f9a04
+                      brand: Nikon
+                      model: Nikkor 28mm f/2.8 AI-S
+                      mount: F
+                      focalLength: 28
+                      maxAperture: 2.8
+                      isBuiltIn: false
+                      isActive: true
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+                    - id: 9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d
+                      brand: Canon
+                      model: "40mm f/1.7"
+                      focalLength: 40
+                      maxAperture: 1.7
+                      isBuiltIn: true
+                      isActive: true
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Lenses]
+      operationId: createLens
+      summary: Create a lens; the server assigns its id (UC-04)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LensInput" }
+            examples:
+              standard:
+                summary: Standard prime
+                value:
+                  brand: Nikon
+                  model: Nikkor 50mm f/1.4 AI-S
+                  mount: F
+                  description: Sharp from f/2
+                  focalLength: 50
+                  maxAperture: 1.4
+              wide:
+                summary: Wide angle
+                value:
+                  brand: Nikon
+                  model: Nikkor 28mm f/2.8 AI-S
+                  mount: F
+                  focalLength: 28
+                  maxAperture: 2.8
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lens" }
+              examples:
+                created:
+                  summary: Created lens
+                  value:
+                    id: a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
+                    brand: Nikon
+                    model: Nikkor 50mm f/1.4 AI-S
+                    mount: F
+                    description: Sharp from f/2
+                    focalLength: 50
+                    maxAperture: 1.4
+                    isBuiltIn: false
+                    isActive: true
+                    createdAt: "2026-09-01T08:30:00Z"
+                    updatedAt: "2026-09-20T10:00:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
+  /lenses/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Lenses]
+      operationId: getLens
+      responses:
+        "200":
+          description: Lens
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lens" }
+              examples:
+                lens:
+                  summary: A lens
+                  value:
+                    id: a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
+                    brand: Nikon
+                    model: Nikkor 50mm f/1.4 AI-S
+                    mount: F
+                    description: Sharp from f/2
+                    focalLength: 50
+                    maxAperture: 1.4
+                    isBuiltIn: false
+                    isActive: true
+                    createdAt: "2026-09-01T08:30:00Z"
+                    updatedAt: "2026-09-20T10:00:00Z"
+                builtIn:
+                  summary: A built-in lens
+                  value:
+                    id: 9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d
+                    brand: Canon
+                    model: "40mm f/1.7"
+                    focalLength: 40
+                    maxAperture: 1.7
+                    isBuiltIn: true
+                    isActive: true
+                    createdAt: "2026-09-01T08:30:00Z"
+                    updatedAt: "2026-09-20T10:00:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Lenses]
+      operationId: putLens
+      summary: Create or update a lens (UC-04, UC-05). Idempotent upsert.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LensInput" }
+            examples:
+              standard:
+                summary: Standard prime
+                value:
+                  brand: Nikon
+                  model: Nikkor 50mm f/1.4 AI-S
+                  mount: F
+                  description: Sharp from f/2
+                  focalLength: 50
+                  maxAperture: 1.4
+              wide:
+                summary: Wide angle
+                value:
+                  brand: Nikon
+                  model: Nikkor 28mm f/2.8 AI-S
+                  mount: F
+                  focalLength: 28
+                  maxAperture: 2.8
+              update:
+                summary: Edit an existing lens
+                value:
+                  brand: Nikon
+                  model: Nikkor 50mm f/1.8 AI-S
+                  mount: F
+                  focalLength: 50
+                  maxAperture: 1.8
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lens" }
+              examples:
+                updated:
+                  summary: Updated lens
+                  value:
+                    id: a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
+                    brand: Nikon
+                    model: Nikkor 50mm f/1.4 AI-S
+                    mount: F
+                    description: Sharp from f/2
+                    focalLength: 50
+                    maxAperture: 1.4
+                    isBuiltIn: false
+                    isActive: true
+                    createdAt: "2026-09-01T08:30:00Z"
+                    updatedAt: "2026-09-20T10:00:00Z"
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lens" }
+              examples:
+                created:
+                  summary: Created lens
+                  value:
+                    id: c5e91b77-2d3a-4f08-a6b4-8d1e7c3f9a04
+                    brand: Nikon
+                    model: Nikkor 28mm f/2.8 AI-S
+                    mount: F
+                    focalLength: 28
+                    maxAperture: 2.8
+                    isBuiltIn: false
+                    isActive: true
+                    createdAt: "2026-09-01T08:30:00Z"
+                    updatedAt: "2026-09-20T10:00:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+    delete:
+      tags: [Lenses]
+      operationId: deleteLens
+      summary: Delete a lens that was never used on a roll
+      responses:
+        "204": { description: Deleted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /lenses/{id}/active:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Lenses]
+      operationId: setLensActive
+      summary: Activate or deactivate a lens (UC-06)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ActiveInput" }
+            examples:
+              deactivate:
+                summary: Retire a lens
+                value:
+                  isActive: false
+              activate:
+                summary: Bring it back
+                value:
+                  isActive: true
+      responses:
+        "200":
+          description: Lens
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lens" }
+              examples:
+                deactivated:
+                  summary: Lens retired
+                  value:
+                    id: a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
+                    brand: Nikon
+                    model: Nikkor 50mm f/1.4 AI-S
+                    mount: F
+                    description: Sharp from f/2
+                    focalLength: 50
+                    maxAperture: 1.4
+                    isBuiltIn: false
+                    isActive: false
+                    createdAt: "2026-09-01T08:30:00Z"
+                    updatedAt: "2026-09-20T10:00:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /film-stocks:
+    get:
+      tags: [Film stocks]
+      operationId: listFilmStocks
+      parameters:
+        - { name: q, in: query, description: Match brand or name, schema: { type: string } }
+      responses:
+        "200":
+          description: Film stocks
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/FilmStock" } }
+              examples:
+                stocks:
+                  summary: Stocks matching the search
+                  value:
+                    - id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                      brand: Kodak
+                      name: Portra 400
+                      type: color
+                      boxIso: 400
+                      process: C-41
+                      packaging: factory
+                      stockOrigin: USA
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+                    - id: f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06
+                      brand: Ilford
+                      name: HP5 Plus
+                      type: bw
+                      boxIso: 400
+                      process: BW
+                      packaging: factory
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+                    - id: b2c3d4e5-f6a7-4b89-9c0d-1e2f3a4b5c6d
+                      brand: Respool Co.
+                      name: HP5 Plus (respooled)
+                      type: bw
+                      boxIso: 400
+                      process: BW
+                      packaging: respooled
+                      baseStockId: f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Film stocks]
+      operationId: createFilmStock
+      summary: Create a film stock; the server assigns its id (UC-10)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FilmStockInput" }
+            examples:
+              factory:
+                summary: Factory-packed colour film
+                value:
+                  brand: Kodak
+                  name: Portra 400
+                  type: color
+                  boxIso: 400
+                  process: C-41
+                  packaging: factory
+                  stockOrigin: USA
+                  description: Fine-grain portrait film
+              respooled:
+                summary: Respooled stock that points at its base stock
+                value:
+                  brand: Respool Co.
+                  name: HP5 Plus (respooled)
+                  type: bw
+                  boxIso: 400
+                  process: BW
+                  packaging: respooled
+                  baseStockId: f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FilmStockDetail" }
+              examples:
+                factory:
+                  summary: Created stock
+                  value:
+                    stock:
+                      id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                      brand: Kodak
+                      name: Portra 400
+                      type: color
+                      boxIso: 400
+                      process: C-41
+                      packaging: factory
+                      stockOrigin: USA
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+                    siblings: []
+                    derived: []
+                    warnings: []
+                respooled:
+                  summary: Created stock with its base stock
+                  value:
+                    stock:
+                      id: b2c3d4e5-f6a7-4b89-9c0d-1e2f3a4b5c6d
+                      brand: Respool Co.
+                      name: HP5 Plus (respooled)
+                      type: bw
+                      boxIso: 400
+                      process: BW
+                      packaging: respooled
+                      baseStockId: f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+                    baseStock:
+                      id: f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06
+                      brand: Ilford
+                      name: HP5 Plus
+                      type: bw
+                      boxIso: 400
+                      process: BW
+                      packaging: factory
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+                    siblings: []
+                    derived: []
+                    warnings: []
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
+  /film-stocks/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Film stocks]
+      operationId: getFilmStock
+      summary: Stock with its base stock and stocks sharing the base (UC-13)
+      responses:
+        "200":
+          description: Detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FilmStockDetail" }
+              examples:
+                plain:
+                  summary: A factory stock
+                  value:
+                    stock:
+                      id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                      brand: Kodak
+                      name: Portra 400
+                      type: color
+                      boxIso: 400
+                      process: C-41
+                      packaging: factory
+                      stockOrigin: USA
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+                    siblings: []
+                    derived: []
+                    warnings: []
+                respooled:
+                  summary: A respooled stock with its base
+                  value:
+                    stock:
+                      id: b2c3d4e5-f6a7-4b89-9c0d-1e2f3a4b5c6d
+                      brand: Respool Co.
+                      name: HP5 Plus (respooled)
+                      type: bw
+                      boxIso: 400
+                      process: BW
+                      packaging: respooled
+                      baseStockId: f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+                    baseStock:
+                      id: f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06
+                      brand: Ilford
+                      name: HP5 Plus
+                      type: bw
+                      boxIso: 400
+                      process: BW
+                      packaging: factory
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+                    siblings: []
+                    derived: []
+                    warnings: []
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Film stocks]
+      operationId: putFilmStock
+      summary: Create or update a film stock, including its base stock (UC-10, UC-11, UC-12)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FilmStockInput" }
+            examples:
+              factory:
+                summary: Factory-packed colour film
+                value:
+                  brand: Kodak
+                  name: Portra 400
+                  type: color
+                  boxIso: 400
+                  process: C-41
+                  packaging: factory
+                  stockOrigin: USA
+                  description: Fine-grain portrait film
+              respooled:
+                summary: Respooled stock that points at its base stock
+                value:
+                  brand: Respool Co.
+                  name: HP5 Plus (respooled)
+                  type: bw
+                  boxIso: 400
+                  process: BW
+                  packaging: respooled
+                  baseStockId: f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06
+              update:
+                summary: Rename a stock
+                value:
+                  brand: Kodak
+                  name: Portra 400 NC
+                  type: color
+                  boxIso: 400
+                  process: C-41
+                  packaging: factory
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FilmStockDetail" }
+              examples:
+                updated:
+                  summary: Updated stock
+                  value:
+                    stock:
+                      id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                      brand: Kodak
+                      name: Portra 400
+                      type: color
+                      boxIso: 400
+                      process: C-41
+                      packaging: factory
+                      stockOrigin: USA
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+                    siblings: []
+                    derived: []
+                    warnings: []
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FilmStockDetail" }
+              examples:
+                created:
+                  summary: Created stock
+                  value:
+                    stock:
+                      id: b2c3d4e5-f6a7-4b89-9c0d-1e2f3a4b5c6d
+                      brand: Respool Co.
+                      name: HP5 Plus (respooled)
+                      type: bw
+                      boxIso: 400
+                      process: BW
+                      packaging: respooled
+                      baseStockId: f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+                    baseStock:
+                      id: f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06
+                      brand: Ilford
+                      name: HP5 Plus
+                      type: bw
+                      boxIso: 400
+                      process: BW
+                      packaging: factory
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+                    siblings: []
+                    derived: []
+                    warnings: []
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+    delete:
+      tags: [Film stocks]
+      operationId: deleteFilmStock
+      summary: Delete a film stock that no roll or derived stock uses
+      responses:
+        "204": { description: Deleted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /inventory:
+    get:
+      tags: [Film stocks]
+      operationId: getInventory
+      summary: Stocks with unused rolls on hand (UC-14)
+      parameters:
+        - { name: type, in: query, schema: { $ref: "#/components/schemas/StockType" } }
+        - { name: process, in: query, schema: { $ref: "#/components/schemas/Process" } }
+        - { name: iso, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200":
+          description: Inventory
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/InventoryItem" } }
+              examples:
+                inventory:
+                  summary: Stocks with rolls on hand
+                  value:
+                    - stock:
+                        id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                        brand: Kodak
+                        name: Portra 400
+                        type: color
+                        boxIso: 400
+                        process: C-41
+                        packaging: factory
+                        stockOrigin: USA
+                        createdAt: "2026-09-01T08:30:00Z"
+                        updatedAt: "2026-09-20T10:00:00Z"
+                      formats:
+                        - format: 135
+                          count: 3
+                        - format: 120
+                          count: 1
+                      soonestExpiry:
+                        year: 2027
+                        month: 6
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /labs:
+    get:
+      tags: [Labs]
+      operationId: listLabs
+      responses:
+        "200":
+          description: Labs
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Lab" } }
+              examples:
+                labs:
+                  summary: "Labs, by name"
+                  value:
+                    - id: 3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09
+                      name: Saigon Film Lab
+                      address: "12 Nguyen Hue, District 1, Ho Chi Minh City"
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+    post:
+      tags: [Labs]
+      operationId: createLab
+      summary: Add a lab; the server assigns its id (UC-23)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LabInput" }
+            examples:
+              withAddress:
+                summary: Lab with an address
+                value:
+                  name: Saigon Film Lab
+                  address: "12 Nguyen Hue, District 1, Ho Chi Minh City"
+              nameOnly:
+                summary: Name only
+                value:
+                  name: Home darkroom
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lab" }
+              examples:
+                created:
+                  summary: Created lab
+                  value:
+                    id: 3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09
+                    name: Saigon Film Lab
+                    address: "12 Nguyen Hue, District 1, Ho Chi Minh City"
+                    createdAt: "2026-09-01T08:30:00Z"
+                    updatedAt: "2026-09-20T10:00:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
+  /labs/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Labs]
+      operationId: getLab
+      responses:
+        "200":
+          description: Lab
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lab" }
+              examples:
+                lab:
+                  summary: A lab
+                  value:
+                    id: 3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09
+                    name: Saigon Film Lab
+                    address: "12 Nguyen Hue, District 1, Ho Chi Minh City"
+                    createdAt: "2026-09-01T08:30:00Z"
+                    updatedAt: "2026-09-20T10:00:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Labs]
+      operationId: putLab
+      summary: Add or edit a lab (UC-23)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LabInput" }
+            examples:
+              withAddress:
+                summary: Lab with an address
+                value:
+                  name: Saigon Film Lab
+                  address: "12 Nguyen Hue, District 1, Ho Chi Minh City"
+              nameOnly:
+                summary: Name only
+                value:
+                  name: Home darkroom
+              update:
+                summary: Fix the address
+                value:
+                  name: Saigon Film Lab
+                  address: "99 Le Loi, District 1, Ho Chi Minh City"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lab" }
+              examples:
+                updated:
+                  summary: Updated lab
+                  value:
+                    id: 3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09
+                    name: Saigon Film Lab
+                    address: "12 Nguyen Hue, District 1, Ho Chi Minh City"
+                    createdAt: "2026-09-01T08:30:00Z"
+                    updatedAt: "2026-09-20T10:00:00Z"
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lab" }
+              examples:
+                created:
+                  summary: Created lab
+                  value:
+                    id: 3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09
+                    name: Saigon Film Lab
+                    address: "12 Nguyen Hue, District 1, Ho Chi Minh City"
+                    createdAt: "2026-09-01T08:30:00Z"
+                    updatedAt: "2026-09-20T10:00:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+    delete:
+      tags: [Labs]
+      operationId: deleteLab
+      summary: Delete a lab without processing history (UC-23)
+      responses:
+        "204": { description: Deleted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /audit-logs:
+    get:
+      tags: [Audit]
+      operationId: listAuditLogs
+      summary: Audit trail of changes, newest first. Filter by entity to see one record's history.
+      parameters:
+        - name: entityType
+          in: query
+          schema: { $ref: "#/components/schemas/AuditEntityType" }
+        - { name: entityId, in: query, schema: { type: string, format: uuid } }
+        - { name: action, in: query, schema: { $ref: "#/components/schemas/AuditAction" } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        "200":
+          description: Audit entries
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/AuditLog" } }
+              examples:
+                history:
+                  summary: "One camera's history, newest first"
+                  value:
+                    - id: 43
+                      entityType: camera
+                      entityId: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                      action: delete
+                      before:
+                        id: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                        brand: Nikon
+                        model: FM3A
+                        deleted_at: null
+                      after:
+                        id: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                        brand: Nikon
+                        model: FM3A
+                        deleted_at: "2026-10-02T09:30:00Z"
+                      actor: bob
+                      requestId: 5c6d7e8f-9a0b-4c1d-8e2f-3a4b5c6d7e8f
+                      createdAt: "2026-10-02T09:30:00Z"
+                    - id: 42
+                      entityType: camera
+                      entityId: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                      action: update
+                      before:
+                        id: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                        brand: Nikon
+                        model: FM2
+                        is_active: true
+                        deleted_at: null
+                      after:
+                        id: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                        brand: Nikon
+                        model: FM3A
+                        is_active: true
+                        deleted_at: null
+                      actor: nam
+                      requestId: 3f6c1a1e-9d0b-4b5e-8f6a-0c2d7e1b5a90
+                      createdAt: "2026-10-02T09:15:00Z"
+                    - id: 41
+                      entityType: camera
+                      entityId: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                      action: create
+                      after:
+                        id: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                        brand: Nikon
+                        model: FM2
+                        is_active: true
+                        deleted_at: null
+                      actor: nam
+                      requestId: 8a1d2c3b-4e5f-4a6b-9c7d-0e1f2a3b4c5d
+                      createdAt: "2026-10-02T09:00:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /audit-logs/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    get:
+      tags: [Audit]
+      operationId: getAuditLog
+      summary: One audit entry
+      responses:
+        "200":
+          description: Audit entry
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuditLog" }
+              examples:
+                entry:
+                  summary: An update with before and after
+                  value:
+                    id: 42
+                    entityType: camera
+                    entityId: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                    action: update
+                    before:
+                      id: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                      brand: Nikon
+                      model: FM2
+                      is_active: true
+                      deleted_at: null
+                    after:
+                      id: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                      brand: Nikon
+                      model: FM3A
+                      is_active: true
+                      deleted_at: null
+                    actor: nam
+                    requestId: 3f6c1a1e-9d0b-4b5e-8f6a-0c2d7e1b5a90
+                    createdAt: "2026-10-02T09:15:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /rolls:
+    get:
+      tags: [Rolls]
+      operationId: listRolls
+      summary: Browse rolls, filterable (UC-20)
+      parameters:
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/RollStatus" } }
+        - { name: filmStockId, in: query, schema: { type: string, format: uuid } }
+        - { name: cameraId, in: query, schema: { type: string, format: uuid } }
+        - { name: lensId, in: query, schema: { type: string, format: uuid } }
+        - { name: format, in: query, schema: { type: integer } }
+        - { name: startedFrom, in: query, schema: { type: string, format: date } }
+        - { name: startedTo, in: query, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: Rolls
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/RollSummary" } }
+              examples:
+                rolls:
+                  summary: "Rolls, newest first"
+                  value:
+                    - id: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+                      filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                      stockBrand: Kodak
+                      stockName: Portra 400
+                      cameraId: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                      cameraName: Nikon FM2
+                      format: 135
+                      exposures: 36
+                      status: in_camera
+                      shotIso: 800
+                      expiry:
+                        year: 2027
+                        month: 6
+                      price: 150000
+                      description: Hanoi street trip
+                      startedAt: "2026-09-01"
+                      negativesAtLab: false
+                    - id: 6b5a4938-2716-4f05-9e8d-7c6b5a493827
+                      filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                      stockBrand: Kodak
+                      stockName: Portra 400
+                      format: 135
+                      exposures: 36
+                      status: in_stock
+                      expiry:
+                        year: 2027
+                        month: 6
+                      price: 150000
+                      negativesAtLab: false
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /rolls/bulk:
+    post:
+      tags: [Rolls]
+      operationId: addRolls
+      summary: Add rolls in bulk (UC-15). Send Idempotency-Key so retries do not duplicate.
+      parameters:
+        - { name: Idempotency-Key, in: header, schema: { type: string, maxLength: 200 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BulkRollsInput" }
+            examples:
+              bulk:
+                summary: Five 135 rolls with a price and expiry
+                value:
+                  filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                  format: 135
+                  exposures: 36
+                  quantity: 5
+                  price: 150000
+                  expiryYear: 2027
+                  expiryMonth: 6
+              minimal:
+                summary: Only the required fields (36 exposures is assumed for 135)
+                value:
+                  filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                  format: 135
+                  quantity: 1
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/RollSummary" } }
+              examples:
+                created:
+                  summary: The created rolls
+                  value:
+                    - id: 6b5a4938-2716-4f05-9e8d-7c6b5a493827
+                      filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                      stockBrand: Kodak
+                      stockName: Portra 400
+                      format: 135
+                      exposures: 36
+                      status: in_stock
+                      expiry:
+                        year: 2027
+                        month: 6
+                      price: 150000
+                      negativesAtLab: false
+                    - id: 7c6b5a49-3827-4160-8f9e-8d7c6b5a4938
+                      filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                      stockBrand: Kodak
+                      stockName: Portra 400
+                      format: 135
+                      exposures: 36
+                      status: in_stock
+                      expiry:
+                        year: 2027
+                        month: 6
+                      price: 150000
+                      negativesAtLab: false
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
+  /expiry:
+    get:
+      tags: [Rolls]
+      operationId: getExpiry
+      summary: In-stock rolls expired or expiring within 6 months (UC-21)
+      responses:
+        "200":
+          description: Expiry view
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExpiryView" }
+              examples:
+                report:
+                  summary: Expiring soon and rolls with no expiry
+                  value:
+                    expiring:
+                      - roll:
+                          id: 6b5a4938-2716-4f05-9e8d-7c6b5a493827
+                          filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                          stockBrand: Kodak
+                          stockName: Portra 400
+                          format: 135
+                          exposures: 36
+                          status: in_stock
+                          expiry:
+                            year: 2027
+                            month: 6
+                          price: 150000
+                          negativesAtLab: false
+                        expiresOn: "2027-06-30"
+                        expired: false
+                    noExpiry: []
+
+  /rolls/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Rolls]
+      operationId: getRoll
+      summary: Roll details (UC-22)
+      responses:
+        "200":
+          description: Roll
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RollDetail" }
+              examples:
+                detail:
+                  summary: "A loaded roll with its lenses, jobs and frames"
+                  value:
+                    roll:
+                      id: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+                      filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                      stockBrand: Kodak
+                      stockName: Portra 400
+                      cameraId: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                      cameraName: Nikon FM2
+                      format: 135
+                      exposures: 36
+                      status: in_camera
+                      shotIso: 800
+                      expiry:
+                        year: 2027
+                        month: 6
+                      price: 150000
+                      description: Hanoi street trip
+                      startedAt: "2026-09-01"
+                      negativesAtLab: false
+                    stock:
+                      id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                      brand: Kodak
+                      name: Portra 400
+                      type: color
+                      boxIso: 400
+                      process: C-41
+                      packaging: factory
+                      stockOrigin: USA
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+                    lenses:
+                      - id: a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
+                        brand: Nikon
+                        model: Nikkor 50mm f/1.4 AI-S
+                        mount: F
+                        description: Sharp from f/2
+                        focalLength: 50
+                        maxAperture: 1.4
+                        isBuiltIn: false
+                        isActive: true
+                        createdAt: "2026-09-01T08:30:00Z"
+                        updatedAt: "2026-09-20T10:00:00Z"
+                    processing:
+                      - id: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                        rollId: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+                        labId: 3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09
+                        labName: Saigon Film Lab
+                        type: develop_scan
+                        process: C-41
+                        sentAt: "2026-09-20"
+                        scansReceivedAt: "2026-09-27"
+                        price: 90000
+                        notes: Push 1 stop
+                        scanners:
+                          - noritsu
+                        isOpen: true
+                    frames:
+                      - id: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+                        number: 7
+                        notes: Golden hour on the bridge
+                        scans:
+                          - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+                            frameNumber: 7
+                            scanner: noritsu
+                            processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                    totals:
+                      rollPrice: 150000
+                      processingPrice: 90000
+                      total: 240000
+                      incomplete: false
+                    warnings: []
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Rolls]
+      operationId: putRoll
+      summary: Edit a roll (UC-16)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RollInput" }
+            examples:
+              edit:
+                summary: Correct the details and the shooting dates
+                value:
+                  filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                  format: 135
+                  exposures: 36
+                  price: 150000
+                  expiryYear: 2027
+                  expiryMonth: 6
+                  shotIso: 800
+                  startedAt: "2026-09-01"
+                  finishedAt: "2026-09-28"
+                  description: Hanoi street trip
+      responses:
+        "200":
+          description: Roll
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RollDetail" }
+              examples:
+                updated:
+                  summary: Updated roll
+                  value:
+                    roll:
+                      id: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+                      filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                      stockBrand: Kodak
+                      stockName: Portra 400
+                      cameraId: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                      cameraName: Nikon FM2
+                      format: 135
+                      exposures: 36
+                      status: in_camera
+                      shotIso: 800
+                      expiry:
+                        year: 2027
+                        month: 6
+                      price: 150000
+                      description: Hanoi street trip
+                      startedAt: "2026-09-01"
+                      negativesAtLab: false
+                    stock:
+                      id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                      brand: Kodak
+                      name: Portra 400
+                      type: color
+                      boxIso: 400
+                      process: C-41
+                      packaging: factory
+                      stockOrigin: USA
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+                    lenses:
+                      - id: a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
+                        brand: Nikon
+                        model: Nikkor 50mm f/1.4 AI-S
+                        mount: F
+                        description: Sharp from f/2
+                        focalLength: 50
+                        maxAperture: 1.4
+                        isBuiltIn: false
+                        isActive: true
+                        createdAt: "2026-09-01T08:30:00Z"
+                        updatedAt: "2026-09-20T10:00:00Z"
+                    processing:
+                      - id: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                        rollId: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+                        labId: 3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09
+                        labName: Saigon Film Lab
+                        type: develop_scan
+                        process: C-41
+                        sentAt: "2026-09-20"
+                        scansReceivedAt: "2026-09-27"
+                        price: 90000
+                        notes: Push 1 stop
+                        scanners:
+                          - noritsu
+                        isOpen: true
+                    frames:
+                      - id: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+                        number: 7
+                        notes: Golden hour on the bridge
+                        scans:
+                          - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+                            frameNumber: 7
+                            scanner: noritsu
+                            processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                    totals:
+                      rollPrice: 150000
+                      processingPrice: 90000
+                      total: 240000
+                      incomplete: false
+                    warnings: []
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+    delete:
+      tags: [Rolls]
+      operationId: deleteRoll
+      summary: Delete a roll that is still in stock (a mistaken entry); rolls that were loaded cannot be deleted
+      responses:
+        "204": { description: Deleted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /rolls/{id}/load:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Rolls]
+      operationId: loadRoll
+      summary: Load an in-stock roll into a camera (UC-17). Repeating the same load is a no-op.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoadRollInput" }
+            examples:
+              withLenses:
+                summary: Load into an interchangeable-lens camera and say which lenses
+                value:
+                  cameraId: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                  startedAt: "2026-09-01"
+                  shotIso: 800
+                  lensIds:
+                    - a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
+              fixedLens:
+                summary: "Fixed-lens camera: only the camera is needed"
+                value:
+                  cameraId: 0b9e4c52-3a1f-4d85-8c36-9e5a7d2f1b02
+      responses:
+        "200":
+          description: Loaded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RollDetail" }
+              examples:
+                loaded:
+                  summary: Roll now in the camera
+                  value:
+                    roll:
+                      id: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+                      filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                      stockBrand: Kodak
+                      stockName: Portra 400
+                      cameraId: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                      cameraName: Nikon FM2
+                      format: 135
+                      exposures: 36
+                      status: in_camera
+                      shotIso: 800
+                      expiry:
+                        year: 2027
+                        month: 6
+                      price: 150000
+                      description: Hanoi street trip
+                      startedAt: "2026-09-01"
+                      negativesAtLab: false
+                    stock:
+                      id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                      brand: Kodak
+                      name: Portra 400
+                      type: color
+                      boxIso: 400
+                      process: C-41
+                      packaging: factory
+                      stockOrigin: USA
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+                    lenses:
+                      - id: a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
+                        brand: Nikon
+                        model: Nikkor 50mm f/1.4 AI-S
+                        mount: F
+                        description: Sharp from f/2
+                        focalLength: 50
+                        maxAperture: 1.4
+                        isBuiltIn: false
+                        isActive: true
+                        createdAt: "2026-09-01T08:30:00Z"
+                        updatedAt: "2026-09-20T10:00:00Z"
+                    processing:
+                      - id: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                        rollId: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+                        labId: 3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09
+                        labName: Saigon Film Lab
+                        type: develop_scan
+                        process: C-41
+                        sentAt: "2026-09-20"
+                        scansReceivedAt: "2026-09-27"
+                        price: 90000
+                        notes: Push 1 stop
+                        scanners:
+                          - noritsu
+                        isOpen: true
+                    frames:
+                      - id: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+                        number: 7
+                        notes: Golden hour on the bridge
+                        scans:
+                          - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+                            frameNumber: 7
+                            scanner: noritsu
+                            processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                    totals:
+                      rollPrice: 150000
+                      processingPrice: 90000
+                      total: 240000
+                      incomplete: false
+                    warnings: []
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
+  /rolls/{id}/lenses:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Rolls]
+      operationId: setRollLenses
+      summary: Replace the lenses used on a roll (UC-18)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CameraLensesInput" }
+            examples:
+              oneLens:
+                summary: Use one lens on the roll
+                value:
+                  lensIds:
+                    - a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
+      responses:
+        "200":
+          description: Lenses
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Lens" } }
+              examples:
+                lenses:
+                  summary: Lenses now on the roll
+                  value:
+                    - id: a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
+                      brand: Nikon
+                      model: Nikkor 50mm f/1.4 AI-S
+                      mount: F
+                      description: Sharp from f/2
+                      focalLength: 50
+                      maxAperture: 1.4
+                      isBuiltIn: false
+                      isActive: true
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
+  /rolls/{id}/finish:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Rolls]
+      operationId: finishRoll
+      summary: Mark a roll as finished shooting (UC-19)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DateInput" }
+            examples:
+              onDate:
+                summary: Finished on a given day
+                value:
+                  date: "2026-09-28"
+              today:
+                summary: "No body: finished today"
+                value: {}
+      responses:
+        "200":
+          description: Roll
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RollDetail" }
+              examples:
+                finished:
+                  summary: Roll done shooting
+                  value:
+                    roll:
+                      id: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+                      filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                      stockBrand: Kodak
+                      stockName: Portra 400
+                      cameraId: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                      cameraName: Nikon FM2
+                      format: 135
+                      exposures: 36
+                      status: done_shooting
+                      shotIso: 800
+                      expiry:
+                        year: 2027
+                        month: 6
+                      price: 150000
+                      description: Hanoi street trip
+                      startedAt: "2026-09-01"
+                      negativesAtLab: false
+                      finishedAt: "2026-09-28"
+                    stock:
+                      id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                      brand: Kodak
+                      name: Portra 400
+                      type: color
+                      boxIso: 400
+                      process: C-41
+                      packaging: factory
+                      stockOrigin: USA
+                      createdAt: "2026-09-01T08:30:00Z"
+                      updatedAt: "2026-09-20T10:00:00Z"
+                    lenses:
+                      - id: a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
+                        brand: Nikon
+                        model: Nikkor 50mm f/1.4 AI-S
+                        mount: F
+                        description: Sharp from f/2
+                        focalLength: 50
+                        maxAperture: 1.4
+                        isBuiltIn: false
+                        isActive: true
+                        createdAt: "2026-09-01T08:30:00Z"
+                        updatedAt: "2026-09-20T10:00:00Z"
+                    processing:
+                      - id: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                        rollId: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+                        labId: 3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09
+                        labName: Saigon Film Lab
+                        type: develop_scan
+                        process: C-41
+                        sentAt: "2026-09-20"
+                        scansReceivedAt: "2026-09-27"
+                        price: 90000
+                        notes: Push 1 stop
+                        scanners:
+                          - noritsu
+                        isOpen: true
+                    frames:
+                      - id: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+                        number: 7
+                        notes: Golden hour on the bridge
+                        scans:
+                          - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+                            frameNumber: 7
+                            scanner: noritsu
+                            processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                    totals:
+                      rollPrice: 150000
+                      processingPrice: 90000
+                      total: 240000
+                      incomplete: false
+                    warnings: []
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /rolls/{id}/processing:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Rolls]
+      operationId: listRollProcessing
+      summary: Processing history of a roll (UC-29)
+      responses:
+        "200":
+          description: Jobs
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Processing" } }
+              examples:
+                jobs:
+                  summary: "Processing history, oldest first"
+                  value:
+                    - id: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                      rollId: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+                      labId: 3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09
+                      labName: Saigon Film Lab
+                      type: develop_scan
+                      process: C-41
+                      sentAt: "2026-09-20"
+                      scansReceivedAt: "2026-09-27"
+                      price: 90000
+                      notes: Push 1 stop
+                      scanners:
+                        - noritsu
+                      isOpen: true
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /rolls/{id}/processing/{jobId}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - { name: jobId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      tags: [Rolls]
+      operationId: putProcessing
+      summary: Send a roll for processing, or edit a job (UC-24, UC-28)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProcessingInput" }
+            examples:
+              lab:
+                summary: Develop and scan at a lab
+                value:
+                  labId: 3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09
+                  type: develop_scan
+                  process: C-41
+                  sentAt: "2026-09-20"
+                  price: 90000
+                  notes: Push 1 stop
+              home:
+                summary: Developed at home (no lab)
+                value:
+                  type: develop
+                  process: BW
+                  sentAt: "2026-09-20"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Processing" }
+              examples:
+                updated:
+                  summary: Updated job
+                  value:
+                    id: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                    rollId: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+                    labId: 3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09
+                    labName: Saigon Film Lab
+                    type: develop_scan
+                    process: C-41
+                    sentAt: "2026-09-20"
+                    scansReceivedAt: "2026-09-27"
+                    price: 90000
+                    notes: Push 1 stop
+                    scanners:
+                      - noritsu
+                    isOpen: true
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Processing" }
+              examples:
+                lab:
+                  summary: Roll sent to a lab
+                  value:
+                    id: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                    rollId: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+                    labId: 3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09
+                    labName: Saigon Film Lab
+                    type: develop_scan
+                    process: C-41
+                    sentAt: "2026-09-20"
+                    price: 90000
+                    scanners: []
+                    isOpen: true
+                home:
+                  summary: Developed at home
+                  value:
+                    id: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                    rollId: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+                    type: develop
+                    process: BW
+                    sentAt: "2026-09-20"
+                    scanners: []
+                    isOpen: true
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
+  /rolls/{id}/frames:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Rolls]
+      operationId: listRollFrames
+      summary: Frames of a roll that have notes or scans, ordered by number
+      responses:
+        "200":
+          description: Frames
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Frame" } }
+              examples:
+                frames:
+                  summary: Frames that have notes or scans
+                  value:
+                    - id: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+                      number: 7
+                      notes: Golden hour on the bridge
+                      scans:
+                        - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+                          frameNumber: 7
+                          scanner: noritsu
+                          processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /rolls/{id}/frames/{number}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - { name: number, in: path, required: true, schema: { type: integer, minimum: 0 } }
+    get:
+      tags: [Rolls]
+      operationId: getFrame
+      responses:
+        "200":
+          description: Frame
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Frame" }
+              examples:
+                frame:
+                  summary: One frame
+                  value:
+                    id: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+                    number: 7
+                    notes: Golden hour on the bridge
+                    scans:
+                      - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+                        frameNumber: 7
+                        scanner: noritsu
+                        processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Rolls]
+      operationId: putFrame
+      summary: Set notes on a frame, creating the frame if needed (UC-34)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FrameInput" }
+            examples:
+              notes:
+                summary: Note a frame
+                value:
+                  notes: Golden hour on the bridge
+              clear:
+                summary: Clear the note
+                value: {}
+      responses:
+        "200":
+          description: Frame
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Frame" }
+              examples:
+                frame:
+                  summary: Frame with its note
+                  value:
+                    id: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+                    number: 7
+                    notes: Golden hour on the bridge
+                    scans:
+                      - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+                        frameNumber: 7
+                        scanner: noritsu
+                        processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /processing/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Processing]
+      operationId: getProcessing
+      responses:
+        "200":
+          description: Job
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Processing" }
+              examples:
+                job:
+                  summary: A processing job
+                  value:
+                    id: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                    rollId: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+                    labId: 3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09
+                    labName: Saigon Film Lab
+                    type: develop_scan
+                    process: C-41
+                    sentAt: "2026-09-20"
+                    scansReceivedAt: "2026-09-27"
+                    price: 90000
+                    notes: Push 1 stop
+                    scanners:
+                      - noritsu
+                    isOpen: true
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Processing]
+      operationId: deleteProcessing
+      summary: Delete a processing job that has no scans; the roll status is recomputed
+      responses:
+        "204": { description: Deleted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /processing/{id}/scans-received:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Scans]
+      operationId: recordScansReceived
+      summary: Record that scans arrived (UC-25)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DateInput" }
+            examples:
+              onDate:
+                summary: Scans arrived on a given day
+                value:
+                  date: "2026-09-27"
+              today:
+                summary: "No body: arrived today"
+                value: {}
+      responses:
+        "200":
+          description: Job
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Processing" }
+              examples:
+                received:
+                  summary: Job with the scans date set
+                  value:
+                    id: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                    rollId: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+                    labId: 3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09
+                    labName: Saigon Film Lab
+                    type: develop_scan
+                    process: C-41
+                    sentAt: "2026-09-20"
+                    scansReceivedAt: "2026-09-27"
+                    price: 90000
+                    notes: Push 1 stop
+                    scanners:
+                      - noritsu
+                    isOpen: true
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /processing/{id}/negatives-returned:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Processing]
+      operationId: recordNegativesReturned
+      summary: Record that negatives came back from the lab (UC-26)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DateInput" }
+            examples:
+              onDate:
+                summary: Negatives came back on a given day
+                value:
+                  date: "2026-09-29"
+              today:
+                summary: "No body: came back today"
+                value: {}
+      responses:
+        "200":
+          description: Job
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Processing" }
+              examples:
+                returned:
+                  summary: Job closed
+                  value:
+                    id: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                    rollId: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+                    labId: 3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09
+                    labName: Saigon Film Lab
+                    type: develop_scan
+                    process: C-41
+                    sentAt: "2026-09-20"
+                    scansReceivedAt: "2026-09-27"
+                    price: 90000
+                    notes: Push 1 stop
+                    scanners:
+                      - noritsu
+                    isOpen: false
+                    negativesReturnedAt: "2026-09-29"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /negatives-at-lab:
+    get:
+      tags: [Processing]
+      operationId: listNegativesAtLab
+      summary: Lab jobs whose negatives are not back yet (UC-27)
+      responses:
+        "200":
+          description: Jobs
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/NegativesAtLabItem" } }
+              examples:
+                waiting:
+                  summary: Negatives still at the lab
+                  value:
+                    - processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                      rollId: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+                      labName: Saigon Film Lab
+                      type: develop_scan
+                      sentAt: "2026-09-20"
+                      daysSinceSent: 12
+                      stockName: Kodak Portra 400
+
+  /processing/{id}/scans:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Scans]
+      operationId: listProcessingScans
+      summary: Scan grid of a job, ordered by frame number (UC-32)
+      parameters:
+        - { name: scanner, in: query, schema: { $ref: "#/components/schemas/Scanner" } }
+      responses:
+        "200":
+          description: Scans
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Scan" } }
+              examples:
+                grid:
+                  summary: Scans ordered by frame number
+                  value:
+                    - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+                      processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                      frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+                      frameNumber: 7
+                      scanner: noritsu
+                      fileName: "000007.jpg"
+                      sizeBytes: 2481920
+                      fileUrl: "/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file"
+                    - id: 61d2ae8f-4d7c-4ab9-f5c8-be7fdf9b2f22
+                      processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                      frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+                      frameNumber: 7
+                      scanner: frontier
+                      fileName: "000007.jpg"
+                      sizeBytes: 2481920
+                      fileUrl: "/scans/61d2ae8f-4d7c-4ab9-f5c8-be7fdf9b2f22/file"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Scans]
+      operationId: importScans
+      summary: |
+        Import scan files (UC-30). Multipart fields: scanner, optional onConflict (skip|replace),
+        then one `frameNumber` text field immediately before each `file` part.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                scanner: { $ref: "#/components/schemas/Scanner" }
+                onConflict: { type: string, enum: [skip, replace] }
+                frameNumber: { type: array, items: { type: integer, minimum: 0 } }
+                file: { type: array, items: { type: string, format: binary } }
+              required: [scanner]
+            examples:
+              oneFile:
+                summary: Import one frame from the Noritsu scanner
+                value:
+                  scanner: noritsu
+                  onConflict: skip
+                  frameNumber:
+                    - 7
+                  file:
+                    - "000007.jpg"
+      responses:
+        "200":
+          description: Import result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImportResult" }
+              examples:
+                mixed:
+                  summary: "One imported, one skipped, one rejected"
+                  value:
+                    imported:
+                      - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+                        processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                        frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+                        frameNumber: 7
+                        scanner: noritsu
+                        fileName: "000007.jpg"
+                        sizeBytes: 2481920
+                        fileUrl: "/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file"
+                    skipped:
+                      - fileName: "000009.jpg"
+                        reason: a scan already exists for this frame and scanner
+                    failed:
+                      - fileName: notes.txt
+                        reason: "not a supported image (jpeg, png, webp, tiff)"
+                    scansReceivedAt: "2026-09-27"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
+  /processing/{id}/scans/preview:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [Scans]
+      operationId: previewScanImport
+      summary: Map file names to frame numbers before uploading (UC-30 step 4-6, UC-31)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ImportPreviewInput" }
+            examples:
+              fromNames:
+                summary: Read frame numbers from the file names
+                value:
+                  fileNames:
+                    - "000001.jpg"
+                    - "000002.jpg"
+                    - notes.txt
+              sequential:
+                summary: "Number the files 1, 2, 3 in name order"
+                value:
+                  fileNames:
+                    - a.jpg
+                    - b.jpg
+                    - c.jpg
+                  startFrame: 1
+              offset:
+                summary: Shift every number read from the names by 1
+                value:
+                  fileNames:
+                    - "000000.jpg"
+                    - "000001.jpg"
+                  offset: 1
+      responses:
+        "200":
+          description: Mapping
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/ImportPreviewItem" } }
+              examples:
+                fromNames:
+                  summary: Frame numbers read from the names
+                  value:
+                    - fileName: "000001.jpg"
+                      frameNumber: 1
+                    - fileName: "000002.jpg"
+                      frameNumber: 2
+                    - fileName: notes.txt
+                      error: not an image file
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /processing/{id}/frames/{number}/compare:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - { name: number, in: path, required: true, schema: { type: integer, minimum: 0 } }
+    get:
+      tags: [Scans]
+      operationId: compareFrame
+      summary: Noritsu vs Frontier for one frame, with previous/next frame (UC-33)
+      responses:
+        "200":
+          description: Comparison
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FrameComparison" }
+              examples:
+                both:
+                  summary: Both scanners present
+                  value:
+                    frameNumber: 7
+                    noritsu:
+                      id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+                      processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                      frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+                      frameNumber: 7
+                      scanner: noritsu
+                      fileName: "000007.jpg"
+                      sizeBytes: 2481920
+                      fileUrl: "/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file"
+                    frontier:
+                      id: 61d2ae8f-4d7c-4ab9-f5c8-be7fdf9b2f22
+                      processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                      frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+                      frameNumber: 7
+                      scanner: frontier
+                      fileName: "000007.jpg"
+                      sizeBytes: 2481920
+                      fileUrl: "/scans/61d2ae8f-4d7c-4ab9-f5c8-be7fdf9b2f22/file"
+                    missing: []
+                    previousFrameNumber: 6
+                    nextFrameNumber: 8
+                oneMissing:
+                  summary: Frontier scan missing
+                  value:
+                    frameNumber: 7
+                    noritsu:
+                      id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+                      processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                      frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+                      frameNumber: 7
+                      scanner: noritsu
+                      fileName: "000007.jpg"
+                      sizeBytes: 2481920
+                      fileUrl: "/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file"
+                    missing:
+                      - frontier
+                    previousFrameNumber: 6
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /scans/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Scans]
+      operationId: getScan
+      summary: Scan metadata (the image itself is at /scans/{id}/file)
+      responses:
+        "200":
+          description: Scan
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scan" }
+              examples:
+                scan:
+                  summary: Scan metadata
+                  value:
+                    id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+                    processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                    frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+                    frameNumber: 7
+                    scanner: noritsu
+                    fileName: "000007.jpg"
+                    sizeBytes: 2481920
+                    fileUrl: "/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Scans]
+      operationId: deleteScan
+      summary: Delete a scan; the image file is kept in storage
+      responses:
+        "204": { description: Deleted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /scans/{id}/file:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Scans]
+      operationId: getScanFile
+      summary: Full-size scan image
+      responses:
+        "200":
+          description: Image bytes
+          content:
+            application/octet-stream: { schema: { type: string, format: binary } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /search/rolls:
+    get:
+      tags: [Stats]
+      operationId: searchRolls
+      summary: Rolls shot with a given focal length, with their scans (UC-35)
+      parameters:
+        - { name: focalLength, in: query, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200":
+          description: Rolls
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/SearchResult" } }
+              examples:
+                hits:
+                  summary: "Rolls shot at 50mm, with their scans"
+                  value:
+                    - roll:
+                        id: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+                        filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                        stockBrand: Kodak
+                        stockName: Portra 400
+                        cameraId: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                        cameraName: Nikon FM2
+                        format: 135
+                        exposures: 36
+                        status: in_camera
+                        shotIso: 800
+                        expiry:
+                          year: 2027
+                          month: 6
+                        price: 150000
+                        description: Hanoi street trip
+                        startedAt: "2026-09-01"
+                        negativesAtLab: false
+                      scans:
+                        - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+                          frameNumber: 7
+                          scanner: noritsu
+                          processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /stats/gear:
+    get:
+      tags: [Stats]
+      operationId: getGearStats
+      summary: Most-used cameras and lenses (UC-36)
+      parameters:
+        - { name: year, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: Ranking
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GearStats" }
+              examples:
+                gear:
+                  summary: Most used gear
+                  value:
+                    cameras:
+                      - id: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+                        label: Nikon FM2
+                        rolls: 12
+                    lenses:
+                      - id: a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
+                        label: Nikon Nikkor 50mm f/1.4 AI-S
+                        rolls: 9
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /stats/film:
+    get:
+      tags: [Stats]
+      operationId: getFilmStats
+      summary: Favorite film stocks, optionally merged by base stock (UC-37)
+      parameters:
+        - { name: groupByBase, in: query, schema: { type: boolean, default: false } }
+      responses:
+        "200":
+          description: Ranking
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/RankedItem" } }
+              examples:
+                film:
+                  summary: Favourite stocks
+                  value:
+                    - id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+                      label: Kodak Portra 400
+                      rolls: 14
+                    - id: f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06
+                      label: Ilford HP5 Plus
+                      rolls: 6
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /stats/timeline:
+    get:
+      tags: [Stats]
+      operationId: getTimelineStats
+      summary: Rolls started per month, per year (UC-38)
+      responses:
+        "200":
+          description: Timeline
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/YearTimeline" } }
+              examples:
+                timeline:
+                  summary: Rolls started per month
+                  value:
+                    - year: 2026
+                      months:
+                        - 0
+                        - 1
+                        - 3
+                        - 2
+                        - 0
+                        - 4
+                        - 6
+                        - 5
+                        - 2
+                        - 1
+                        - 0
+                        - 0
+
+  /stats/spending:
+    get:
+      tags: [Stats]
+      operationId: getSpendingStats
+      summary: Film and processing cost per month and year (UC-39)
+      responses:
+        "200":
+          description: Spending
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/YearSpending" } }
+              examples:
+                spending:
+                  summary: Spend per year and month
+                  value:
+                    - year: 2026
+                      filmCost: 750000
+                      processingCost: 450000
+                      incomplete: false
+                      months:
+                        - month: 9
+                          filmCost: 150000
+                          processingCost: 90000
+                          incomplete: false
+
+components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    BadRequest:
+      description: "Malformed request: the body, a parameter or an id does not match the schema"
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          examples:
+            schema:
+              summary: Body does not match the schema
+              value:
+                code: bad_request
+                message: "request body has an error: doesn't match schema"
+            badId:
+              summary: Malformed id in the path
+              value:
+                code: bad_request
+                message: "parameter \"id\" in path has an error: value is not a valid uuid"
+    NotFound:
+      description: Not found (or deleted)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          examples:
+            camera:
+              summary: Unknown camera
+              value:
+                code: not_found
+                message: camera not found
+            roll:
+              summary: Unknown or deleted roll
+              value:
+                code: not_found
+                message: roll not found
+            scan:
+              summary: Unknown scan
+              value:
+                code: not_found
+                message: scan not found
+    Conflict:
+      description: Conflicts with current state
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          examples:
+            cameraInUse:
+              summary: Camera that held rolls cannot be deleted
+              value:
+                code: camera_in_use
+                message: "a camera that has held rolls cannot be deleted; deactivate it instead"
+            lensInUse:
+              summary: Lens used on rolls
+              value:
+                code: lens_in_use
+                message: "a lens used on rolls cannot be deleted; deactivate it instead"
+            filmStockInUse:
+              summary: Stock with rolls or derived stocks
+              value:
+                code: film_stock_in_use
+                message: a film stock with rolls or derived stocks cannot be deleted
+            labInUse:
+              summary: Lab with processing history
+              value:
+                code: lab_in_use
+                message: a lab with processing history cannot be deleted
+            rollNotInStock:
+              summary: Only rolls still in stock can be loaded or deleted
+              value:
+                code: roll_not_in_stock
+                message: only a roll that is still in stock can be deleted
+            jobHasScans:
+              summary: Job with scans
+              value:
+                code: job_has_scans
+                message: "a job with scans cannot be deleted; delete its scans first"
+            cameraLoaded:
+              summary: Camera already holds a roll
+              value:
+                code: camera_loaded
+                message: "camera already holds a roll; finish it first"
+            alreadyExists:
+              summary: A deleted id stays reserved
+              value:
+                code: already_exists
+                message: a camera with this id already exists
+    Unprocessable:
+      description: Business validation failed
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          examples:
+            missingFields:
+              summary: A required field is blank
+              value:
+                code: missing_fields
+                message: brand and model are required
+            invalidAperture:
+              summary: Aperture with two decimals
+              value:
+                code: invalid_aperture
+                message: max aperture must have at most one decimal place
+            fixedLensRequired:
+              summary: Fixed-lens camera without its lens
+              value:
+                code: fixed_lens_required
+                message: fixedLens is required for a fixed-lens camera
+
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok] }
+      example:
+        status: ok
+
+    Problem:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+      example:
+        code: not_found
+        message: camera not found
+
+    ActiveInput:
+      type: object
+      required: [isActive]
+      properties:
+        isActive: { type: boolean }
+      example:
+        isActive: false
+
+    StockType: { type: string, enum: [color, bw, slide] }
+    Process: { type: string, enum: [C-41, E-6, BW, ECN-2] }
+    Packaging: { type: string, enum: [factory, repack, respooled] }
+
+    FixedLensInput:
+      type: object
+      required: [focalLength, maxAperture]
+      properties:
+        focalLength: { type: integer, minimum: 1 }
+        maxAperture: { type: number, format: double, minimum: 0.1, maximum: 99.9 }
+        brand: { type: string }
+        model: { type: string }
+      example:
+        focalLength: 40
+        maxAperture: 1.7
+        brand: Canon
+        model: 40mm f/1.7
+
+    CameraInput:
+      type: object
+      required: [brand, model, hasFixedLens]
+      properties:
+        brand: { type: string }
+        model: { type: string }
+        mount: { type: string }
+        description: { type: string }
+        hasFixedLens: { type: boolean }
+        fixedLens:
+          description: Required when creating a fixed-lens camera (UC-07)
+          $ref: "#/components/schemas/FixedLensInput"
+      example:
+        brand: Nikon
+        model: FM2
+        mount: F
+        description: Black body, bought 2019
+        hasFixedLens: false
+
+    LoadedRoll:
+      type: object
+      required: [rollId, stockId, stockBrand, stockName, daysLoaded]
+      properties:
+        rollId: { type: string, format: uuid }
+        stockId: { type: string, format: uuid }
+        stockBrand: { type: string }
+        stockName: { type: string }
+        shotIso: { type: integer }
+        startedAt: { type: string, format: date }
+        daysLoaded: { type: integer }
+      example:
+        rollId: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+        stockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+        stockBrand: Kodak
+        stockName: Portra 400
+        shotIso: 800
+        startedAt: "2026-09-01"
+        daysLoaded: 31
+
+    Camera:
+      type: object
+      required: [id, brand, model, hasFixedLens, isActive, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        brand: { type: string }
+        model: { type: string }
+        mount: { type: string }
+        description: { type: string }
+        hasFixedLens: { type: boolean }
+        builtInLensId: { type: string, format: uuid }
+        isActive: { type: boolean }
+        loadedRoll: { $ref: "#/components/schemas/LoadedRoll" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      example:
+        id: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+        createdAt: "2026-09-01T08:30:00Z"
+        updatedAt: "2026-09-20T10:00:00Z"
+        brand: Nikon
+        model: FM2
+        mount: F
+        description: Black body, bought 2019
+        hasFixedLens: false
+        isActive: true
+        loadedRoll:
+          rollId: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+          stockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+          stockBrand: Kodak
+          stockName: Portra 400
+          shotIso: 800
+          startedAt: "2026-09-01"
+          daysLoaded: 31
+
+    CameraLensesInput:
+      type: object
+      required: [lensIds]
+      properties:
+        lensIds: { type: array, items: { type: string, format: uuid } }
+      example:
+        lensIds:
+          - a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
+          - c5e91b77-2d3a-4f08-a6b4-8d1e7c3f9a04
+
+    LensInput:
+      type: object
+      required: [focalLength, maxAperture]
+      properties:
+        brand: { type: string }
+        model: { type: string }
+        mount: { type: string }
+        description: { type: string }
+        focalLength: { type: integer, minimum: 1 }
+        maxAperture: { type: number, format: double, minimum: 0.1, maximum: 99.9 }
+      example:
+        brand: Nikon
+        model: Nikkor 50mm f/1.4 AI-S
+        mount: F
+        description: Sharp from f/2
+        focalLength: 50
+        maxAperture: 1.4
+
+    Lens:
+      type: object
+      required: [id, focalLength, maxAperture, isBuiltIn, isActive, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        brand: { type: string }
+        model: { type: string }
+        mount: { type: string }
+        description: { type: string }
+        focalLength: { type: integer }
+        maxAperture: { type: number, format: double }
+        isBuiltIn: { type: boolean }
+        isActive: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      example:
+        id: a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
+        createdAt: "2026-09-01T08:30:00Z"
+        updatedAt: "2026-09-20T10:00:00Z"
+        brand: Nikon
+        model: Nikkor 50mm f/1.4 AI-S
+        mount: F
+        focalLength: 50
+        maxAperture: 1.4
+        isBuiltIn: false
+        isActive: true
+
+    FilmStockInput:
+      type: object
+      required: [brand, name, type, boxIso, process, packaging]
+      properties:
+        brand: { type: string }
+        name: { type: string }
+        type: { $ref: "#/components/schemas/StockType" }
+        boxIso: { type: integer, minimum: 1 }
+        process: { $ref: "#/components/schemas/Process" }
+        packaging: { $ref: "#/components/schemas/Packaging" }
+        stockOrigin: { type: string }
+        packOrigin: { type: string }
+        description: { type: string }
+        baseStockId: { type: string, format: uuid }
+      example:
+        brand: Kodak
+        name: Portra 400
+        type: color
+        boxIso: 400
+        process: C-41
+        packaging: factory
+        stockOrigin: USA
+        description: Fine-grain portrait film
+
+    FilmStock:
+      type: object
+      required: [id, brand, name, type, boxIso, process, packaging, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        brand: { type: string }
+        name: { type: string }
+        type: { $ref: "#/components/schemas/StockType" }
+        boxIso: { type: integer }
+        process: { $ref: "#/components/schemas/Process" }
+        packaging: { $ref: "#/components/schemas/Packaging" }
+        stockOrigin: { type: string }
+        packOrigin: { type: string }
+        description: { type: string }
+        baseStockId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      example:
+        id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+        createdAt: "2026-09-01T08:30:00Z"
+        updatedAt: "2026-09-20T10:00:00Z"
+        brand: Kodak
+        name: Portra 400
+        type: color
+        boxIso: 400
+        process: C-41
+        packaging: factory
+
+    FilmStockDetail:
+      type: object
+      required: [stock, siblings, derived, warnings]
+      properties:
+        stock: { $ref: "#/components/schemas/FilmStock" }
+        baseStock: { $ref: "#/components/schemas/FilmStock" }
+        siblings:
+          description: Other stocks with the same base stock
+          type: array
+          items: { $ref: "#/components/schemas/FilmStock" }
+        derived:
+          description: Stocks that use this stock as their base
+          type: array
+          items: { $ref: "#/components/schemas/FilmStock" }
+        warnings: { type: array, items: { type: string } }
+      example:
+        stock:
+          id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+          createdAt: "2026-09-01T08:30:00Z"
+          updatedAt: "2026-09-20T10:00:00Z"
+          brand: Respool Co.
+          name: Portra 400 (respooled)
+          type: color
+          boxIso: 400
+          process: C-41
+          packaging: respooled
+          baseStockId: f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06
+        baseStock:
+          id: f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06
+          createdAt: "2026-09-01T08:30:00Z"
+          updatedAt: "2026-09-20T10:00:00Z"
+          brand: Kodak
+          name: Portra 400
+          type: color
+          boxIso: 400
+          process: C-41
+          packaging: factory
+        siblings: []
+        derived: []
+        warnings: []
+
+    ExpiryMonth:
+      type: object
+      required: [year]
+      properties:
+        year: { type: integer }
+        month:
+          type: integer
+          description: Absent when the month is unknown (it sorts and expires as December)
+      example:
+        year: 2027
+        month: 6
+
+    InventoryFormatCount:
+      type: object
+      required: [format, count]
+      properties:
+        format: { type: integer }
+        count: { type: integer }
+      example:
+        format: 135
+        count: 3
+
+    InventoryItem:
+      type: object
+      required: [stock, formats]
+      properties:
+        stock: { $ref: "#/components/schemas/FilmStock" }
+        formats: { type: array, items: { $ref: "#/components/schemas/InventoryFormatCount" } }
+        soonestExpiry: { $ref: "#/components/schemas/ExpiryMonth" }
+      example:
+        stock:
+          id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+          createdAt: "2026-09-01T08:30:00Z"
+          updatedAt: "2026-09-20T10:00:00Z"
+          brand: Kodak
+          name: Portra 400
+          type: color
+          boxIso: 400
+          process: C-41
+          packaging: factory
+        formats:
+          - format: 135
+            count: 3
+          - format: 120
+            count: 1
+        soonestExpiry:
+          year: 2027
+          month: 6
+
+    RollStatus: { type: string, enum: [in_stock, in_camera, done_shooting, at_lab, developed, scanned] }
+    Scanner: { type: string, enum: [noritsu, frontier, other] }
+    ProcessingType: { type: string, enum: [develop, develop_scan, scan, print] }
+
+    DateInput:
+      type: object
+      properties:
+        date: { type: string, format: date, description: Defaults to today }
+      example:
+        date: "2026-10-02"
+
+    LabInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        address: { type: string }
+      example:
+        name: Saigon Film Lab
+        address: 12 Nguyen Hue, District 1, Ho Chi Minh City
+
+    Lab:
+      type: object
+      required: [id, name, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        address: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      example:
+        id: 3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09
+        createdAt: "2026-09-01T08:30:00Z"
+        updatedAt: "2026-09-20T10:00:00Z"
+        name: Saigon Film Lab
+        address: 12 Nguyen Hue, District 1, Ho Chi Minh City
+
+    BulkRollsInput:
+      type: object
+      required: [filmStockId, format, quantity]
+      properties:
+        filmStockId: { type: string, format: uuid }
+        format: { type: integer, minimum: 1, description: "135, 120, ..." }
+        exposures: { type: integer, minimum: 1, description: Defaults to 36 for 135 }
+        quantity: { type: integer, minimum: 1, maximum: 200 }
+        price: { type: integer, minimum: 0, description: Unit price per roll in VND }
+        expiryYear: { type: integer }
+        expiryMonth: { type: integer, minimum: 1, maximum: 12 }
+      example:
+        filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+        format: 135
+        exposures: 36
+        quantity: 5
+        price: 150000
+        expiryYear: 2027
+        expiryMonth: 6
+
+    RollInput:
+      type: object
+      required: [filmStockId, format, exposures]
+      properties:
+        filmStockId: { type: string, format: uuid }
+        format: { type: integer, minimum: 1 }
+        exposures: { type: integer, minimum: 1 }
+        price: { type: integer, minimum: 0 }
+        expiryYear: { type: integer }
+        expiryMonth: { type: integer, minimum: 1, maximum: 12 }
+        shotIso: { type: integer, minimum: 1 }
+        startedAt: { type: string, format: date }
+        finishedAt: { type: string, format: date }
+        description: { type: string }
+      example:
+        filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+        format: 135
+        exposures: 36
+        price: 150000
+        expiryYear: 2027
+        expiryMonth: 6
+        shotIso: 800
+        startedAt: "2026-09-01"
+        description: Hanoi street trip
+
+    LoadRollInput:
+      type: object
+      required: [cameraId]
+      properties:
+        cameraId: { type: string, format: uuid }
+        startedAt: { type: string, format: date }
+        shotIso: { type: integer, minimum: 1 }
+        lensIds: { type: array, items: { type: string, format: uuid } }
+      example:
+        cameraId: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+        startedAt: "2026-09-01"
+        shotIso: 800
+        lensIds:
+          - a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
+
+    RollSummary:
+      type: object
+      required: [id, filmStockId, stockBrand, stockName, format, exposures, status, negativesAtLab]
+      properties:
+        id: { type: string, format: uuid }
+        filmStockId: { type: string, format: uuid }
+        stockBrand: { type: string }
+        stockName: { type: string }
+        cameraId: { type: string, format: uuid }
+        cameraName: { type: string }
+        format: { type: integer }
+        exposures: { type: integer }
+        status: { $ref: "#/components/schemas/RollStatus" }
+        shotIso: { type: integer }
+        expiry: { $ref: "#/components/schemas/ExpiryMonth" }
+        price: { type: integer }
+        description: { type: string }
+        startedAt: { type: string, format: date }
+        finishedAt: { type: string, format: date }
+        negativesAtLab: { type: boolean }
+      example:
+        id: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+        filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+        stockBrand: Kodak
+        stockName: Portra 400
+        cameraId: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+        cameraName: Nikon FM2
+        format: 135
+        exposures: 36
+        status: in_camera
+        shotIso: 800
+        expiry:
+          year: 2027
+          month: 6
+        price: 150000
+        description: Hanoi street trip
+        startedAt: "2026-09-01"
+        negativesAtLab: false
+
+    RollTotals:
+      type: object
+      required: [rollPrice, processingPrice, total, incomplete]
+      properties:
+        rollPrice: { type: integer }
+        processingPrice: { type: integer }
+        total: { type: integer }
+        incomplete: { type: boolean, description: A price is missing and counted as zero }
+      example:
+        rollPrice: 150000
+        processingPrice: 90000
+        total: 240000
+        incomplete: false
+
+    ScanRef:
+      type: object
+      required: [id, frameNumber, scanner]
+      properties:
+        id: { type: string, format: uuid }
+        frameNumber: { type: integer }
+        scanner: { $ref: "#/components/schemas/Scanner" }
+        processingId: { type: string, format: uuid }
+      example:
+        id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+        frameNumber: 7
+        scanner: noritsu
+        processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+
+    Frame:
+      type: object
+      required: [id, number, scans]
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: integer }
+        notes: { type: string }
+        scans: { type: array, items: { $ref: "#/components/schemas/ScanRef" } }
+      example:
+        id: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+        number: 7
+        notes: Golden hour on the bridge
+        scans:
+          - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+            frameNumber: 7
+            scanner: noritsu
+            processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+
+    FrameInput:
+      type: object
+      properties:
+        notes: { type: string }
+      example:
+        notes: Golden hour on the bridge
+
+    RollDetail:
+      type: object
+      required: [roll, stock, lenses, processing, frames, totals, warnings]
+      properties:
+        roll: { $ref: "#/components/schemas/RollSummary" }
+        stock: { $ref: "#/components/schemas/FilmStock" }
+        baseStock: { $ref: "#/components/schemas/FilmStock" }
+        lenses: { type: array, items: { $ref: "#/components/schemas/Lens" } }
+        processing: { type: array, items: { $ref: "#/components/schemas/Processing" } }
+        frames: { type: array, items: { $ref: "#/components/schemas/Frame" } }
+        totals: { $ref: "#/components/schemas/RollTotals" }
+        warnings: { type: array, items: { type: string } }
+      example:
+        roll:
+          id: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+          filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+          stockBrand: Kodak
+          stockName: Portra 400
+          cameraId: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+          cameraName: Nikon FM2
+          format: 135
+          exposures: 36
+          status: in_camera
+          shotIso: 800
+          expiry:
+            year: 2027
+            month: 6
+          price: 150000
+          description: Hanoi street trip
+          startedAt: "2026-09-01"
+          negativesAtLab: false
+        stock:
+          id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+          createdAt: "2026-09-01T08:30:00Z"
+          updatedAt: "2026-09-20T10:00:00Z"
+          brand: Kodak
+          name: Portra 400
+          type: color
+          boxIso: 400
+          process: C-41
+          packaging: factory
+        lenses:
+          - id: a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
+            createdAt: "2026-09-01T08:30:00Z"
+            updatedAt: "2026-09-20T10:00:00Z"
+            brand: Nikon
+            model: Nikkor 50mm f/1.4 AI-S
+            mount: F
+            focalLength: 50
+            maxAperture: 1.4
+            isBuiltIn: false
+            isActive: true
+        processing: []
+        frames: []
+        totals:
+          rollPrice: 150000
+          processingPrice: 90000
+          total: 240000
+          incomplete: false
+        warnings: []
+
+    ExpiryRoll:
+      type: object
+      required: [roll, expiresOn, expired]
+      properties:
+        roll: { $ref: "#/components/schemas/RollSummary" }
+        expiresOn: { type: string, format: date }
+        expired: { type: boolean }
+      example:
+        roll:
+          id: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+          filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+          stockBrand: Kodak
+          stockName: Portra 400
+          cameraId: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+          cameraName: Nikon FM2
+          format: 135
+          exposures: 36
+          status: in_camera
+          shotIso: 800
+          expiry:
+            year: 2027
+            month: 6
+          price: 150000
+          description: Hanoi street trip
+          startedAt: "2026-09-01"
+          negativesAtLab: false
+        expiresOn: "2027-06-30"
+        expired: false
+
+    ExpiryView:
+      type: object
+      required: [expiring, noExpiry]
+      properties:
+        expiring: { type: array, items: { $ref: "#/components/schemas/ExpiryRoll" } }
+        noExpiry: { type: array, items: { $ref: "#/components/schemas/RollSummary" } }
+      example:
+        expiring:
+          - roll:
+              id: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+              filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+              stockBrand: Kodak
+              stockName: Portra 400
+              cameraId: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+              cameraName: Nikon FM2
+              format: 135
+              exposures: 36
+              status: in_camera
+              shotIso: 800
+              expiry:
+                year: 2027
+                month: 6
+              price: 150000
+              description: Hanoi street trip
+              startedAt: "2026-09-01"
+              negativesAtLab: false
+            expiresOn: "2027-06-30"
+            expired: false
+        noExpiry: []
+
+    ProcessingInput:
+      type: object
+      required: [type]
+      properties:
+        labId: { type: string, format: uuid, description: Absent means processed at home }
+        type: { $ref: "#/components/schemas/ProcessingType" }
+        process: { $ref: "#/components/schemas/Process" }
+        sentAt: { type: string, format: date, description: Defaults to today }
+        price: { type: integer, minimum: 0 }
+        notes: { type: string }
+      example:
+        labId: 3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09
+        type: develop_scan
+        process: C-41
+        sentAt: "2026-09-20"
+        price: 90000
+        notes: Push 1 stop
+
+    Processing:
+      type: object
+      required: [id, rollId, type, process, sentAt, scanners, isOpen]
+      properties:
+        id: { type: string, format: uuid }
+        rollId: { type: string, format: uuid }
+        labId: { type: string, format: uuid }
+        labName: { type: string }
+        type: { $ref: "#/components/schemas/ProcessingType" }
+        process: { $ref: "#/components/schemas/Process" }
+        sentAt: { type: string, format: date }
+        scansReceivedAt: { type: string, format: date }
+        negativesReturnedAt: { type: string, format: date }
+        price: { type: integer }
+        notes: { type: string }
+        scanners: { type: array, items: { $ref: "#/components/schemas/Scanner" } }
+        isOpen: { type: boolean }
+      example:
+        id: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+        rollId: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+        labId: 3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09
+        labName: Saigon Film Lab
+        type: develop_scan
+        process: C-41
+        sentAt: "2026-09-20"
+        scansReceivedAt: "2026-09-27"
+        price: 90000
+        notes: Push 1 stop
+        scanners:
+          - noritsu
+        isOpen: true
+
+    NegativesAtLabItem:
+      type: object
+      required: [processingId, rollId, labName, type, sentAt, daysSinceSent, stockName]
+      properties:
+        processingId: { type: string, format: uuid }
+        rollId: { type: string, format: uuid }
+        labName: { type: string }
+        type: { $ref: "#/components/schemas/ProcessingType" }
+        sentAt: { type: string, format: date }
+        daysSinceSent: { type: integer }
+        stockName: { type: string }
+      example:
+        processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+        rollId: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+        labName: Saigon Film Lab
+        type: develop_scan
+        sentAt: "2026-09-20"
+        daysSinceSent: 12
+        stockName: Kodak Portra 400
+
+    Scan:
+      type: object
+      required: [id, processingId, frameId, frameNumber, scanner, fileName, sizeBytes, fileUrl]
+      properties:
+        id: { type: string, format: uuid }
+        processingId: { type: string, format: uuid }
+        frameId: { type: string, format: uuid }
+        frameNumber: { type: integer }
+        scanner: { $ref: "#/components/schemas/Scanner" }
+        fileName: { type: string }
+        sizeBytes: { type: integer, format: int64 }
+        fileUrl: { type: string }
+      example:
+        id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+        processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+        frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+        frameNumber: 7
+        scanner: noritsu
+        fileName: 000007.jpg
+        sizeBytes: 2481920
+        fileUrl: /scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file
+
+    ImportPreviewInput:
+      type: object
+      required: [fileNames]
+      properties:
+        fileNames: { type: array, items: { type: string }, minItems: 1 }
+        startFrame:
+          type: integer
+          minimum: 0
+          description: Number files sequentially from here in file-name order (UC-31)
+        offset:
+          type: integer
+          description: Added to every number read from file names (UC-30 6a)
+      example:
+        fileNames:
+          - 000001.jpg
+          - 000002.jpg
+          - notes.txt
+        startFrame: 1
+
+    ImportPreviewItem:
+      type: object
+      required: [fileName]
+      properties:
+        fileName: { type: string }
+        frameNumber: { type: integer, description: Absent when no number could be read }
+        error: { type: string }
+      example:
+        fileName: 000001.jpg
+        frameNumber: 1
+
+    ImportFailure:
+      type: object
+      required: [fileName, reason]
+      properties:
+        fileName: { type: string }
+        reason: { type: string }
+      example:
+        fileName: 000009.jpg
+        reason: a scan already exists for this frame and scanner
+
+    ImportResult:
+      type: object
+      required: [imported, skipped, failed, scansReceivedAt]
+      properties:
+        imported: { type: array, items: { $ref: "#/components/schemas/Scan" } }
+        skipped: { type: array, items: { $ref: "#/components/schemas/ImportFailure" } }
+        failed: { type: array, items: { $ref: "#/components/schemas/ImportFailure" } }
+        scansReceivedAt: { type: string, format: date }
+      example:
+        imported:
+          - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+            processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+            frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+            frameNumber: 7
+            scanner: noritsu
+            fileName: 000007.jpg
+            sizeBytes: 2481920
+            fileUrl: /scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file
+        skipped:
+          - fileName: 000009.jpg
+            reason: a scan already exists for this frame and scanner
+        failed:
+          - fileName: notes.txt
+            reason: not a supported image (jpeg, png, webp, tiff)
+        scansReceivedAt: "2026-09-27"
+
+    FrameComparison:
+      type: object
+      required: [frameNumber, missing]
+      properties:
+        frameNumber: { type: integer }
+        noritsu: { $ref: "#/components/schemas/Scan" }
+        frontier: { $ref: "#/components/schemas/Scan" }
+        missing: { type: array, items: { $ref: "#/components/schemas/Scanner" } }
+        previousFrameNumber: { type: integer }
+        nextFrameNumber: { type: integer }
+      example:
+        frameNumber: 7
+        noritsu:
+          id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+          processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+          frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+          frameNumber: 7
+          scanner: noritsu
+          fileName: 000007.jpg
+          sizeBytes: 2481920
+          fileUrl: /scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file
+        missing:
+          - frontier
+        previousFrameNumber: 6
+        nextFrameNumber: 8
+
+    SearchResult:
+      type: object
+      required: [roll, scans]
+      properties:
+        roll: { $ref: "#/components/schemas/RollSummary" }
+        scans: { type: array, items: { $ref: "#/components/schemas/ScanRef" } }
+      example:
+        roll:
+          id: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
+          filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
+          stockBrand: Kodak
+          stockName: Portra 400
+          cameraId: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+          cameraName: Nikon FM2
+          format: 135
+          exposures: 36
+          status: in_camera
+          shotIso: 800
+          expiry:
+            year: 2027
+            month: 6
+          price: 150000
+          description: Hanoi street trip
+          startedAt: "2026-09-01"
+          negativesAtLab: false
+        scans:
+          - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+            frameNumber: 7
+            scanner: noritsu
+            processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+
+    RankedItem:
+      type: object
+      required: [id, label, rolls]
+      properties:
+        id: { type: string, format: uuid }
+        label: { type: string }
+        rolls: { type: integer }
+      example:
+        id: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+        label: Nikon FM2
+        rolls: 12
+
+    GearStats:
+      type: object
+      required: [cameras, lenses]
+      properties:
+        cameras: { type: array, items: { $ref: "#/components/schemas/RankedItem" } }
+        lenses: { type: array, items: { $ref: "#/components/schemas/RankedItem" } }
+      example:
+        cameras:
+          - id: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+            label: Nikon FM2
+            rolls: 12
+        lenses:
+          - id: a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
+            label: Nikon Nikkor 50mm f/1.4 AI-S
+            rolls: 9
+
+    YearTimeline:
+      type: object
+      required: [year, months]
+      properties:
+        year: { type: integer }
+        months: { type: array, items: { type: integer }, minItems: 12, maxItems: 12, description: Rolls started in Jan..Dec }
+      example:
+        year: 2026
+        months: [0, 1, 3, 2, 0, 4, 6, 5, 2, 1, 0, 0]
+
+    SpendBucket:
+      type: object
+      required: [filmCost, processingCost, incomplete]
+      properties:
+        filmCost: { type: integer }
+        processingCost: { type: integer }
+        incomplete: { type: boolean, description: Some prices are missing and counted as zero }
+      example:
+        filmCost: 750000
+        processingCost: 450000
+        incomplete: false
+
+    MonthSpending:
+      allOf:
+        - $ref: "#/components/schemas/SpendBucket"
+        - type: object
+          required: [month]
+          properties:
+            month: { type: integer }
+      example:
+        month: 9
+        filmCost: 150000
+        processingCost: 90000
+        incomplete: false
+
+    YearSpending:
+      allOf:
+        - $ref: "#/components/schemas/SpendBucket"
+        - type: object
+          required: [year, months]
+          properties:
+            year: { type: integer }
+            months: { type: array, items: { $ref: "#/components/schemas/MonthSpending" } }
+      example:
+        year: 2026
+        filmCost: 750000
+        processingCost: 450000
+        incomplete: false
+        months:
+          - month: 9
+            filmCost: 150000
+            processingCost: 90000
+            incomplete: false
+
+    AuditEntityType:
+      type: string
+      enum: [camera, lens, film_stock, lab, roll, processing, frame, scan, camera_lens, roll_lens]
+
+    AuditAction: { type: string, enum: [create, update, delete] }
+
+    AuditLog:
+      type: object
+      required: [id, entityType, entityId, action, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        entityType: { $ref: "#/components/schemas/AuditEntityType" }
+        entityId: { type: string, format: uuid, description: For camera_lens and roll_lens this is the camera or roll id }
+        action: { $ref: "#/components/schemas/AuditAction" }
+        before: { type: object, nullable: true, additionalProperties: true, description: "Row before the change, keyed by database column name; absent for create" }
+        after: { type: object, nullable: true, additionalProperties: true, description: "Row after the change, keyed by database column name; absent for a hard delete" }
+        actor: { type: string, description: Value of the X-Actor request header }
+        requestId: { type: string, description: X-Request-ID of the request that made the change }
+        createdAt: { type: string, format: date-time }
+      example:
+        id: 42
+        entityType: camera
+        entityId: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01
+        action: update
+        before: { id: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01, brand: Nikon, model: FM2, isActive: true }
+        after: { id: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01, brand: Nikon, model: FM3A, isActive: true }
+        actor: nam
+        requestId: 3f6c1a1e-9d0b-4b5e-8f6a-0c2d7e1b5a90
+        createdAt: "2026-10-02T09:15:00Z"
