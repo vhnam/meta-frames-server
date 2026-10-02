@@ -1,0 +1,6 @@
+version: "2"
+linters:
+  exclusions:
+    paths:
+      - internal/api/api.gen.go
+      - internal/db/gen
