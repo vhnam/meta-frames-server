@@ -59,6 +59,7 @@ func newHarness(test *testing.T) *harness {
 	if err != nil {
 		test.Fatal(err)
 	}
+	db.ConfigurePool(poolConfig)
 	if err := db.Migrate(poolConfig.ConnConfig); err != nil {
 		test.Fatal(err)
 	}

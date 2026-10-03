@@ -19,3 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Soft delete on every entity. The id stays reserved, reads skip deleted rows, and delete is refused while the record is still in use.
 - An audit log written by database triggers on insert, update, and delete, including the `X-Actor` header and the request id.
 - Local disk storage for scan files, embedded database migrations on startup, and a Compose Postgres for local development.
+
+### Fixed
+
+- `GET /inventory` (and any query that passes a list of ids) failed when the list was empty, because the simple query protocol could not encode a `uuid[]` with no elements.

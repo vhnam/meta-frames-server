@@ -9,7 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"meta-frames-server/internal/common/clock"
@@ -47,8 +46,7 @@ func run(cfg config.Config) error {
 	if err != nil {
 		return err
 	}
-	// Safe with Neon's PgBouncer pooler (transaction mode): no prepared-statement cache.
-	poolCfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
+	db.ConfigurePool(poolCfg)
 	if cfg.DBMaxConns > 0 {
 		poolCfg.MaxConns = cfg.DBMaxConns
 	}

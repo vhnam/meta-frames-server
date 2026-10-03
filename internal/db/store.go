@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"meta-frames-server/internal/common/requestctx"
@@ -22,6 +24,22 @@ type Store interface {
 type PostgresStore struct {
 	pool    *pgxpool.Pool
 	queries *gen.Queries
+}
+
+// ConfigurePool uses the simple query protocol so the pool is safe behind PgBouncer in
+// transaction mode, and teaches that protocol how to encode uuid[]. An empty []uuid.UUID
+// has no element pgx can inspect, so without this registration a filter that matches
+// nothing (GET /inventory on an empty catalog) fails while encoding the argument.
+func ConfigurePool(config *pgxpool.Config) {
+	config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
+	config.AfterConnect = func(_ context.Context, conn *pgx.Conn) error {
+		registerUUIDArray(conn.TypeMap())
+		return nil
+	}
+}
+
+func registerUUIDArray(typeMap *pgtype.Map) {
+	typeMap.RegisterDefaultPgType([]uuid.UUID{}, "_uuid")
 }
 
 func NewPostgresStore(pool *pgxpool.Pool) *PostgresStore {
