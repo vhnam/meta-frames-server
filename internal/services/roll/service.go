@@ -196,7 +196,7 @@ func (service *Service) AddBulk(ctx context.Context, input BulkInput) ([]Summary
 			return err
 		}
 		return queries.FinishIdempotencyKey(ctx, gen.FinishIdempotencyKeyParams{
-			Key: input.IdempotencyKey, Status: pointers.To(int32(201)), Response: stored,
+			Key: input.IdempotencyKey, Status: pointers.To(int32(201)), Response: json.RawMessage(stored),
 		})
 	})
 	return created, err
@@ -224,7 +224,7 @@ func replayBulkRolls(ctx context.Context, queries gen.Querier, key string) ([]Su
 		return nil, apperror.Conflict("request_in_progress", "a request with this Idempotency-Key is still running")
 	}
 	var rollIDs []uuid.UUID
-	if err := json.Unmarshal(stored.Response, &rollIDs); err != nil {
+	if err := json.Unmarshal([]byte(stored.Response), &rollIDs); err != nil {
 		return nil, err
 	}
 	return summariesByID(ctx, queries, rollIDs)

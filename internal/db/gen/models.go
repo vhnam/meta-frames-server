@@ -5,6 +5,7 @@
 package gen
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -71,7 +72,7 @@ type Frame struct {
 type IdempotencyKey struct {
 	Key       string
 	Status    *int32
-	Response  []byte
+	Response  json.RawMessage
 	CreatedAt pgtype.Timestamptz
 }
 

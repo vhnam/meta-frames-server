@@ -33,3 +33,8 @@ sql:
               import: time
               type: Time
               pointer: true
+          # jsonb as []byte is encoded as bytea hex in the simple protocol, which is not valid JSON.
+          - column: idempotency_key.response
+            go_type:
+              import: encoding/json
+              type: RawMessage

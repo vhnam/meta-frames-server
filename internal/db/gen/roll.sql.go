@@ -7,6 +7,7 @@ package gen
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -46,7 +47,7 @@ UPDATE idempotency_key SET status = $2, response = $3 WHERE key = $1
 type FinishIdempotencyKeyParams struct {
 	Key      string
 	Status   *int32
-	Response []byte
+	Response json.RawMessage
 }
 
 func (q *Queries) FinishIdempotencyKey(ctx context.Context, arg FinishIdempotencyKeyParams) error {
