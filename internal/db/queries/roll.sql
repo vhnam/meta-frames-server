@@ -50,7 +50,7 @@ WHERE r.deleted_at IS NULL
   AND (sqlc.narg(focal_length)::int IS NULL OR EXISTS (
         SELECT 1 FROM roll_lens rl JOIN lens l ON l.id = rl.lens_id
         WHERE rl.roll_id = r.id AND l.focal_length = sqlc.narg(focal_length)))
-ORDER BY r.started_at DESC NULLS LAST, r.created_at DESC;
+ORDER BY r.created_at DESC;
 
 -- name: ListRollLenses :many
 SELECT l.* FROM lens l JOIN roll_lens rl ON rl.lens_id = l.id
