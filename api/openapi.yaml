@@ -1368,8 +1368,9 @@ paths:
                   exposures: 36
                   quantity: 5
                   price: 150000
-                  expiryYear: 2027
-                  expiryMonth: 6
+                  expiry:
+                    year: 2027
+                    month: 6
               minimal:
                 summary: Only the required fields (36 exposures is assumed for 135)
                 value:
@@ -1553,8 +1554,9 @@ paths:
                   format: 135
                   exposures: 36
                   price: 150000
-                  expiryYear: 2027
-                  expiryMonth: 6
+                  expiry:
+                    year: 2027
+                    month: 6
                   shotIso: 800
                   startedAt: "2026-09-01"
                   finishedAt: "2026-09-28"
@@ -3164,16 +3166,16 @@ components:
         exposures: { type: integer, minimum: 1, description: Defaults to 36 for 135 }
         quantity: { type: integer, minimum: 1, maximum: 200 }
         price: { type: integer, minimum: 0, description: Unit price per roll in VND }
-        expiryYear: { type: integer }
-        expiryMonth: { type: integer, minimum: 1, maximum: 12 }
+        expiry: { $ref: "#/components/schemas/ExpiryMonth" }
       example:
         filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
         format: 135
         exposures: 36
         quantity: 5
         price: 150000
-        expiryYear: 2027
-        expiryMonth: 6
+        expiry:
+          year: 2027
+          month: 6
 
     RollInput:
       type: object
@@ -3183,8 +3185,7 @@ components:
         format: { type: integer, minimum: 1 }
         exposures: { type: integer, minimum: 1 }
         price: { type: integer, minimum: 0 }
-        expiryYear: { type: integer }
-        expiryMonth: { type: integer, minimum: 1, maximum: 12 }
+        expiry: { $ref: "#/components/schemas/ExpiryMonth" }
         shotIso: { type: integer, minimum: 1 }
         startedAt: { type: string, format: date }
         finishedAt: { type: string, format: date }
@@ -3194,8 +3195,9 @@ components:
         format: 135
         exposures: 36
         price: 150000
-        expiryYear: 2027
-        expiryMonth: 6
+        expiry:
+          year: 2027
+          month: 6
         shotIso: 800
         startedAt: "2026-09-01"
         description: Hanoi street trip

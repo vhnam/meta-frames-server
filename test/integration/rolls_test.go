@@ -72,7 +72,7 @@ func TestBulkAddingRollsIsRetrySafeAndValidated(test *testing.T) {
 	harness := newHarness(test)
 	seeded := seedGear(harness)
 
-	bulk := map[string]any{"filmStockId": seeded.stockID, "format": 135, "quantity": 3, "price": 150000, "expiryYear": 2027, "expiryMonth": 6}
+	bulk := map[string]any{"filmStockId": seeded.stockID, "format": 135, "quantity": 3, "price": 150000, "expiry": map[string]any{"year": 2027, "month": 6}}
 	first := harness.postBulk("key-1", bulk)
 	retry := harness.postBulk("key-1", bulk)
 	if first.Status != http.StatusCreated || !bytes.Equal(first.Raw, retry.Raw) {
@@ -93,7 +93,7 @@ func TestBulkAddingRollsIsRetrySafeAndValidated(test *testing.T) {
 		wantStatus int
 	}{
 		{"120 film needs exposures", map[string]any{"filmStockId": seeded.stockID, "format": 120, "quantity": 1}, http.StatusUnprocessableEntity},
-		{"month needs a year", map[string]any{"filmStockId": seeded.stockID, "format": 135, "quantity": 1, "expiryMonth": 3}, http.StatusUnprocessableEntity},
+		{"month needs a year", map[string]any{"filmStockId": seeded.stockID, "format": 135, "quantity": 1, "expiry": map[string]any{"month": 3}}, http.StatusBadRequest},
 		{"quantity must be positive", map[string]any{"filmStockId": seeded.stockID, "format": 135, "quantity": 0}, http.StatusBadRequest},
 		{"unknown stock", map[string]any{"filmStockId": newID(), "format": 135, "quantity": 1}, http.StatusUnprocessableEntity},
 	}
@@ -108,8 +108,8 @@ func TestLoadingFinishingAndExpiringRolls(test *testing.T) {
 	harness := newHarness(test)
 	seeded := seedGear(harness)
 
-	harness.postBulk("", map[string]any{"filmStockId": seeded.stockID, "format": 135, "quantity": 1, "expiryYear": 2020}) // expired
-	harness.postBulk("", map[string]any{"filmStockId": seeded.stockID, "format": 135, "quantity": 1})                     // no expiry
+	harness.postBulk("", map[string]any{"filmStockId": seeded.stockID, "format": 135, "quantity": 1, "expiry": map[string]any{"year": 2020}}) // expired
+	harness.postBulk("", map[string]any{"filmStockId": seeded.stockID, "format": 135, "quantity": 1})                                         // no expiry
 	freshRolls := harness.addRolls(seeded, 2)
 
 	// UC-21.
@@ -121,9 +121,13 @@ func TestLoadingFinishingAndExpiringRolls(test *testing.T) {
 	expiredRollID := asObject(asObject(expiring[0])["roll"])["id"].(string)
 
 	// UC-16.
-	harness.expect(harness.call("PUT", "/rolls/"+freshRolls[1], map[string]any{
+	edited := harness.expect(harness.call("PUT", "/rolls/"+freshRolls[1], map[string]any{
 		"filmStockId": seeded.stockID, "format": 135, "exposures": 24, "price": 160000,
+		"expiry": map[string]any{"year": 2028, "month": 9},
 	}), http.StatusOK)
+	if expiry := asObject(asObject(edited.Body["roll"])["expiry"]); expiry["year"] != float64(2028) || expiry["month"] != float64(9) {
+		test.Fatalf("expiry = %v", edited.Body["roll"])
+	}
 
 	// UC-17: a fixed-lens camera assigns its own lens; a second roll is blocked.
 	loaded := harness.expect(harness.call("PUT", "/rolls/"+freshRolls[0]+"/load", map[string]any{"cameraId": seeded.fixedCamera, "shotIso": 400}), http.StatusOK)

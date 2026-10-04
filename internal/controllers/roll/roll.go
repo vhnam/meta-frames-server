@@ -21,6 +21,13 @@ type Controller struct {
 // New builds the controller around its service.
 func New(rolls *rollsvc.Service) *Controller { return &Controller{rolls: rolls} }
 
+func expiryInput(expiry *api.ExpiryMonth) (year, month *int) {
+	if expiry == nil {
+		return nil, nil
+	}
+	return &expiry.Year, expiry.Month
+}
+
 func ToAPIRollSummary(summary rollsvc.Summary) api.RollSummary {
 	mapped := api.RollSummary{
 		Id: summary.ID, FilmStockId: summary.FilmStockID, StockBrand: summary.StockBrand, StockName: summary.StockName,
@@ -94,9 +101,10 @@ func (controller *Controller) GetRoll(ctx context.Context, request api.GetRollRe
 
 func (controller *Controller) AddRolls(ctx context.Context, request api.AddRollsRequestObject) (api.AddRollsResponseObject, error) {
 	body := request.Body
+	expiryYear, expiryMonth := expiryInput(body.Expiry)
 	input := rollsvc.BulkInput{
 		FilmStockID: body.FilmStockId, Format: body.Format, Exposures: body.Exposures, Quantity: body.Quantity,
-		Price: body.Price, ExpiryYear: body.ExpiryYear, ExpiryMonth: body.ExpiryMonth,
+		Price: body.Price, ExpiryYear: expiryYear, ExpiryMonth: expiryMonth,
 	}
 	if request.Params.IdempotencyKey != nil {
 		input.IdempotencyKey = *request.Params.IdempotencyKey
@@ -110,9 +118,10 @@ func (controller *Controller) AddRolls(ctx context.Context, request api.AddRolls
 
 func (controller *Controller) PutRoll(ctx context.Context, request api.PutRollRequestObject) (api.PutRollResponseObject, error) {
 	body := request.Body
+	expiryYear, expiryMonth := expiryInput(body.Expiry)
 	detail, err := controller.rolls.Update(ctx, request.Id, rollsvc.Input{
 		FilmStockID: body.FilmStockId, Format: body.Format, Exposures: body.Exposures, Price: body.Price,
-		ExpiryYear: body.ExpiryYear, ExpiryMonth: body.ExpiryMonth, ShotISO: body.ShotIso,
+		ExpiryYear: expiryYear, ExpiryMonth: expiryMonth, ShotISO: body.ShotIso,
 		StartedAt: convert.FromAPIDate(body.StartedAt), FinishedAt: convert.FromAPIDate(body.FinishedAt), Description: body.Description,
 	})
 	if err != nil {
