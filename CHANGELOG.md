@@ -29,3 +29,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `GET /inventory` (and any query that passes a list of ids) failed when the list was empty, because the simple query protocol could not encode a `uuid[]` with no elements.
 - `POST /rolls/bulk` with an `Idempotency-Key` failed while saving the response, because the JSON was sent as bytea hex.
+- `GET /cameras` returned 500 when a loaded roll had no start date. The camera now reports `daysLoaded` as 0 in that case.

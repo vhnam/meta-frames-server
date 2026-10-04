@@ -29,7 +29,7 @@ SELECT EXISTS (SELECT 1 FROM roll WHERE camera_id = $1 AND status = 'in_camera')
 -- name: ListLoadedRolls :many
 SELECT r.camera_id, r.id AS roll_id, r.shot_iso, r.started_at,
        fs.id AS stock_id, fs.brand AS stock_brand, fs.name AS stock_name, fs.box_iso,
-       (CURRENT_DATE - r.started_at)::int AS days_loaded
+       COALESCE(CURRENT_DATE - r.started_at, 0)::int AS days_loaded
 FROM roll r
 JOIN film_stock fs ON fs.id = r.film_stock_id
 WHERE r.status = 'in_camera' AND r.camera_id IS NOT NULL;

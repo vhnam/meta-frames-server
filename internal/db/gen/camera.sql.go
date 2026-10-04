@@ -249,7 +249,7 @@ func (q *Queries) ListCameras(ctx context.Context) ([]Camera, error) {
 const listLoadedRolls = `-- name: ListLoadedRolls :many
 SELECT r.camera_id, r.id AS roll_id, r.shot_iso, r.started_at,
        fs.id AS stock_id, fs.brand AS stock_brand, fs.name AS stock_name, fs.box_iso,
-       (CURRENT_DATE - r.started_at)::int AS days_loaded
+       COALESCE(CURRENT_DATE - r.started_at, 0)::int AS days_loaded
 FROM roll r
 JOIN film_stock fs ON fs.id = r.film_stock_id
 WHERE r.status = 'in_camera' AND r.camera_id IS NOT NULL
