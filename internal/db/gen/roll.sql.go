@@ -408,7 +408,7 @@ WHERE r.deleted_at IS NULL
   AND ($9::int IS NULL OR EXISTS (
         SELECT 1 FROM roll_lens rl JOIN lens l ON l.id = rl.lens_id
         WHERE rl.roll_id = r.id AND l.focal_length = $9))
-ORDER BY r.started_at DESC NULLS LAST, r.created_at DESC
+ORDER BY r.created_at DESC
 `
 
 type ListRollSummariesParams struct {

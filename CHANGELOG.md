@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `PUT /rolls/{id}` and `POST /rolls/bulk` take expiry as `{ year, month }`, the same object returned on roll reads.
+- `GET /rolls` sorts by creation time, newest first. It no longer puts rolls with a start date first.
 
 ### Fixed
 
