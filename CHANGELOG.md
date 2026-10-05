@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Search over rolls, plus gear, film, timeline, and spending statistics.
 - Soft delete on every entity. The id stays reserved, reads skip deleted rows, and delete is refused while the record is still in use.
 - An audit log written by database triggers on insert, update, and delete, including the `X-Actor` header and the request id.
+- Scan orders on processing jobs. Each job records the scanners that were ordered, whether each is hi-res, and how many scans have been imported for it. `Processing.scanners` is replaced by `scanOrders` (breaking, API 0.4.0). Scan and develop-and-scan jobs need at least one order; develop and print jobs need none. A scanner that already has scans cannot be dropped from the order, and a scan can only be imported for an ordered scanner.
 - Local disk storage for scan files, embedded database migrations on startup, and a Compose Postgres for local development.
 
 ### Changed
