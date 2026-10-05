@@ -23,8 +23,7 @@ SELECT * FROM processing WHERE id = $1 AND deleted_at IS NULL;
 SELECT * FROM processing WHERE id = $1 AND deleted_at IS NULL FOR UPDATE;
 
 -- name: ListRollProcessing :many
-SELECT p.*, COALESCE(l.name, '') AS lab_name,
-       COALESCE((SELECT array_agg(DISTINCT s.scanner ORDER BY s.scanner) FROM scan s WHERE s.processing_id = p.id AND s.deleted_at IS NULL), '{}')::text[] AS scanners
+SELECT p.*, COALESCE(l.name, '') AS lab_name
 FROM processing p LEFT JOIN lab l ON l.id = p.lab_id
 WHERE p.roll_id = $1 AND p.deleted_at IS NULL ORDER BY p.sent_at, p.created_at;
 
@@ -89,3 +88,23 @@ SELECT * FROM scan WHERE frame_id = $1 AND deleted_at IS NULL ORDER BY scanner;
 -- name: ListJobFrameNumbers :many
 SELECT DISTINCT f.number FROM scan s JOIN frame f ON f.id = s.frame_id
 WHERE s.processing_id = $1 AND s.deleted_at IS NULL ORDER BY f.number;
+
+-- name: ListScanOrders :many
+SELECT o.processing_id, o.scanner, o.hi_res,
+       (SELECT count(*) FROM scan s WHERE s.processing_id = o.processing_id AND s.scanner = o.scanner AND s.deleted_at IS NULL)::int AS scan_count
+FROM processing_scan_order o
+WHERE o.processing_id = ANY(sqlc.arg(processing_ids)::uuid[])
+ORDER BY o.processing_id, o.scanner;
+
+-- name: UpsertScanOrder :exec
+INSERT INTO processing_scan_order (processing_id, scanner, hi_res) VALUES ($1, $2, $3)
+ON CONFLICT (processing_id, scanner) DO UPDATE SET hi_res = EXCLUDED.hi_res;
+
+-- name: DeleteScanOrder :execrows
+DELETE FROM processing_scan_order WHERE processing_id = $1 AND scanner = $2;
+
+-- name: ScanOrderExists :one
+SELECT EXISTS (SELECT 1 FROM processing_scan_order WHERE processing_id = $1 AND scanner = $2);
+
+-- name: ScannerHasScans :one
+SELECT EXISTS (SELECT 1 FROM scan WHERE processing_id = $1 AND scanner = $2 AND deleted_at IS NULL);

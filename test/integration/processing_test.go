@@ -22,15 +22,15 @@ func TestProcessingMovesARollThroughTheLifecycle(test *testing.T) {
 	harness.expect(harness.call("PUT", "/labs/"+labID, map[string]any{"name": "Lab A", "address": "HCMC"}), http.StatusCreated)
 
 	// UC-24: process defaults from the stock; retry is idempotent; only one open job at a time.
-	sent := harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+jobID, map[string]any{"labId": labID, "type": "develop_scan", "price": 90000}), http.StatusCreated)
-	if sent.Body["process"] != "C-41" || sent.Body["isOpen"] != true {
+	sent := harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+jobID, map[string]any{"labId": labID, "type": "develop_scan", "price": 90000, "scanOrders": []map[string]any{{"scanner": "noritsu", "hiRes": true}, {"scanner": "frontier"}}}), http.StatusCreated)
+	if sent.Body["process"] != "C-41" || sent.Body["isOpen"] != true || len(asList(sent.Body["scanOrders"])) != 2 {
 		test.Fatalf("job = %s", sent.Raw)
 	}
-	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+jobID, map[string]any{"labId": labID, "type": "develop_scan", "price": 90000}), http.StatusOK)
+	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+jobID, map[string]any{"labId": labID, "type": "develop_scan", "price": 90000, "scanOrders": []map[string]any{{"scanner": "noritsu", "hiRes": true}, {"scanner": "frontier"}}}), http.StatusOK)
 	if status := harness.rollStatus(rollID); status != "at_lab" {
 		test.Fatalf("status = %s, want at_lab", status)
 	}
-	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+newID(), map[string]any{"type": "scan"}), http.StatusConflict)
+	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+newID(), map[string]any{"type": "scan", "scanOrders": []map[string]any{{"scanner": "noritsu"}}}), http.StatusConflict)
 
 	// UC-30 / UC-31: preview, then import.
 	preview := harness.expect(harness.call("POST", "/processing/"+jobID+"/scans/preview", map[string]any{
@@ -130,7 +130,7 @@ func TestProcessingMovesARollThroughTheLifecycle(test *testing.T) {
 	}
 	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+newID(), map[string]any{"type": "develop"}), http.StatusConflict)
 	rescanID := newID()
-	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+rescanID, map[string]any{"type": "scan", "labId": labID, "notes": "4000dpi"}), http.StatusCreated)
+	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+rescanID, map[string]any{"type": "scan", "labId": labID, "notes": "4000dpi", "scanOrders": []map[string]any{{"scanner": "noritsu"}, {"scanner": "frontier"}}}), http.StatusCreated)
 	if status := harness.rollStatus(rollID); status != "at_lab" {
 		test.Fatalf("resend status = %s", status)
 	}

@@ -25,13 +25,13 @@ func ToAPIProcessing(view processingsvc.View) api.Processing {
 		Id: job.ID, RollId: job.RollID, LabId: job.LabID, Type: api.ProcessingType(job.Type), Process: api.Process(job.Process),
 		SentAt: convert.APIDate(job.SentAt), ScansReceivedAt: convert.ToAPIDate(job.ScansReceivedAt),
 		NegativesReturnedAt: convert.ToAPIDate(job.NegativesReturnedAt), Price: pointers.Int(job.Price), Notes: job.Notes,
-		Scanners: make([]api.Scanner, len(view.Scanners)), IsOpen: view.IsOpen,
+		ScanOrders: make([]api.ScanOrder, len(view.ScanOrders)), IsOpen: view.IsOpen,
 	}
 	if view.LabName != "" {
 		mapped.LabName = pointers.To(view.LabName)
 	}
-	for index, scanner := range view.Scanners {
-		mapped.Scanners[index] = api.Scanner(scanner)
+	for index, order := range view.ScanOrders {
+		mapped.ScanOrders[index] = api.ScanOrder{Scanner: api.Scanner(order.Scanner), HiRes: order.HiRes, ScanCount: order.ScanCount}
 	}
 	return mapped
 }
@@ -63,6 +63,13 @@ func (controller *Controller) PutProcessing(ctx context.Context, request api.Put
 	}
 	if body.Process != nil {
 		input.Process = pointers.To(string(*body.Process))
+	}
+	if body.ScanOrders != nil {
+		for _, order := range *body.ScanOrders {
+			input.ScanOrders = append(input.ScanOrders, processingsvc.ScanOrderInput{
+				Scanner: string(order.Scanner), HiRes: order.HiRes != nil && *order.HiRes,
+			})
+		}
 	}
 	view, created, err := controller.processing.Save(ctx, request.Id, request.JobId, input)
 	if err != nil {

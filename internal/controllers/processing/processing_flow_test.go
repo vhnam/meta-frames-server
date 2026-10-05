@@ -36,7 +36,7 @@ func newFixture() fixture {
 func (f fixture) send(test *testing.T, jobID uuid.UUID) {
 	test.Helper()
 	_, err := f.controller.PutProcessing(context.Background(), api.PutProcessingRequestObject{
-		Id: f.rollID, JobId: jobID, Body: &api.ProcessingInput{Type: "develop_scan", LabId: &f.labID},
+		Id: f.rollID, JobId: jobID, Body: &api.ProcessingInput{Type: "develop_scan", LabId: &f.labID, ScanOrders: &[]api.ScanOrderInput{{Scanner: api.Noritsu}}},
 	})
 	if err != nil {
 		test.Fatal(err)
@@ -48,7 +48,7 @@ func TestPutProcessingCreatesThenUpdates(test *testing.T) {
 	ctx := context.Background()
 	jobID := uuid.New()
 	process := api.Process("E-6")
-	request := api.PutProcessingRequestObject{Id: f.rollID, JobId: jobID, Body: &api.ProcessingInput{Type: "develop_scan", Process: &process, LabId: &f.labID}}
+	request := api.PutProcessingRequestObject{Id: f.rollID, JobId: jobID, Body: &api.ProcessingInput{Type: "develop_scan", Process: &process, LabId: &f.labID, ScanOrders: &[]api.ScanOrderInput{{Scanner: api.Noritsu}}}}
 
 	first, err := f.controller.PutProcessing(ctx, request)
 	if created, ok := first.(api.PutProcessing201JSONResponse); err != nil || !ok || created.Process != "E-6" {

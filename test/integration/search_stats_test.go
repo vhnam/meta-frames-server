@@ -14,7 +14,7 @@ func TestSearchAndStatistics(test *testing.T) {
 	fortyMmRollID := harness.finishedRoll(seeded)
 	labID, jobID := newID(), newID()
 	harness.expect(harness.call("PUT", "/labs/"+labID, map[string]any{"name": "Lab A"}), http.StatusCreated)
-	harness.expect(harness.call("PUT", "/rolls/"+fortyMmRollID+"/processing/"+jobID, map[string]any{"labId": labID, "type": "develop_scan", "price": 90000}), http.StatusCreated)
+	harness.expect(harness.call("PUT", "/rolls/"+fortyMmRollID+"/processing/"+jobID, map[string]any{"labId": labID, "type": "develop_scan", "price": 90000, "scanOrders": []map[string]any{{"scanner": "noritsu"}}}), http.StatusCreated)
 	harness.expect(harness.uploadScans(jobID, "noritsu", "", []upload{
 		{fileName: "000001.jpg", content: jpegBytes}, {fileName: "000002.jpg", content: jpegBytes},
 	}), http.StatusOK)
