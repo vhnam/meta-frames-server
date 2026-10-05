@@ -216,6 +216,18 @@ func (service *Service) PrepareImport(ctx context.Context, jobID uuid.UUID) (gen
 	return job, nil
 }
 
+// CheckScannerOrdered rejects an import for a scanner that was not ordered on the job.
+func (service *Service) CheckScannerOrdered(ctx context.Context, jobID uuid.UUID, scanner string) error {
+	ordered, err := service.store.Queries().ScanOrderExists(ctx, gen.ScanOrderExistsParams{ProcessingID: jobID, Scanner: scanner})
+	if err != nil {
+		return err
+	}
+	if !ordered {
+		return apperror.Unprocessable("scanner_not_ordered", "this scanner was not ordered for the job")
+	}
+	return nil
+}
+
 // ImportFile stores one file and records its scan. Each file commits on its own so earlier
 // successes survive a later failure (UC-30 3a). A *FileRejectedError means this file alone failed.
 func (service *Service) ImportFile(ctx context.Context, job gen.Processing, options ImportOptions, frameNumber int, fileName string, content io.Reader) (ImportOutcome, error) {
