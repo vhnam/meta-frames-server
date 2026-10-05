@@ -180,6 +180,8 @@ func (controller *Controller) ImportScans(ctx context.Context, request api.Impor
 		form   importForm
 		result = api.ImportResult{Imported: []api.Scan{}, Skipped: []api.ImportFailure{}, Failed: []api.ImportFailure{}}
 		files  int
+
+		checkedScanner string
 	)
 	for {
 		part, err := request.Body.NextPart()
@@ -198,6 +200,12 @@ func (controller *Controller) ImportScans(ctx context.Context, request api.Impor
 
 		if form.scanner == "" {
 			return nil, apperror.Unprocessable("scanner_first", "the scanner field must come before the files")
+		}
+		if checkedScanner != form.scanner {
+			if err := controller.scans.CheckScannerOrdered(ctx, job.ID, form.scanner); err != nil {
+				return nil, err
+			}
+			checkedScanner = form.scanner
 		}
 		files++
 		fileName := part.FileName()

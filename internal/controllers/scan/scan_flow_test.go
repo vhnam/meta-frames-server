@@ -35,6 +35,9 @@ func newFixture(jobType string) fixture {
 	rollID, jobID := uuid.New(), uuid.New()
 	memory.Rolls[rollID] = gen.Roll{ID: rollID, Status: domain.RollStatusAtLab}
 	memory.Jobs[jobID] = gen.Processing{ID: jobID, RollID: rollID, Type: jobType, SentAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)}
+	for _, scanner := range []string{domain.ScannerNoritsu, domain.ScannerFrontier} {
+		memory.ScanOrders = append(memory.ScanOrders, gen.ProcessingScanOrder{ProcessingID: jobID, Scanner: scanner})
+	}
 	return fixture{controller: New(all.Scans), memory: memory, rollID: rollID, jobID: jobID}
 }
 

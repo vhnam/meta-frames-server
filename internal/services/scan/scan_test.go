@@ -269,6 +269,7 @@ func newScanFixture(jobType string) scanFixture {
 	queries.Rolls[rollID] = gen.Roll{ID: rollID, Status: domain.RollStatusAtLab}
 	job := gen.Processing{ID: jobID, RollID: rollID, Type: jobType, SentAt: day(2026, time.September, 1)}
 	queries.Jobs[jobID] = job
+	queries.ScanOrders = []gen.ProcessingScanOrder{{ProcessingID: jobID, Scanner: domain.ScannerNoritsu}}
 	return scanFixture{queries: queries, files: files, service: service, job: job}
 }
 
@@ -461,4 +462,15 @@ func TestListFramesAndGetFrame(test *testing.T) {
 	if _, err := fixture.service.ListFrames(ctx, uuid.New()); err == nil {
 		test.Fatal("an unknown roll must fail")
 	}
+}
+
+func TestCheckScannerOrdered(test *testing.T) {
+	fixture := newScanFixture(domain.JobTypeDevelopScan)
+	ctx := context.Background()
+
+	if err := fixture.service.CheckScannerOrdered(ctx, fixture.job.ID, domain.ScannerNoritsu); err != nil {
+		test.Fatal(err)
+	}
+	err := fixture.service.CheckScannerOrdered(ctx, fixture.job.ID, domain.ScannerFrontier)
+	assertAppError(test, err, apperror.KindUnprocessable, "scanner_not_ordered")
 }
