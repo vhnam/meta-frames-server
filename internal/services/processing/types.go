@@ -14,11 +14,24 @@ type Input struct {
 	SentAt  *time.Time
 	Price   *int
 	Notes   *string
+	// ScanOrders replaces the job's ordered scanners; nil means none.
+	ScanOrders []ScanOrderInput
+}
+
+type ScanOrderInput struct {
+	Scanner string
+	HiRes   bool
+}
+
+type ScanOrder struct {
+	Scanner   string
+	HiRes     bool
+	ScanCount int
 }
 
 type View struct {
-	Job      gen.Processing
-	LabName  string
-	Scanners []string
-	IsOpen   bool
+	Job        gen.Processing
+	LabName    string
+	ScanOrders []ScanOrder
+	IsOpen     bool
 }

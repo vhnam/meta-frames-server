@@ -13,6 +13,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deleteScanOrder = `-- name: DeleteScanOrder :execrows
+DELETE FROM processing_scan_order WHERE processing_id = $1 AND scanner = $2
+`
+
+type DeleteScanOrderParams struct {
+	ProcessingID uuid.UUID
+	Scanner      string
+}
+
+func (q *Queries) DeleteScanOrder(ctx context.Context, arg DeleteScanOrderParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteScanOrder, arg.ProcessingID, arg.Scanner)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getLab = `-- name: GetLab :one
 SELECT id, name, address, created_at, updated_at, deleted_at FROM lab WHERE id = $1 AND deleted_at IS NULL
 `
@@ -412,8 +429,7 @@ func (q *Queries) ListProcessingScans(ctx context.Context, arg ListProcessingSca
 }
 
 const listRollProcessing = `-- name: ListRollProcessing :many
-SELECT p.id, p.roll_id, p.lab_id, p.type, p.process, p.sent_at, p.scans_received_at, p.negatives_returned_at, p.price, p.notes, p.created_at, p.updated_at, p.deleted_at, COALESCE(l.name, '') AS lab_name,
-       COALESCE((SELECT array_agg(DISTINCT s.scanner ORDER BY s.scanner) FROM scan s WHERE s.processing_id = p.id AND s.deleted_at IS NULL), '{}')::text[] AS scanners
+SELECT p.id, p.roll_id, p.lab_id, p.type, p.process, p.sent_at, p.scans_received_at, p.negatives_returned_at, p.price, p.notes, p.created_at, p.updated_at, p.deleted_at, COALESCE(l.name, '') AS lab_name
 FROM processing p LEFT JOIN lab l ON l.id = p.lab_id
 WHERE p.roll_id = $1 AND p.deleted_at IS NULL ORDER BY p.sent_at, p.created_at
 `
@@ -433,7 +449,6 @@ type ListRollProcessingRow struct {
 	UpdatedAt           pgtype.Timestamptz
 	DeletedAt           pgtype.Timestamptz
 	LabName             string
-	Scanners            []string
 }
 
 func (q *Queries) ListRollProcessing(ctx context.Context, rollID uuid.UUID) ([]ListRollProcessingRow, error) {
@@ -460,7 +475,46 @@ func (q *Queries) ListRollProcessing(ctx context.Context, rollID uuid.UUID) ([]L
 			&i.UpdatedAt,
 			&i.DeletedAt,
 			&i.LabName,
-			&i.Scanners,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listScanOrders = `-- name: ListScanOrders :many
+SELECT o.processing_id, o.scanner, o.hi_res,
+       (SELECT count(*) FROM scan s WHERE s.processing_id = o.processing_id AND s.scanner = o.scanner AND s.deleted_at IS NULL)::int AS scan_count
+FROM processing_scan_order o
+WHERE o.processing_id = ANY($1::uuid[])
+ORDER BY o.processing_id, o.scanner
+`
+
+type ListScanOrdersRow struct {
+	ProcessingID uuid.UUID
+	Scanner      string
+	HiRes        bool
+	ScanCount    int32
+}
+
+func (q *Queries) ListScanOrders(ctx context.Context, processingIds []uuid.UUID) ([]ListScanOrdersRow, error) {
+	rows, err := q.db.Query(ctx, listScanOrders, processingIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListScanOrdersRow
+	for rows.Next() {
+		var i ListScanOrdersRow
+		if err := rows.Scan(
+			&i.ProcessingID,
+			&i.Scanner,
+			&i.HiRes,
+			&i.ScanCount,
 		); err != nil {
 			return nil, err
 		}
@@ -573,6 +627,38 @@ func (q *Queries) ReplaceScan(ctx context.Context, arg ReplaceScanParams) (Scan,
 		&i.DeletedAt,
 	)
 	return i, err
+}
+
+const scanOrderExists = `-- name: ScanOrderExists :one
+SELECT EXISTS (SELECT 1 FROM processing_scan_order WHERE processing_id = $1 AND scanner = $2)
+`
+
+type ScanOrderExistsParams struct {
+	ProcessingID uuid.UUID
+	Scanner      string
+}
+
+func (q *Queries) ScanOrderExists(ctx context.Context, arg ScanOrderExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, scanOrderExists, arg.ProcessingID, arg.Scanner)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const scannerHasScans = `-- name: ScannerHasScans :one
+SELECT EXISTS (SELECT 1 FROM scan WHERE processing_id = $1 AND scanner = $2 AND deleted_at IS NULL)
+`
+
+type ScannerHasScansParams struct {
+	ProcessingID uuid.UUID
+	Scanner      string
+}
+
+func (q *Queries) ScannerHasScans(ctx context.Context, arg ScannerHasScansParams) (bool, error) {
+	row := q.db.QueryRow(ctx, scannerHasScans, arg.ProcessingID, arg.Scanner)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const setNegativesReturned = `-- name: SetNegativesReturned :one
@@ -733,4 +819,20 @@ func (q *Queries) UpdateProcessing(ctx context.Context, arg UpdateProcessingPara
 		&i.DeletedAt,
 	)
 	return i, err
+}
+
+const upsertScanOrder = `-- name: UpsertScanOrder :exec
+INSERT INTO processing_scan_order (processing_id, scanner, hi_res) VALUES ($1, $2, $3)
+ON CONFLICT (processing_id, scanner) DO UPDATE SET hi_res = EXCLUDED.hi_res
+`
+
+type UpsertScanOrderParams struct {
+	ProcessingID uuid.UUID
+	Scanner      string
+	HiRes        bool
+}
+
+func (q *Queries) UpsertScanOrder(ctx context.Context, arg UpsertScanOrderParams) error {
+	_, err := q.db.Exec(ctx, upsertScanOrder, arg.ProcessingID, arg.Scanner, arg.HiRes)
+	return err
 }

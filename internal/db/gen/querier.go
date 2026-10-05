@@ -16,6 +16,7 @@ type Querier interface {
 	CountCameraRolls(ctx context.Context, cameraID *uuid.UUID) (int64, error)
 	DeleteCameraLensesExcept(ctx context.Context, arg DeleteCameraLensesExceptParams) error
 	DeleteRollLensesExcept(ctx context.Context, arg DeleteRollLensesExceptParams) error
+	DeleteScanOrder(ctx context.Context, arg DeleteScanOrderParams) (int64, error)
 	FilmStockInUse(ctx context.Context, filmStockID uuid.UUID) (bool, error)
 	FinishIdempotencyKey(ctx context.Context, arg FinishIdempotencyKeyParams) error
 	FinishRoll(ctx context.Context, arg FinishRollParams) (Roll, error)
@@ -67,6 +68,7 @@ type Querier interface {
 	ListRollProcessing(ctx context.Context, rollID uuid.UUID) ([]ListRollProcessingRow, error)
 	ListRollScans(ctx context.Context, rollID uuid.UUID) ([]ListRollScansRow, error)
 	ListRollSummaries(ctx context.Context, arg ListRollSummariesParams) ([]ListRollSummariesRow, error)
+	ListScanOrders(ctx context.Context, processingIds []uuid.UUID) ([]ListScanOrdersRow, error)
 	ListSiblingStocks(ctx context.Context, arg ListSiblingStocksParams) ([]FilmStock, error)
 	LoadRoll(ctx context.Context, arg LoadRollParams) (Roll, error)
 	NegativesAtLab(ctx context.Context) ([]NegativesAtLabRow, error)
@@ -75,6 +77,8 @@ type Querier interface {
 	RollHasOpenJob(ctx context.Context, rollID uuid.UUID) (bool, error)
 	RollHasScansReceived(ctx context.Context, rollID uuid.UUID) (bool, error)
 	RollSpend(ctx context.Context, id uuid.UUID) (RollSpendRow, error)
+	ScanOrderExists(ctx context.Context, arg ScanOrderExistsParams) (bool, error)
+	ScannerHasScans(ctx context.Context, arg ScannerHasScansParams) (bool, error)
 	SetBuiltInLensActive(ctx context.Context, arg SetBuiltInLensActiveParams) error
 	SetCameraActive(ctx context.Context, arg SetCameraActiveParams) (Camera, error)
 	SetFrameNotes(ctx context.Context, arg SetFrameNotesParams) (Frame, error)
@@ -108,6 +112,7 @@ type Querier interface {
 	UpdateProcessing(ctx context.Context, arg UpdateProcessingParams) (Processing, error)
 	UpdateRoll(ctx context.Context, arg UpdateRollParams) (Roll, error)
 	UpsertFrame(ctx context.Context, arg UpsertFrameParams) (Frame, error)
+	UpsertScanOrder(ctx context.Context, arg UpsertScanOrderParams) error
 }
 
 var _ Querier = (*Queries)(nil)

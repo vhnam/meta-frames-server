@@ -20,6 +20,8 @@ type processingFixture struct {
 	labID   uuid.UUID
 }
 
+var noritsuOrder = []ScanOrderInput{{Scanner: domain.ScannerNoritsu}}
+
 func newProcessingFixture() processingFixture {
 	queries := newMemoryQueries()
 	stockID, rollID, labID := uuid.New(), uuid.New(), uuid.New()
@@ -34,7 +36,7 @@ func TestProcessingSaveSendsTheRollAndUpdatesTheJob(test *testing.T) {
 	ctx := context.Background()
 	jobID := uuid.New()
 
-	view, created, err := fixture.service.Save(ctx, fixture.rollID, jobID, Input{LabID: &fixture.labID, Type: domain.JobTypeDevelopScan, Notes: pointers.To(" rush ")})
+	view, created, err := fixture.service.Save(ctx, fixture.rollID, jobID, Input{LabID: &fixture.labID, Type: domain.JobTypeDevelopScan, Notes: pointers.To(" rush "), ScanOrders: noritsuOrder})
 	if err != nil || !created || view.Job.Process != "C-41" || !view.Job.SentAt.Equal(day(2026, time.October, 2)) {
 		test.Fatalf("view=%+v created=%v err=%v", view, created, err)
 	}
@@ -42,7 +44,7 @@ func TestProcessingSaveSendsTheRollAndUpdatesTheJob(test *testing.T) {
 		test.Fatalf("roll status = %q", fixture.queries.Rolls[fixture.rollID].Status)
 	}
 
-	view, created, err = fixture.service.Save(ctx, fixture.rollID, jobID, Input{Type: domain.JobTypeDevelopScan, Price: pointers.To(90)})
+	view, created, err = fixture.service.Save(ctx, fixture.rollID, jobID, Input{Type: domain.JobTypeDevelopScan, Price: pointers.To(90), ScanOrders: noritsuOrder})
 	if err != nil || created || view.Job.Price == nil || *view.Job.Price != 90 {
 		test.Fatalf("update: view=%+v created=%v err=%v", view, created, err)
 	}
@@ -54,7 +56,7 @@ func TestProcessingSaveUsesTheGivenProcessAndRejectsUnknownLabsAndRolls(test *te
 	fixture := newProcessingFixture()
 	ctx := context.Background()
 
-	view, _, err := fixture.service.Save(ctx, fixture.rollID, uuid.New(), Input{Type: domain.JobTypeDevelopScan, Process: pointers.To("E-6")})
+	view, _, err := fixture.service.Save(ctx, fixture.rollID, uuid.New(), Input{Type: domain.JobTypeDevelopScan, Process: pointers.To("E-6"), ScanOrders: noritsuOrder})
 	if err != nil || view.Job.Process != "E-6" {
 		test.Fatalf("view=%+v err=%v", view, err)
 	}
@@ -68,7 +70,7 @@ func TestProcessingListGetAndNegativesAtLab(test *testing.T) {
 	fixture := newProcessingFixture()
 	ctx := context.Background()
 	jobID := uuid.New()
-	if _, _, err := fixture.service.Save(ctx, fixture.rollID, jobID, Input{Type: domain.JobTypeDevelopScan}); err != nil {
+	if _, _, err := fixture.service.Save(ctx, fixture.rollID, jobID, Input{Type: domain.JobTypeDevelopScan, ScanOrders: noritsuOrder}); err != nil {
 		test.Fatal(err)
 	}
 
@@ -307,4 +309,56 @@ func TestDeleteRefusesJobsWithScansAndUnknownJobs(test *testing.T) {
 
 	assertAppError(test, service.Delete(context.Background(), jobID), apperror.KindConflict, "job_has_scans")
 	assertAppError(test, service.Delete(context.Background(), uuid.New()), apperror.KindNotFound, "not_found")
+}
+
+func TestProcessingSaveValidatesScanOrders(test *testing.T) {
+	tests := []struct {
+		name  string
+		input Input
+		kind  apperror.Kind
+		code  string
+	}{
+		{"scan job needs orders", Input{Type: domain.JobTypeScan}, apperror.KindUnprocessable, "scan_orders_required"},
+		{"develop job takes none", Input{Type: domain.JobTypeDevelop, ScanOrders: noritsuOrder}, apperror.KindUnprocessable, "scan_not_applicable"},
+		{"duplicate scanner", Input{Type: domain.JobTypeDevelopScan, ScanOrders: []ScanOrderInput{{Scanner: domain.ScannerNoritsu}, {Scanner: domain.ScannerNoritsu, HiRes: true}}}, apperror.KindUnprocessable, "duplicate_scanner"},
+	}
+	for _, testCase := range tests {
+		test.Run(testCase.name, func(test *testing.T) {
+			fixture := newProcessingFixture()
+			_, _, err := fixture.service.Save(context.Background(), fixture.rollID, uuid.New(), testCase.input)
+			assertAppError(test, err, testCase.kind, testCase.code)
+		})
+	}
+}
+
+func TestProcessingSaveReplacesScanOrders(test *testing.T) {
+	fixture := newProcessingFixture()
+	ctx := context.Background()
+	jobID := uuid.New()
+	both := []ScanOrderInput{{Scanner: domain.ScannerNoritsu, HiRes: true}, {Scanner: domain.ScannerFrontier}}
+
+	view, _, err := fixture.service.Save(ctx, fixture.rollID, jobID, Input{Type: domain.JobTypeDevelopScan, ScanOrders: both})
+	if err != nil || len(view.ScanOrders) != 2 || view.ScanOrders[0].Scanner != domain.ScannerFrontier || !view.ScanOrders[1].HiRes {
+		test.Fatalf("view = %+v err=%v", view.ScanOrders, err)
+	}
+
+	view, _, err = fixture.service.Save(ctx, fixture.rollID, jobID, Input{Type: domain.JobTypeDevelopScan, ScanOrders: noritsuOrder})
+	if err != nil || len(view.ScanOrders) != 1 || view.ScanOrders[0].HiRes {
+		test.Fatalf("after replace = %+v err=%v", view.ScanOrders, err)
+	}
+}
+
+func TestProcessingSaveKeepsScannersThatHaveScans(test *testing.T) {
+	fixture := newProcessingFixture()
+	ctx := context.Background()
+	jobID := uuid.New()
+	both := []ScanOrderInput{{Scanner: domain.ScannerNoritsu}, {Scanner: domain.ScannerFrontier}}
+	if _, _, err := fixture.service.Save(ctx, fixture.rollID, jobID, Input{Type: domain.JobTypeDevelopScan, ScanOrders: both}); err != nil {
+		test.Fatal(err)
+	}
+	scanID := uuid.New()
+	fixture.queries.Scans[scanID] = gen.Scan{ID: scanID, ProcessingID: jobID, Scanner: domain.ScannerFrontier}
+
+	_, _, err := fixture.service.Save(ctx, fixture.rollID, jobID, Input{Type: domain.JobTypeDevelopScan, ScanOrders: noritsuOrder})
+	assertAppError(test, err, apperror.KindConflict, "scanner_has_scans")
 }

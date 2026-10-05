@@ -29,6 +29,7 @@ type Memory struct {
 	Jobs          map[uuid.UUID]gen.Processing
 	Frames        map[uuid.UUID]gen.Frame
 	Scans         map[uuid.UUID]gen.Scan
+	ScanOrders    []gen.ProcessingScanOrder
 
 	RollLenses  []gen.RollLens
 	Labs        map[uuid.UUID]gen.Lab
@@ -760,4 +761,56 @@ func (queries *Memory) SoftDeleteScan(_ context.Context, id uuid.UUID) (int64, e
 	scan.DeletedAt = deletedNow
 	queries.Scans[id] = scan
 	return 1, nil
+}
+
+// ---- scan orders ----
+
+func (queries *Memory) ListScanOrders(_ context.Context, jobIDs []uuid.UUID) ([]gen.ListScanOrdersRow, error) {
+	var rows []gen.ListScanOrdersRow
+	for _, order := range queries.ScanOrders {
+		for _, jobID := range jobIDs {
+			if order.ProcessingID != jobID {
+				continue
+			}
+			var count int32
+			for _, scan := range queries.Scans {
+				if scan.ProcessingID == jobID && scan.Scanner == order.Scanner && !scan.DeletedAt.Valid {
+					count++
+				}
+			}
+			rows = append(rows, gen.ListScanOrdersRow{ProcessingID: jobID, Scanner: order.Scanner, HiRes: order.HiRes, ScanCount: count})
+		}
+	}
+	sort.SliceStable(rows, func(left, right int) bool { return rows[left].Scanner < rows[right].Scanner })
+	return rows, nil
+}
+
+func (queries *Memory) UpsertScanOrder(_ context.Context, arg gen.UpsertScanOrderParams) error {
+	for index, order := range queries.ScanOrders {
+		if order.ProcessingID == arg.ProcessingID && order.Scanner == arg.Scanner {
+			queries.ScanOrders[index].HiRes = arg.HiRes
+			return nil
+		}
+	}
+	queries.ScanOrders = append(queries.ScanOrders, gen.ProcessingScanOrder{ProcessingID: arg.ProcessingID, Scanner: arg.Scanner, HiRes: arg.HiRes})
+	return nil
+}
+
+func (queries *Memory) DeleteScanOrder(_ context.Context, arg gen.DeleteScanOrderParams) (int64, error) {
+	for index, order := range queries.ScanOrders {
+		if order.ProcessingID == arg.ProcessingID && order.Scanner == arg.Scanner {
+			queries.ScanOrders = append(queries.ScanOrders[:index], queries.ScanOrders[index+1:]...)
+			return 1, nil
+		}
+	}
+	return 0, nil
+}
+
+func (queries *Memory) ScanOrderExists(_ context.Context, arg gen.ScanOrderExistsParams) (bool, error) {
+	for _, order := range queries.ScanOrders {
+		if order.ProcessingID == arg.ProcessingID && order.Scanner == arg.Scanner {
+			return true, nil
+		}
+	}
+	return false, nil
 }

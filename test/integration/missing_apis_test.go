@@ -24,7 +24,7 @@ func TestDeletingRollsJobsAndScans(test *testing.T) {
 	// Processing job with a scan.
 	rollID := harness.finishedRoll(seeded)
 	jobID := newID()
-	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+jobID, map[string]any{"type": "develop_scan"}), http.StatusCreated)
+	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+jobID, map[string]any{"type": "develop_scan", "scanOrders": []map[string]any{{"scanner": "noritsu"}}}), http.StatusCreated)
 	imported := harness.expect(harness.uploadScans(jobID, "noritsu", "", []upload{{fileName: "000004.jpg", content: jpegBytes}}), http.StatusOK)
 	scanID, _ := asObject(asList(imported.Body["imported"])[0])["id"].(string)
 

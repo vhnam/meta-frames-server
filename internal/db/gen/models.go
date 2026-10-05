@@ -116,6 +116,14 @@ type Processing struct {
 	DeletedAt           pgtype.Timestamptz
 }
 
+type ProcessingScanOrder struct {
+	ProcessingID uuid.UUID
+	Scanner      string
+	HiRes        bool
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
 type Roll struct {
 	ID          uuid.UUID
 	FilmStockID uuid.UUID

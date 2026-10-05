@@ -64,6 +64,57 @@ func checkCanSend(rollStatus, jobType string) error {
 	}
 }
 
+// validateScanOrders checks the ordered scanners against the job type. Which scanners a lab offers
+// for a given process is not validated: it differs per lab.
+func validateScanOrders(jobType string, orders []ScanOrderInput) error {
+	if !JobProducesScans(jobType) {
+		if len(orders) > 0 {
+			return apperror.Unprocessable("scan_not_applicable", "scanOrders must be empty for this job type")
+		}
+		return nil
+	}
+	if len(orders) == 0 {
+		return apperror.Unprocessable("scan_orders_required", "scanOrders needs at least one scanner for this job type")
+	}
+	seen := make(map[string]bool, len(orders))
+	for _, order := range orders {
+		if seen[order.Scanner] {
+			return apperror.Unprocessable("duplicate_scanner", "each scanner can appear only once in scanOrders")
+		}
+		seen[order.Scanner] = true
+	}
+	return nil
+}
+
+// syncScanOrders makes the stored set equal to orders. A scanner that already has scans cannot be removed.
+func syncScanOrders(ctx context.Context, queries gen.Querier, jobID uuid.UUID, orders []ScanOrderInput) error {
+	wanted := make(map[string]bool, len(orders))
+	for _, order := range orders {
+		wanted[order.Scanner] = true
+	}
+	current, err := queries.ListScanOrders(ctx, []uuid.UUID{jobID})
+	if err != nil {
+		return err
+	}
+	for _, row := range current {
+		if wanted[row.Scanner] {
+			continue
+		}
+		if row.ScanCount > 0 {
+			return apperror.Conflict("scanner_has_scans", "a scanner with imported scans cannot be removed from the order; delete its scans first")
+		}
+		if _, err := queries.DeleteScanOrder(ctx, gen.DeleteScanOrderParams{ProcessingID: jobID, Scanner: row.Scanner}); err != nil {
+			return err
+		}
+	}
+	for _, order := range orders {
+		if err := queries.UpsertScanOrder(ctx, gen.UpsertScanOrderParams{ProcessingID: jobID, Scanner: order.Scanner, HiRes: order.HiRes}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func JobProducesScans(jobType string) bool {
 	return jobType == domain.JobTypeDevelopScan || jobType == domain.JobTypeScan
 }
@@ -75,13 +126,26 @@ func BuildViews(ctx context.Context, queries gen.Querier, rollID uuid.UUID) ([]V
 	if err != nil {
 		return nil, err
 	}
+	ids := make([]uuid.UUID, len(rows))
+	for index, row := range rows {
+		ids[index] = row.ID
+	}
+	orderRows, err := queries.ListScanOrders(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	ordersByJob := make(map[uuid.UUID][]ScanOrder, len(rows))
+	for _, order := range orderRows {
+		ordersByJob[order.ProcessingID] = append(ordersByJob[order.ProcessingID],
+			ScanOrder{Scanner: order.Scanner, HiRes: order.HiRes, ScanCount: int(order.ScanCount)})
+	}
 	views := make([]View, len(rows))
 	for index, row := range rows {
 		job := gen.Processing{
 			ID: row.ID, RollID: row.RollID, LabID: row.LabID, Type: row.Type, Process: row.Process, SentAt: row.SentAt,
 			ScansReceivedAt: row.ScansReceivedAt, NegativesReturnedAt: row.NegativesReturnedAt, Price: row.Price, Notes: row.Notes,
 		}
-		views[index] = View{Job: job, LabName: row.LabName, Scanners: row.Scanners, IsOpen: isJobOpen(job)}
+		views[index] = View{Job: job, LabName: row.LabName, ScanOrders: ordersByJob[row.ID], IsOpen: isJobOpen(job)}
 	}
 	return views, nil
 }
@@ -175,9 +239,15 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 			if existing.RollID != rollID || existing.Type != input.Type {
 				return apperror.Conflict("job_immutable", "a job's roll and type cannot change")
 			}
+			if err := validateScanOrders(input.Type, input.ScanOrders); err != nil {
+				return err
+			}
 			if _, err := queries.UpdateProcessing(ctx, gen.UpdateProcessingParams{
 				ID: jobID, LabID: input.LabID, SentAt: sentAt, Price: pointers.Int32(input.Price), Notes: pointers.TrimmedOrNil(input.Notes),
 			}); err != nil {
+				return err
+			}
+			if err := syncScanOrders(ctx, queries, jobID, input.ScanOrders); err != nil {
 				return err
 			}
 		} else {
@@ -189,10 +259,16 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 			if err != nil {
 				return err
 			}
+			if err := validateScanOrders(input.Type, input.ScanOrders); err != nil {
+				return err
+			}
 			if _, err := queries.InsertProcessing(ctx, gen.InsertProcessingParams{
 				ID: jobID, RollID: rollID, LabID: input.LabID, Type: input.Type, Process: process,
 				SentAt: sentAt, Price: pointers.Int32(input.Price), Notes: pointers.TrimmedOrNil(input.Notes),
 			}); err != nil {
+				return err
+			}
+			if err := syncScanOrders(ctx, queries, jobID, input.ScanOrders); err != nil {
 				return err
 			}
 			if err := queries.SetRollStatus(ctx, gen.SetRollStatusParams{ID: rollID, Status: domain.RollStatusAtLab}); err != nil {
