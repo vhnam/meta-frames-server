@@ -28,12 +28,12 @@ FROM processing p LEFT JOIN lab l ON l.id = p.lab_id
 WHERE p.roll_id = $1 AND p.deleted_at IS NULL ORDER BY p.sent_at, p.created_at;
 
 -- name: InsertProcessing :one
-INSERT INTO processing (id, roll_id, lab_id, type, process, sent_at, price, notes)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO processing (id, roll_id, lab_id, type, process, sent_at, scans_expected_at, negatives_expected_at, price, notes)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING *;
 
 -- name: UpdateProcessing :one
-UPDATE processing SET lab_id = $2, sent_at = $3, price = $4, notes = $5
+UPDATE processing SET lab_id = $2, sent_at = $3, scans_expected_at = $4, negatives_expected_at = $5, price = $6, notes = $7
 WHERE id = $1 AND deleted_at IS NULL RETURNING *;
 
 -- name: SetScansReceived :one

@@ -49,7 +49,7 @@ func (q *Queries) GetLab(ctx context.Context, id uuid.UUID) (Lab, error) {
 }
 
 const getProcessing = `-- name: GetProcessing :one
-SELECT id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at FROM processing WHERE id = $1 AND deleted_at IS NULL
+SELECT id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at FROM processing WHERE id = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) GetProcessing(ctx context.Context, id uuid.UUID) (Processing, error) {
@@ -69,12 +69,14 @@ func (q *Queries) GetProcessing(ctx context.Context, id uuid.UUID) (Processing, 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ScansExpectedAt,
+		&i.NegativesExpectedAt,
 	)
 	return i, err
 }
 
 const getProcessingForUpdate = `-- name: GetProcessingForUpdate :one
-SELECT id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at FROM processing WHERE id = $1 AND deleted_at IS NULL FOR UPDATE
+SELECT id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at FROM processing WHERE id = $1 AND deleted_at IS NULL FOR UPDATE
 `
 
 func (q *Queries) GetProcessingForUpdate(ctx context.Context, id uuid.UUID) (Processing, error) {
@@ -94,6 +96,8 @@ func (q *Queries) GetProcessingForUpdate(ctx context.Context, id uuid.UUID) (Pro
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ScansExpectedAt,
+		&i.NegativesExpectedAt,
 	)
 	return i, err
 }
@@ -175,20 +179,22 @@ func (q *Queries) InsertLab(ctx context.Context, arg InsertLabParams) (Lab, erro
 }
 
 const insertProcessing = `-- name: InsertProcessing :one
-INSERT INTO processing (id, roll_id, lab_id, type, process, sent_at, price, notes)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at
+INSERT INTO processing (id, roll_id, lab_id, type, process, sent_at, scans_expected_at, negatives_expected_at, price, notes)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at
 `
 
 type InsertProcessingParams struct {
-	ID      uuid.UUID
-	RollID  uuid.UUID
-	LabID   *uuid.UUID
-	Type    string
-	Process string
-	SentAt  time.Time
-	Price   *int32
-	Notes   *string
+	ID                  uuid.UUID
+	RollID              uuid.UUID
+	LabID               *uuid.UUID
+	Type                string
+	Process             string
+	SentAt              time.Time
+	ScansExpectedAt     *time.Time
+	NegativesExpectedAt *time.Time
+	Price               *int32
+	Notes               *string
 }
 
 func (q *Queries) InsertProcessing(ctx context.Context, arg InsertProcessingParams) (Processing, error) {
@@ -199,6 +205,8 @@ func (q *Queries) InsertProcessing(ctx context.Context, arg InsertProcessingPara
 		arg.Type,
 		arg.Process,
 		arg.SentAt,
+		arg.ScansExpectedAt,
+		arg.NegativesExpectedAt,
 		arg.Price,
 		arg.Notes,
 	)
@@ -217,6 +225,8 @@ func (q *Queries) InsertProcessing(ctx context.Context, arg InsertProcessingPara
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ScansExpectedAt,
+		&i.NegativesExpectedAt,
 	)
 	return i, err
 }
@@ -429,7 +439,7 @@ func (q *Queries) ListProcessingScans(ctx context.Context, arg ListProcessingSca
 }
 
 const listRollProcessing = `-- name: ListRollProcessing :many
-SELECT p.id, p.roll_id, p.lab_id, p.type, p.process, p.sent_at, p.scans_received_at, p.negatives_returned_at, p.price, p.notes, p.created_at, p.updated_at, p.deleted_at, COALESCE(l.name, '') AS lab_name
+SELECT p.id, p.roll_id, p.lab_id, p.type, p.process, p.sent_at, p.scans_received_at, p.negatives_returned_at, p.price, p.notes, p.created_at, p.updated_at, p.deleted_at, p.scans_expected_at, p.negatives_expected_at, COALESCE(l.name, '') AS lab_name
 FROM processing p LEFT JOIN lab l ON l.id = p.lab_id
 WHERE p.roll_id = $1 AND p.deleted_at IS NULL ORDER BY p.sent_at, p.created_at
 `
@@ -448,6 +458,8 @@ type ListRollProcessingRow struct {
 	CreatedAt           pgtype.Timestamptz
 	UpdatedAt           pgtype.Timestamptz
 	DeletedAt           pgtype.Timestamptz
+	ScansExpectedAt     *time.Time
+	NegativesExpectedAt *time.Time
 	LabName             string
 }
 
@@ -474,6 +486,8 @@ func (q *Queries) ListRollProcessing(ctx context.Context, rollID uuid.UUID) ([]L
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.ScansExpectedAt,
+			&i.NegativesExpectedAt,
 			&i.LabName,
 		); err != nil {
 			return nil, err
@@ -662,7 +676,7 @@ func (q *Queries) ScannerHasScans(ctx context.Context, arg ScannerHasScansParams
 }
 
 const setNegativesReturned = `-- name: SetNegativesReturned :one
-UPDATE processing SET negatives_returned_at = $2 WHERE id = $1 AND deleted_at IS NULL RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at
+UPDATE processing SET negatives_returned_at = $2 WHERE id = $1 AND deleted_at IS NULL RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at
 `
 
 type SetNegativesReturnedParams struct {
@@ -687,12 +701,14 @@ func (q *Queries) SetNegativesReturned(ctx context.Context, arg SetNegativesRetu
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ScansExpectedAt,
+		&i.NegativesExpectedAt,
 	)
 	return i, err
 }
 
 const setScansReceived = `-- name: SetScansReceived :one
-UPDATE processing SET scans_received_at = $2 WHERE id = $1 AND deleted_at IS NULL RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at
+UPDATE processing SET scans_received_at = $2 WHERE id = $1 AND deleted_at IS NULL RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at
 `
 
 type SetScansReceivedParams struct {
@@ -717,6 +733,8 @@ func (q *Queries) SetScansReceived(ctx context.Context, arg SetScansReceivedPara
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ScansExpectedAt,
+		&i.NegativesExpectedAt,
 	)
 	return i, err
 }
@@ -782,16 +800,18 @@ func (q *Queries) UpdateLab(ctx context.Context, arg UpdateLabParams) (Lab, erro
 }
 
 const updateProcessing = `-- name: UpdateProcessing :one
-UPDATE processing SET lab_id = $2, sent_at = $3, price = $4, notes = $5
-WHERE id = $1 AND deleted_at IS NULL RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at
+UPDATE processing SET lab_id = $2, sent_at = $3, scans_expected_at = $4, negatives_expected_at = $5, price = $6, notes = $7
+WHERE id = $1 AND deleted_at IS NULL RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at
 `
 
 type UpdateProcessingParams struct {
-	ID     uuid.UUID
-	LabID  *uuid.UUID
-	SentAt time.Time
-	Price  *int32
-	Notes  *string
+	ID                  uuid.UUID
+	LabID               *uuid.UUID
+	SentAt              time.Time
+	ScansExpectedAt     *time.Time
+	NegativesExpectedAt *time.Time
+	Price               *int32
+	Notes               *string
 }
 
 func (q *Queries) UpdateProcessing(ctx context.Context, arg UpdateProcessingParams) (Processing, error) {
@@ -799,6 +819,8 @@ func (q *Queries) UpdateProcessing(ctx context.Context, arg UpdateProcessingPara
 		arg.ID,
 		arg.LabID,
 		arg.SentAt,
+		arg.ScansExpectedAt,
+		arg.NegativesExpectedAt,
 		arg.Price,
 		arg.Notes,
 	)
@@ -817,6 +839,8 @@ func (q *Queries) UpdateProcessing(ctx context.Context, arg UpdateProcessingPara
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ScansExpectedAt,
+		&i.NegativesExpectedAt,
 	)
 	return i, err
 }

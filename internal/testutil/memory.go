@@ -291,7 +291,7 @@ func (queries *Memory) ListRollProcessing(_ context.Context, rollID uuid.UUID) (
 		if job.RollID == rollID && !job.DeletedAt.Valid {
 			rows = append(rows, gen.ListRollProcessingRow{
 				ID: job.ID, RollID: job.RollID, LabID: job.LabID, Type: job.Type, Process: job.Process, SentAt: job.SentAt,
-				ScansReceivedAt: job.ScansReceivedAt, NegativesReturnedAt: job.NegativesReturnedAt, Price: job.Price, Notes: job.Notes,
+				ScansReceivedAt: job.ScansReceivedAt, ScansExpectedAt: job.ScansExpectedAt, NegativesExpectedAt: job.NegativesExpectedAt, NegativesReturnedAt: job.NegativesReturnedAt, Price: job.Price, Notes: job.Notes,
 			})
 		}
 	}
@@ -592,14 +592,14 @@ func (queries *Memory) GetLab(_ context.Context, id uuid.UUID) (gen.Lab, error) 
 }
 
 func (queries *Memory) InsertProcessing(_ context.Context, arg gen.InsertProcessingParams) (gen.Processing, error) {
-	job := gen.Processing{ID: arg.ID, RollID: arg.RollID, LabID: arg.LabID, Type: arg.Type, Process: arg.Process, SentAt: arg.SentAt, Price: arg.Price, Notes: arg.Notes}
+	job := gen.Processing{ID: arg.ID, RollID: arg.RollID, LabID: arg.LabID, Type: arg.Type, Process: arg.Process, SentAt: arg.SentAt, ScansExpectedAt: arg.ScansExpectedAt, NegativesExpectedAt: arg.NegativesExpectedAt, Price: arg.Price, Notes: arg.Notes}
 	queries.Jobs[arg.ID] = job
 	return job, nil
 }
 
 func (queries *Memory) UpdateProcessing(_ context.Context, arg gen.UpdateProcessingParams) (gen.Processing, error) {
 	job := queries.Jobs[arg.ID]
-	job.LabID, job.SentAt, job.Price, job.Notes = arg.LabID, arg.SentAt, arg.Price, arg.Notes
+	job.LabID, job.SentAt, job.ScansExpectedAt, job.NegativesExpectedAt, job.Price, job.Notes = arg.LabID, arg.SentAt, arg.ScansExpectedAt, arg.NegativesExpectedAt, arg.Price, arg.Notes
 	queries.Jobs[arg.ID] = job
 	return job, nil
 }

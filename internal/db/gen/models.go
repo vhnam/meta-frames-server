@@ -114,6 +114,8 @@ type Processing struct {
 	CreatedAt           pgtype.Timestamptz
 	UpdatedAt           pgtype.Timestamptz
 	DeletedAt           pgtype.Timestamptz
+	ScansExpectedAt     *time.Time
+	NegativesExpectedAt *time.Time
 }
 
 type ProcessingScanOrder struct {
