@@ -3508,6 +3508,18 @@ components:
         type: { $ref: "#/components/schemas/ProcessingType" }
         process: { $ref: "#/components/schemas/Process" }
         sentAt: { type: string, format: date, description: Defaults to today }
+        scansExpectedAt:
+          type: string
+          format: date
+          description: >-
+            When the lab expects to deliver the scans. Optional; must not be before sentAt.
+            Only for type scan and develop_scan.
+        negativesExpectedAt:
+          type: string
+          format: date
+          description: >-
+            When the lab expects to return the negatives. Optional; must not be before sentAt.
+            Only for type develop and develop_scan.
         price: { type: integer, minimum: 0 }
         notes: { type: string }
         scanOrders:
@@ -3521,6 +3533,7 @@ components:
         type: develop_scan
         process: C-41
         sentAt: "2026-09-20"
+        scansExpectedAt: "2026-10-04"
         price: 90000
         notes: Push 1 stop
         scanOrders:
@@ -3561,6 +3574,8 @@ components:
         process: { $ref: "#/components/schemas/Process" }
         sentAt: { type: string, format: date }
         scansReceivedAt: { type: string, format: date }
+        scansExpectedAt: { type: string, format: date }
+        negativesExpectedAt: { type: string, format: date }
         negativesReturnedAt: { type: string, format: date }
         price: { type: integer }
         notes: { type: string }
@@ -3575,6 +3590,7 @@ components:
         process: C-41
         sentAt: "2026-09-20"
         scansReceivedAt: "2026-09-27"
+        scansExpectedAt: "2026-10-04"
         price: 90000
         notes: Push 1 stop
         scanOrders:

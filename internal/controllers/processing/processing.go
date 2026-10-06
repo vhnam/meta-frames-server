@@ -24,6 +24,8 @@ func ToAPIProcessing(view processingsvc.View) api.Processing {
 	mapped := api.Processing{
 		Id: job.ID, RollId: job.RollID, LabId: job.LabID, Type: api.ProcessingType(job.Type), Process: api.Process(job.Process),
 		SentAt: convert.APIDate(job.SentAt), ScansReceivedAt: convert.ToAPIDate(job.ScansReceivedAt),
+		ScansExpectedAt:     convert.ToAPIDate(job.ScansExpectedAt),
+		NegativesExpectedAt: convert.ToAPIDate(job.NegativesExpectedAt),
 		NegativesReturnedAt: convert.ToAPIDate(job.NegativesReturnedAt), Price: pointers.Int(job.Price), Notes: job.Notes,
 		ScanOrders: make([]api.ScanOrder, len(view.ScanOrders)), IsOpen: view.IsOpen,
 	}
@@ -59,7 +61,8 @@ func (controller *Controller) GetProcessing(ctx context.Context, request api.Get
 func (controller *Controller) PutProcessing(ctx context.Context, request api.PutProcessingRequestObject) (api.PutProcessingResponseObject, error) {
 	body := request.Body
 	input := processingsvc.Input{
-		LabID: body.LabId, Type: string(body.Type), SentAt: convert.FromAPIDate(body.SentAt), Price: body.Price, Notes: body.Notes,
+		LabID: body.LabId, Type: string(body.Type), SentAt: convert.FromAPIDate(body.SentAt),
+		ScansExpectedAt: convert.FromAPIDate(body.ScansExpectedAt), NegativesExpectedAt: convert.FromAPIDate(body.NegativesExpectedAt), Price: body.Price, Notes: body.Notes,
 	}
 	if body.Process != nil {
 		input.Process = pointers.To(string(*body.Process))
