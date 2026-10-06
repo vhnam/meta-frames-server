@@ -362,3 +362,57 @@ func TestProcessingSaveKeepsScannersThatHaveScans(test *testing.T) {
 	_, _, err := fixture.service.Save(ctx, fixture.rollID, jobID, Input{Type: domain.JobTypeDevelopScan, ScanOrders: noritsuOrder})
 	assertAppError(test, err, apperror.KindConflict, "scanner_has_scans")
 }
+
+func TestProcessingSaveStoresScansExpectedAt(test *testing.T) {
+	fixture := newProcessingFixture()
+	ctx := context.Background()
+	jobID := uuid.New()
+	expected := day(2026, time.October, 10)
+	before := day(2026, time.October, 1)
+
+	_, _, err := fixture.service.Save(ctx, fixture.rollID, uuid.New(), Input{Type: domain.JobTypeDevelop, ScansExpectedAt: &expected})
+	assertAppError(test, err, apperror.KindUnprocessable, "scan_not_applicable")
+	_, _, err = fixture.service.Save(ctx, fixture.rollID, jobID, Input{LabID: &fixture.labID, Type: domain.JobTypeDevelopScan, ScanOrders: noritsuOrder, ScansExpectedAt: &before})
+	assertAppError(test, err, apperror.KindUnprocessable, "invalid_scans_expected_at")
+
+	view, _, err := fixture.service.Save(ctx, fixture.rollID, jobID, Input{LabID: &fixture.labID, Type: domain.JobTypeDevelopScan, ScanOrders: noritsuOrder, ScansExpectedAt: &expected})
+	if err != nil || view.Job.ScansExpectedAt == nil || !view.Job.ScansExpectedAt.Equal(expected) {
+		test.Fatalf("create: view=%+v err=%v", view, err)
+	}
+	view, _, err = fixture.service.Save(ctx, fixture.rollID, jobID, Input{LabID: &fixture.labID, Type: domain.JobTypeDevelopScan, ScanOrders: noritsuOrder})
+	if err != nil || view.Job.ScansExpectedAt != nil {
+		test.Fatalf("update clears it: view=%+v err=%v", view, err)
+	}
+}
+
+func TestProcessingSaveStoresNegativesExpectedAtForDevelopAndDevelopScan(test *testing.T) {
+	fixture := newProcessingFixture()
+	ctx := context.Background()
+	jobID := uuid.New()
+	expected := day(2026, time.October, 10)
+	before := day(2026, time.October, 1)
+
+	_, _, err := fixture.service.Save(ctx, fixture.rollID, uuid.New(), Input{Type: domain.JobTypeScan, ScanOrders: noritsuOrder, NegativesExpectedAt: &expected})
+	assertAppError(test, err, apperror.KindUnprocessable, "negatives_expected_not_applicable")
+	_, _, err = fixture.service.Save(ctx, fixture.rollID, uuid.New(), Input{Type: domain.JobTypeDevelop, NegativesExpectedAt: &before})
+	assertAppError(test, err, apperror.KindUnprocessable, "invalid_negatives_expected_at")
+
+	view, _, err := fixture.service.Save(ctx, fixture.rollID, jobID, Input{LabID: &fixture.labID, Type: domain.JobTypeDevelop, NegativesExpectedAt: &expected})
+	if err != nil || view.Job.NegativesExpectedAt == nil || !view.Job.NegativesExpectedAt.Equal(expected) {
+		test.Fatalf("create: view=%+v err=%v", view, err)
+	}
+	view, _, err = fixture.service.Save(ctx, fixture.rollID, jobID, Input{LabID: &fixture.labID, Type: domain.JobTypeDevelop})
+	if err != nil || view.Job.NegativesExpectedAt != nil {
+		test.Fatalf("update clears it: view=%+v err=%v", view, err)
+	}
+}
+
+func TestProcessingSaveAcceptsNegativesExpectedAtOnDevelopScan(test *testing.T) {
+	fixture := newProcessingFixture()
+	expected := day(2026, time.October, 10)
+
+	view, _, err := fixture.service.Save(context.Background(), fixture.rollID, uuid.New(), Input{Type: domain.JobTypeDevelopScan, ScanOrders: noritsuOrder, NegativesExpectedAt: &expected})
+	if err != nil || view.Job.NegativesExpectedAt == nil || !view.Job.NegativesExpectedAt.Equal(expected) {
+		test.Fatalf("view=%+v err=%v", view, err)
+	}
+}

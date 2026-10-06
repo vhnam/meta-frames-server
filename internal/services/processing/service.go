@@ -143,7 +143,7 @@ func BuildViews(ctx context.Context, queries gen.Querier, rollID uuid.UUID) ([]V
 	for index, row := range rows {
 		job := gen.Processing{
 			ID: row.ID, RollID: row.RollID, LabID: row.LabID, Type: row.Type, Process: row.Process, SentAt: row.SentAt,
-			ScansReceivedAt: row.ScansReceivedAt, NegativesReturnedAt: row.NegativesReturnedAt, Price: row.Price, Notes: row.Notes,
+			ScansReceivedAt: row.ScansReceivedAt, ScansExpectedAt: row.ScansExpectedAt, NegativesExpectedAt: row.NegativesExpectedAt, NegativesReturnedAt: row.NegativesReturnedAt, Price: row.Price, Notes: row.Notes,
 		}
 		views[index] = View{Job: job, LabName: row.LabName, ScanOrders: ordersByJob[row.ID], IsOpen: isJobOpen(job)}
 	}
@@ -230,6 +230,18 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 			}
 		}
 		sentAt := shared.DateOrDefault(input.SentAt, service.clock.Today())
+		if input.NegativesExpectedAt != nil && input.Type != domain.JobTypeDevelop && input.Type != domain.JobTypeDevelopScan {
+			return apperror.Unprocessable("negatives_expected_not_applicable", "negativesExpectedAt applies only to develop and develop_scan jobs")
+		}
+		if input.NegativesExpectedAt != nil && input.NegativesExpectedAt.Before(sentAt) {
+			return apperror.Unprocessable("invalid_negatives_expected_at", "negativesExpectedAt cannot be before sentAt")
+		}
+		if input.ScansExpectedAt != nil && !JobProducesScans(input.Type) {
+			return apperror.Unprocessable("scan_not_applicable", "scansExpectedAt applies only to jobs that produce scans")
+		}
+		if input.ScansExpectedAt != nil && input.ScansExpectedAt.Before(sentAt) {
+			return apperror.Unprocessable("invalid_scans_expected_at", "scansExpectedAt cannot be before sentAt")
+		}
 
 		existing, lookupErr := queries.GetProcessingForUpdate(ctx, jobID)
 		if lookupErr != nil && !db.IsNoRows(lookupErr) {
@@ -243,7 +255,7 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 				return err
 			}
 			if _, err := queries.UpdateProcessing(ctx, gen.UpdateProcessingParams{
-				ID: jobID, LabID: input.LabID, SentAt: sentAt, Price: pointers.Int32(input.Price), Notes: pointers.TrimmedOrNil(input.Notes),
+				ID: jobID, LabID: input.LabID, SentAt: sentAt, ScansExpectedAt: input.ScansExpectedAt, NegativesExpectedAt: input.NegativesExpectedAt, Price: pointers.Int32(input.Price), Notes: pointers.TrimmedOrNil(input.Notes),
 			}); err != nil {
 				return err
 			}
@@ -264,7 +276,7 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 			}
 			if _, err := queries.InsertProcessing(ctx, gen.InsertProcessingParams{
 				ID: jobID, RollID: rollID, LabID: input.LabID, Type: input.Type, Process: process,
-				SentAt: sentAt, Price: pointers.Int32(input.Price), Notes: pointers.TrimmedOrNil(input.Notes),
+				SentAt: sentAt, ScansExpectedAt: input.ScansExpectedAt, NegativesExpectedAt: input.NegativesExpectedAt, Price: pointers.Int32(input.Price), Notes: pointers.TrimmedOrNil(input.Notes),
 			}); err != nil {
 				return err
 			}

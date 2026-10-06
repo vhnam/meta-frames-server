@@ -12,8 +12,12 @@ type Input struct {
 	Type    string
 	Process *string
 	SentAt  *time.Time
-	Price   *int
-	Notes   *string
+	// ScansExpectedAt is when the lab expects to deliver the scans; nil means unknown.
+	ScansExpectedAt *time.Time
+	// NegativesExpectedAt is when the lab expects to return the negatives of a develop or develop_scan job; nil means unknown.
+	NegativesExpectedAt *time.Time
+	Price               *int
+	Notes               *string
 	// ScanOrders replaces the job's ordered scanners; nil means none.
 	ScanOrders []ScanOrderInput
 }
