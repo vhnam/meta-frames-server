@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-08
+
 ### Added
 
 - Accounts with authboss: `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, password recovery by email (`POST /auth/recover`, then `POST /auth/recover/end` with the emailed token), and `GET /auth/me` for the signed-in user. Sessions are stored in Postgres behind an HTTP-only cookie (`metaframes_session`). Logout ends the session on the server, and a password reset ends every session of the account and lifts a lockout. Five wrong passwords within 15 minutes lock the account for 15 minutes (`429 account_locked`). Recovery emails are sent in the background.
@@ -16,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Every endpoint except `/health` and `/auth/*` requires a session and returns `401 unauthorized` without one (breaking).
+- Every endpoint except `/health` and `/auth/*` requires a session and returns `401 unauthorized` without one (breaking, API 0.5.0).
 - Every record belongs to the account that created it, and each account only sees and changes its own: lists, search, stats, inventory, and the audit log are per account. Another account's record answers `404`. A `PUT` with an id another account already uses is `409 already_exists`. Records created before accounts existed go to the first account. Idempotency keys are per account (breaking).
 - Audit entries name the signed-in user's email as the actor. The `X-Actor` header is no longer read (breaking).
 - CORS allows only the `Content-Type` and `Idempotency-Key` request headers. `Authorization` and `X-Actor` are no longer allowed (breaking).
@@ -49,5 +51,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `POST /rolls/bulk` with an `Idempotency-Key` failed while saving the response, because the JSON was sent as bytea hex.
 - `GET /cameras` returned 500 when a loaded roll had no start date. The camera now reports `daysLoaded` as 0 in that case.
 
-[Unreleased]: https://github.com/vhnam/meta-frames/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/vhnam/meta-frames/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/vhnam/meta-frames/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/vhnam/meta-frames/releases/tag/v1.0.0
