@@ -72,7 +72,8 @@ func TestListAuditLogsForwardsTheFilters(test *testing.T) {
 	}
 }
 
-func (stub *queries) GetAuditLog(_ context.Context, id int64) (gen.AuditLog, error) {
+func (stub *queries) GetAuditLog(_ context.Context, arg gen.GetAuditLogParams) (gen.AuditLog, error) {
+	id := arg.ID
 	for _, row := range stub.rows {
 		if row.ID == id {
 			return row, nil

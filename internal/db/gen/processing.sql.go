@@ -31,11 +31,16 @@ func (q *Queries) DeleteScanOrder(ctx context.Context, arg DeleteScanOrderParams
 }
 
 const getLab = `-- name: GetLab :one
-SELECT id, name, address, created_at, updated_at, deleted_at FROM lab WHERE id = $1 AND deleted_at IS NULL
+SELECT id, name, address, created_at, updated_at, deleted_at, owner_id FROM lab WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
 `
 
-func (q *Queries) GetLab(ctx context.Context, id uuid.UUID) (Lab, error) {
-	row := q.db.QueryRow(ctx, getLab, id)
+type GetLabParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) GetLab(ctx context.Context, arg GetLabParams) (Lab, error) {
+	row := q.db.QueryRow(ctx, getLab, arg.ID, arg.OwnerID)
 	var i Lab
 	err := row.Scan(
 		&i.ID,
@@ -44,16 +49,22 @@ func (q *Queries) GetLab(ctx context.Context, id uuid.UUID) (Lab, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const getProcessing = `-- name: GetProcessing :one
-SELECT id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at FROM processing WHERE id = $1 AND deleted_at IS NULL
+SELECT id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at, owner_id FROM processing WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
 `
 
-func (q *Queries) GetProcessing(ctx context.Context, id uuid.UUID) (Processing, error) {
-	row := q.db.QueryRow(ctx, getProcessing, id)
+type GetProcessingParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) GetProcessing(ctx context.Context, arg GetProcessingParams) (Processing, error) {
+	row := q.db.QueryRow(ctx, getProcessing, arg.ID, arg.OwnerID)
 	var i Processing
 	err := row.Scan(
 		&i.ID,
@@ -71,16 +82,22 @@ func (q *Queries) GetProcessing(ctx context.Context, id uuid.UUID) (Processing, 
 		&i.DeletedAt,
 		&i.ScansExpectedAt,
 		&i.NegativesExpectedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const getProcessingForUpdate = `-- name: GetProcessingForUpdate :one
-SELECT id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at FROM processing WHERE id = $1 AND deleted_at IS NULL FOR UPDATE
+SELECT id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at, owner_id FROM processing WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL FOR UPDATE
 `
 
-func (q *Queries) GetProcessingForUpdate(ctx context.Context, id uuid.UUID) (Processing, error) {
-	row := q.db.QueryRow(ctx, getProcessingForUpdate, id)
+type GetProcessingForUpdateParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) GetProcessingForUpdate(ctx context.Context, arg GetProcessingForUpdateParams) (Processing, error) {
+	row := q.db.QueryRow(ctx, getProcessingForUpdate, arg.ID, arg.OwnerID)
 	var i Processing
 	err := row.Scan(
 		&i.ID,
@@ -98,16 +115,22 @@ func (q *Queries) GetProcessingForUpdate(ctx context.Context, id uuid.UUID) (Pro
 		&i.DeletedAt,
 		&i.ScansExpectedAt,
 		&i.NegativesExpectedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const getScan = `-- name: GetScan :one
-SELECT id, processing_id, frame_id, scanner, file_key, file_name, content_type, size_bytes, created_at, updated_at, deleted_at FROM scan WHERE id = $1 AND deleted_at IS NULL
+SELECT id, processing_id, frame_id, scanner, file_key, file_name, content_type, size_bytes, created_at, updated_at, deleted_at, owner_id FROM scan WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
 `
 
-func (q *Queries) GetScan(ctx context.Context, id uuid.UUID) (Scan, error) {
-	row := q.db.QueryRow(ctx, getScan, id)
+type GetScanParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) GetScan(ctx context.Context, arg GetScanParams) (Scan, error) {
+	row := q.db.QueryRow(ctx, getScan, arg.ID, arg.OwnerID)
 	var i Scan
 	err := row.Scan(
 		&i.ID,
@@ -121,22 +144,29 @@ func (q *Queries) GetScan(ctx context.Context, id uuid.UUID) (Scan, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const getScanSlot = `-- name: GetScanSlot :one
-SELECT id, processing_id, frame_id, scanner, file_key, file_name, content_type, size_bytes, created_at, updated_at, deleted_at FROM scan WHERE processing_id = $1 AND frame_id = $2 AND scanner = $3 AND deleted_at IS NULL
+SELECT id, processing_id, frame_id, scanner, file_key, file_name, content_type, size_bytes, created_at, updated_at, deleted_at, owner_id FROM scan WHERE processing_id = $1 AND frame_id = $2 AND scanner = $3 AND owner_id = $4 AND deleted_at IS NULL
 `
 
 type GetScanSlotParams struct {
 	ProcessingID uuid.UUID
 	FrameID      uuid.UUID
 	Scanner      string
+	OwnerID      uuid.UUID
 }
 
 func (q *Queries) GetScanSlot(ctx context.Context, arg GetScanSlotParams) (Scan, error) {
-	row := q.db.QueryRow(ctx, getScanSlot, arg.ProcessingID, arg.FrameID, arg.Scanner)
+	row := q.db.QueryRow(ctx, getScanSlot,
+		arg.ProcessingID,
+		arg.FrameID,
+		arg.Scanner,
+		arg.OwnerID,
+	)
 	var i Scan
 	err := row.Scan(
 		&i.ID,
@@ -150,22 +180,29 @@ func (q *Queries) GetScanSlot(ctx context.Context, arg GetScanSlotParams) (Scan,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const insertLab = `-- name: InsertLab :one
-INSERT INTO lab (id, name, address) VALUES ($1, $2, $3) RETURNING id, name, address, created_at, updated_at, deleted_at
+INSERT INTO lab (id, name, address, owner_id) VALUES ($1, $2, $3, $4) RETURNING id, name, address, created_at, updated_at, deleted_at, owner_id
 `
 
 type InsertLabParams struct {
 	ID      uuid.UUID
 	Name    string
 	Address *string
+	OwnerID uuid.UUID
 }
 
 func (q *Queries) InsertLab(ctx context.Context, arg InsertLabParams) (Lab, error) {
-	row := q.db.QueryRow(ctx, insertLab, arg.ID, arg.Name, arg.Address)
+	row := q.db.QueryRow(ctx, insertLab,
+		arg.ID,
+		arg.Name,
+		arg.Address,
+		arg.OwnerID,
+	)
 	var i Lab
 	err := row.Scan(
 		&i.ID,
@@ -174,14 +211,15 @@ func (q *Queries) InsertLab(ctx context.Context, arg InsertLabParams) (Lab, erro
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const insertProcessing = `-- name: InsertProcessing :one
-INSERT INTO processing (id, roll_id, lab_id, type, process, sent_at, scans_expected_at, negatives_expected_at, price, notes)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at
+INSERT INTO processing (id, roll_id, lab_id, type, process, sent_at, scans_expected_at, negatives_expected_at, price, notes, owner_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at, owner_id
 `
 
 type InsertProcessingParams struct {
@@ -195,6 +233,7 @@ type InsertProcessingParams struct {
 	NegativesExpectedAt *time.Time
 	Price               *int32
 	Notes               *string
+	OwnerID             uuid.UUID
 }
 
 func (q *Queries) InsertProcessing(ctx context.Context, arg InsertProcessingParams) (Processing, error) {
@@ -209,6 +248,7 @@ func (q *Queries) InsertProcessing(ctx context.Context, arg InsertProcessingPara
 		arg.NegativesExpectedAt,
 		arg.Price,
 		arg.Notes,
+		arg.OwnerID,
 	)
 	var i Processing
 	err := row.Scan(
@@ -227,14 +267,15 @@ func (q *Queries) InsertProcessing(ctx context.Context, arg InsertProcessingPara
 		&i.DeletedAt,
 		&i.ScansExpectedAt,
 		&i.NegativesExpectedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const insertScan = `-- name: InsertScan :one
-INSERT INTO scan (id, processing_id, frame_id, scanner, file_key, file_name, content_type, size_bytes)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, processing_id, frame_id, scanner, file_key, file_name, content_type, size_bytes, created_at, updated_at, deleted_at
+INSERT INTO scan (id, processing_id, frame_id, scanner, file_key, file_name, content_type, size_bytes, owner_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, processing_id, frame_id, scanner, file_key, file_name, content_type, size_bytes, created_at, updated_at, deleted_at, owner_id
 `
 
 type InsertScanParams struct {
@@ -246,6 +287,7 @@ type InsertScanParams struct {
 	FileName     string
 	ContentType  string
 	SizeBytes    int64
+	OwnerID      uuid.UUID
 }
 
 func (q *Queries) InsertScan(ctx context.Context, arg InsertScanParams) (Scan, error) {
@@ -258,6 +300,7 @@ func (q *Queries) InsertScan(ctx context.Context, arg InsertScanParams) (Scan, e
 		arg.FileName,
 		arg.ContentType,
 		arg.SizeBytes,
+		arg.OwnerID,
 	)
 	var i Scan
 	err := row.Scan(
@@ -272,27 +315,38 @@ func (q *Queries) InsertScan(ctx context.Context, arg InsertScanParams) (Scan, e
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const labHasProcessing = `-- name: LabHasProcessing :one
-SELECT EXISTS (SELECT 1 FROM processing WHERE lab_id = $1)
+SELECT EXISTS (SELECT 1 FROM processing WHERE lab_id = $1 AND owner_id = $2)
 `
 
-func (q *Queries) LabHasProcessing(ctx context.Context, labID *uuid.UUID) (bool, error) {
-	row := q.db.QueryRow(ctx, labHasProcessing, labID)
+type LabHasProcessingParams struct {
+	LabID   *uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) LabHasProcessing(ctx context.Context, arg LabHasProcessingParams) (bool, error) {
+	row := q.db.QueryRow(ctx, labHasProcessing, arg.LabID, arg.OwnerID)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
 }
 
 const listFrameScans = `-- name: ListFrameScans :many
-SELECT id, processing_id, frame_id, scanner, file_key, file_name, content_type, size_bytes, created_at, updated_at, deleted_at FROM scan WHERE frame_id = $1 AND deleted_at IS NULL ORDER BY scanner
+SELECT id, processing_id, frame_id, scanner, file_key, file_name, content_type, size_bytes, created_at, updated_at, deleted_at, owner_id FROM scan WHERE frame_id = $1 AND owner_id = $2 AND deleted_at IS NULL ORDER BY scanner
 `
 
-func (q *Queries) ListFrameScans(ctx context.Context, frameID uuid.UUID) ([]Scan, error) {
-	rows, err := q.db.Query(ctx, listFrameScans, frameID)
+type ListFrameScansParams struct {
+	FrameID uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) ListFrameScans(ctx context.Context, arg ListFrameScansParams) ([]Scan, error) {
+	rows, err := q.db.Query(ctx, listFrameScans, arg.FrameID, arg.OwnerID)
 	if err != nil {
 		return nil, err
 	}
@@ -312,6 +366,7 @@ func (q *Queries) ListFrameScans(ctx context.Context, frameID uuid.UUID) ([]Scan
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.OwnerID,
 		); err != nil {
 			return nil, err
 		}
@@ -325,11 +380,16 @@ func (q *Queries) ListFrameScans(ctx context.Context, frameID uuid.UUID) ([]Scan
 
 const listJobFrameNumbers = `-- name: ListJobFrameNumbers :many
 SELECT DISTINCT f.number FROM scan s JOIN frame f ON f.id = s.frame_id
-WHERE s.processing_id = $1 AND s.deleted_at IS NULL ORDER BY f.number
+WHERE s.processing_id = $1 AND s.owner_id = $2 AND s.deleted_at IS NULL ORDER BY f.number
 `
 
-func (q *Queries) ListJobFrameNumbers(ctx context.Context, processingID uuid.UUID) ([]int32, error) {
-	rows, err := q.db.Query(ctx, listJobFrameNumbers, processingID)
+type ListJobFrameNumbersParams struct {
+	ProcessingID uuid.UUID
+	OwnerID      uuid.UUID
+}
+
+func (q *Queries) ListJobFrameNumbers(ctx context.Context, arg ListJobFrameNumbersParams) ([]int32, error) {
+	rows, err := q.db.Query(ctx, listJobFrameNumbers, arg.ProcessingID, arg.OwnerID)
 	if err != nil {
 		return nil, err
 	}
@@ -349,11 +409,11 @@ func (q *Queries) ListJobFrameNumbers(ctx context.Context, processingID uuid.UUI
 }
 
 const listLabs = `-- name: ListLabs :many
-SELECT id, name, address, created_at, updated_at, deleted_at FROM lab WHERE deleted_at IS NULL ORDER BY name
+SELECT id, name, address, created_at, updated_at, deleted_at, owner_id FROM lab WHERE owner_id = $1 AND deleted_at IS NULL ORDER BY name
 `
 
-func (q *Queries) ListLabs(ctx context.Context) ([]Lab, error) {
-	rows, err := q.db.Query(ctx, listLabs)
+func (q *Queries) ListLabs(ctx context.Context, ownerID uuid.UUID) ([]Lab, error) {
+	rows, err := q.db.Query(ctx, listLabs, ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -368,6 +428,7 @@ func (q *Queries) ListLabs(ctx context.Context) ([]Lab, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.OwnerID,
 		); err != nil {
 			return nil, err
 		}
@@ -380,13 +441,15 @@ func (q *Queries) ListLabs(ctx context.Context) ([]Lab, error) {
 }
 
 const listProcessingScans = `-- name: ListProcessingScans :many
-SELECT s.id, s.processing_id, s.frame_id, s.scanner, s.file_key, s.file_name, s.content_type, s.size_bytes, s.created_at, s.updated_at, s.deleted_at, f.number AS frame_number FROM scan s JOIN frame f ON f.id = s.frame_id
-WHERE s.processing_id = $1 AND s.deleted_at IS NULL AND ($2::text IS NULL OR s.scanner = $2)
+SELECT s.id, s.processing_id, s.frame_id, s.scanner, s.file_key, s.file_name, s.content_type, s.size_bytes, s.created_at, s.updated_at, s.deleted_at, s.owner_id, f.number AS frame_number FROM scan s JOIN frame f ON f.id = s.frame_id
+WHERE s.processing_id = $1 AND s.owner_id = $2 AND s.deleted_at IS NULL
+  AND ($3::text IS NULL OR s.scanner = $3)
 ORDER BY f.number, s.scanner
 `
 
 type ListProcessingScansParams struct {
 	ProcessingID uuid.UUID
+	OwnerID      uuid.UUID
 	Scanner      *string
 }
 
@@ -402,11 +465,12 @@ type ListProcessingScansRow struct {
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
 	DeletedAt    pgtype.Timestamptz
+	OwnerID      uuid.UUID
 	FrameNumber  int32
 }
 
 func (q *Queries) ListProcessingScans(ctx context.Context, arg ListProcessingScansParams) ([]ListProcessingScansRow, error) {
-	rows, err := q.db.Query(ctx, listProcessingScans, arg.ProcessingID, arg.Scanner)
+	rows, err := q.db.Query(ctx, listProcessingScans, arg.ProcessingID, arg.OwnerID, arg.Scanner)
 	if err != nil {
 		return nil, err
 	}
@@ -426,6 +490,7 @@ func (q *Queries) ListProcessingScans(ctx context.Context, arg ListProcessingSca
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.OwnerID,
 			&i.FrameNumber,
 		); err != nil {
 			return nil, err
@@ -439,10 +504,15 @@ func (q *Queries) ListProcessingScans(ctx context.Context, arg ListProcessingSca
 }
 
 const listRollProcessing = `-- name: ListRollProcessing :many
-SELECT p.id, p.roll_id, p.lab_id, p.type, p.process, p.sent_at, p.scans_received_at, p.negatives_returned_at, p.price, p.notes, p.created_at, p.updated_at, p.deleted_at, p.scans_expected_at, p.negatives_expected_at, COALESCE(l.name, '') AS lab_name
+SELECT p.id, p.roll_id, p.lab_id, p.type, p.process, p.sent_at, p.scans_received_at, p.negatives_returned_at, p.price, p.notes, p.created_at, p.updated_at, p.deleted_at, p.scans_expected_at, p.negatives_expected_at, p.owner_id, COALESCE(l.name, '') AS lab_name
 FROM processing p LEFT JOIN lab l ON l.id = p.lab_id
-WHERE p.roll_id = $1 AND p.deleted_at IS NULL ORDER BY p.sent_at, p.created_at
+WHERE p.roll_id = $1 AND p.owner_id = $2 AND p.deleted_at IS NULL ORDER BY p.sent_at, p.created_at
 `
+
+type ListRollProcessingParams struct {
+	RollID  uuid.UUID
+	OwnerID uuid.UUID
+}
 
 type ListRollProcessingRow struct {
 	ID                  uuid.UUID
@@ -460,11 +530,12 @@ type ListRollProcessingRow struct {
 	DeletedAt           pgtype.Timestamptz
 	ScansExpectedAt     *time.Time
 	NegativesExpectedAt *time.Time
+	OwnerID             uuid.UUID
 	LabName             string
 }
 
-func (q *Queries) ListRollProcessing(ctx context.Context, rollID uuid.UUID) ([]ListRollProcessingRow, error) {
-	rows, err := q.db.Query(ctx, listRollProcessing, rollID)
+func (q *Queries) ListRollProcessing(ctx context.Context, arg ListRollProcessingParams) ([]ListRollProcessingRow, error) {
+	rows, err := q.db.Query(ctx, listRollProcessing, arg.RollID, arg.OwnerID)
 	if err != nil {
 		return nil, err
 	}
@@ -488,6 +559,7 @@ func (q *Queries) ListRollProcessing(ctx context.Context, rollID uuid.UUID) ([]L
 			&i.DeletedAt,
 			&i.ScansExpectedAt,
 			&i.NegativesExpectedAt,
+			&i.OwnerID,
 			&i.LabName,
 		); err != nil {
 			return nil, err
@@ -501,12 +573,19 @@ func (q *Queries) ListRollProcessing(ctx context.Context, rollID uuid.UUID) ([]L
 }
 
 const listScanOrders = `-- name: ListScanOrders :many
+
 SELECT o.processing_id, o.scanner, o.hi_res,
        (SELECT count(*) FROM scan s WHERE s.processing_id = o.processing_id AND s.scanner = o.scanner AND s.deleted_at IS NULL)::int AS scan_count
 FROM processing_scan_order o
-WHERE o.processing_id = ANY($1::uuid[])
+JOIN processing p ON p.id = o.processing_id
+WHERE o.processing_id = ANY($1::uuid[]) AND p.owner_id = $2
 ORDER BY o.processing_id, o.scanner
 `
+
+type ListScanOrdersParams struct {
+	ProcessingIds []uuid.UUID
+	OwnerID       uuid.UUID
+}
 
 type ListScanOrdersRow struct {
 	ProcessingID uuid.UUID
@@ -515,8 +594,9 @@ type ListScanOrdersRow struct {
 	ScanCount    int32
 }
 
-func (q *Queries) ListScanOrders(ctx context.Context, processingIds []uuid.UUID) ([]ListScanOrdersRow, error) {
-	rows, err := q.db.Query(ctx, listScanOrders, processingIds)
+// Scan orders hang off a job; the job is checked to belong to the account before these run.
+func (q *Queries) ListScanOrders(ctx context.Context, arg ListScanOrdersParams) ([]ListScanOrdersRow, error) {
+	rows, err := q.db.Query(ctx, listScanOrders, arg.ProcessingIds, arg.OwnerID)
 	if err != nil {
 		return nil, err
 	}
@@ -548,7 +628,7 @@ FROM processing p
 JOIN lab l ON l.id = p.lab_id
 JOIN roll r ON r.id = p.roll_id
 JOIN film_stock fs ON fs.id = r.film_stock_id
-WHERE p.negatives_returned_at IS NULL AND p.deleted_at IS NULL AND r.deleted_at IS NULL
+WHERE p.owner_id = $1 AND p.negatives_returned_at IS NULL AND p.deleted_at IS NULL AND r.deleted_at IS NULL
 ORDER BY p.sent_at
 `
 
@@ -564,8 +644,8 @@ type NegativesAtLabRow struct {
 	StockName     string
 }
 
-func (q *Queries) NegativesAtLab(ctx context.Context) ([]NegativesAtLabRow, error) {
-	rows, err := q.db.Query(ctx, negativesAtLab)
+func (q *Queries) NegativesAtLab(ctx context.Context, ownerID uuid.UUID) ([]NegativesAtLabRow, error) {
+	rows, err := q.db.Query(ctx, negativesAtLab, ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -595,11 +675,16 @@ func (q *Queries) NegativesAtLab(ctx context.Context) ([]NegativesAtLabRow, erro
 }
 
 const processingHasScans = `-- name: ProcessingHasScans :one
-SELECT EXISTS (SELECT 1 FROM scan WHERE processing_id = $1 AND deleted_at IS NULL)
+SELECT EXISTS (SELECT 1 FROM scan WHERE processing_id = $1 AND owner_id = $2 AND deleted_at IS NULL)
 `
 
-func (q *Queries) ProcessingHasScans(ctx context.Context, processingID uuid.UUID) (bool, error) {
-	row := q.db.QueryRow(ctx, processingHasScans, processingID)
+type ProcessingHasScansParams struct {
+	ProcessingID uuid.UUID
+	OwnerID      uuid.UUID
+}
+
+func (q *Queries) ProcessingHasScans(ctx context.Context, arg ProcessingHasScansParams) (bool, error) {
+	row := q.db.QueryRow(ctx, processingHasScans, arg.ProcessingID, arg.OwnerID)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
@@ -607,7 +692,7 @@ func (q *Queries) ProcessingHasScans(ctx context.Context, processingID uuid.UUID
 
 const replaceScan = `-- name: ReplaceScan :one
 UPDATE scan SET file_key = $2, file_name = $3, content_type = $4, size_bytes = $5, created_at = now()
-WHERE id = $1 AND deleted_at IS NULL RETURNING id, processing_id, frame_id, scanner, file_key, file_name, content_type, size_bytes, created_at, updated_at, deleted_at
+WHERE id = $1 AND owner_id = $6 AND deleted_at IS NULL RETURNING id, processing_id, frame_id, scanner, file_key, file_name, content_type, size_bytes, created_at, updated_at, deleted_at, owner_id
 `
 
 type ReplaceScanParams struct {
@@ -616,6 +701,7 @@ type ReplaceScanParams struct {
 	FileName    string
 	ContentType string
 	SizeBytes   int64
+	OwnerID     uuid.UUID
 }
 
 func (q *Queries) ReplaceScan(ctx context.Context, arg ReplaceScanParams) (Scan, error) {
@@ -625,6 +711,7 @@ func (q *Queries) ReplaceScan(ctx context.Context, arg ReplaceScanParams) (Scan,
 		arg.FileName,
 		arg.ContentType,
 		arg.SizeBytes,
+		arg.OwnerID,
 	)
 	var i Scan
 	err := row.Scan(
@@ -639,6 +726,7 @@ func (q *Queries) ReplaceScan(ctx context.Context, arg ReplaceScanParams) (Scan,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
@@ -676,16 +764,17 @@ func (q *Queries) ScannerHasScans(ctx context.Context, arg ScannerHasScansParams
 }
 
 const setNegativesReturned = `-- name: SetNegativesReturned :one
-UPDATE processing SET negatives_returned_at = $2 WHERE id = $1 AND deleted_at IS NULL RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at
+UPDATE processing SET negatives_returned_at = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at, owner_id
 `
 
 type SetNegativesReturnedParams struct {
 	ID                  uuid.UUID
 	NegativesReturnedAt *time.Time
+	OwnerID             uuid.UUID
 }
 
 func (q *Queries) SetNegativesReturned(ctx context.Context, arg SetNegativesReturnedParams) (Processing, error) {
-	row := q.db.QueryRow(ctx, setNegativesReturned, arg.ID, arg.NegativesReturnedAt)
+	row := q.db.QueryRow(ctx, setNegativesReturned, arg.ID, arg.NegativesReturnedAt, arg.OwnerID)
 	var i Processing
 	err := row.Scan(
 		&i.ID,
@@ -703,21 +792,23 @@ func (q *Queries) SetNegativesReturned(ctx context.Context, arg SetNegativesRetu
 		&i.DeletedAt,
 		&i.ScansExpectedAt,
 		&i.NegativesExpectedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const setScansReceived = `-- name: SetScansReceived :one
-UPDATE processing SET scans_received_at = $2 WHERE id = $1 AND deleted_at IS NULL RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at
+UPDATE processing SET scans_received_at = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at, owner_id
 `
 
 type SetScansReceivedParams struct {
 	ID              uuid.UUID
 	ScansReceivedAt *time.Time
+	OwnerID         uuid.UUID
 }
 
 func (q *Queries) SetScansReceived(ctx context.Context, arg SetScansReceivedParams) (Processing, error) {
-	row := q.db.QueryRow(ctx, setScansReceived, arg.ID, arg.ScansReceivedAt)
+	row := q.db.QueryRow(ctx, setScansReceived, arg.ID, arg.ScansReceivedAt, arg.OwnerID)
 	var i Processing
 	err := row.Scan(
 		&i.ID,
@@ -735,16 +826,22 @@ func (q *Queries) SetScansReceived(ctx context.Context, arg SetScansReceivedPara
 		&i.DeletedAt,
 		&i.ScansExpectedAt,
 		&i.NegativesExpectedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const softDeleteLab = `-- name: SoftDeleteLab :execrows
-UPDATE lab SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL
+UPDATE lab SET deleted_at = now() WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
 `
 
-func (q *Queries) SoftDeleteLab(ctx context.Context, id uuid.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, softDeleteLab, id)
+type SoftDeleteLabParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) SoftDeleteLab(ctx context.Context, arg SoftDeleteLabParams) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteLab, arg.ID, arg.OwnerID)
 	if err != nil {
 		return 0, err
 	}
@@ -752,11 +849,16 @@ func (q *Queries) SoftDeleteLab(ctx context.Context, id uuid.UUID) (int64, error
 }
 
 const softDeleteProcessing = `-- name: SoftDeleteProcessing :execrows
-UPDATE processing SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL
+UPDATE processing SET deleted_at = now() WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
 `
 
-func (q *Queries) SoftDeleteProcessing(ctx context.Context, id uuid.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, softDeleteProcessing, id)
+type SoftDeleteProcessingParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) SoftDeleteProcessing(ctx context.Context, arg SoftDeleteProcessingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteProcessing, arg.ID, arg.OwnerID)
 	if err != nil {
 		return 0, err
 	}
@@ -764,11 +866,16 @@ func (q *Queries) SoftDeleteProcessing(ctx context.Context, id uuid.UUID) (int64
 }
 
 const softDeleteScan = `-- name: SoftDeleteScan :execrows
-UPDATE scan SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL
+UPDATE scan SET deleted_at = now() WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
 `
 
-func (q *Queries) SoftDeleteScan(ctx context.Context, id uuid.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, softDeleteScan, id)
+type SoftDeleteScanParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) SoftDeleteScan(ctx context.Context, arg SoftDeleteScanParams) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteScan, arg.ID, arg.OwnerID)
 	if err != nil {
 		return 0, err
 	}
@@ -776,17 +883,23 @@ func (q *Queries) SoftDeleteScan(ctx context.Context, id uuid.UUID) (int64, erro
 }
 
 const updateLab = `-- name: UpdateLab :one
-UPDATE lab SET name = $2, address = $3 WHERE id = $1 AND deleted_at IS NULL RETURNING id, name, address, created_at, updated_at, deleted_at
+UPDATE lab SET name = $2, address = $3 WHERE id = $1 AND owner_id = $4 AND deleted_at IS NULL RETURNING id, name, address, created_at, updated_at, deleted_at, owner_id
 `
 
 type UpdateLabParams struct {
 	ID      uuid.UUID
 	Name    string
 	Address *string
+	OwnerID uuid.UUID
 }
 
 func (q *Queries) UpdateLab(ctx context.Context, arg UpdateLabParams) (Lab, error) {
-	row := q.db.QueryRow(ctx, updateLab, arg.ID, arg.Name, arg.Address)
+	row := q.db.QueryRow(ctx, updateLab,
+		arg.ID,
+		arg.Name,
+		arg.Address,
+		arg.OwnerID,
+	)
 	var i Lab
 	err := row.Scan(
 		&i.ID,
@@ -795,13 +908,14 @@ func (q *Queries) UpdateLab(ctx context.Context, arg UpdateLabParams) (Lab, erro
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const updateProcessing = `-- name: UpdateProcessing :one
 UPDATE processing SET lab_id = $2, sent_at = $3, scans_expected_at = $4, negatives_expected_at = $5, price = $6, notes = $7
-WHERE id = $1 AND deleted_at IS NULL RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at
+WHERE id = $1 AND owner_id = $8 AND deleted_at IS NULL RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at, owner_id
 `
 
 type UpdateProcessingParams struct {
@@ -812,6 +926,7 @@ type UpdateProcessingParams struct {
 	NegativesExpectedAt *time.Time
 	Price               *int32
 	Notes               *string
+	OwnerID             uuid.UUID
 }
 
 func (q *Queries) UpdateProcessing(ctx context.Context, arg UpdateProcessingParams) (Processing, error) {
@@ -823,6 +938,7 @@ func (q *Queries) UpdateProcessing(ctx context.Context, arg UpdateProcessingPara
 		arg.NegativesExpectedAt,
 		arg.Price,
 		arg.Notes,
+		arg.OwnerID,
 	)
 	var i Processing
 	err := row.Scan(
@@ -841,6 +957,7 @@ func (q *Queries) UpdateProcessing(ctx context.Context, arg UpdateProcessingPara
 		&i.DeletedAt,
 		&i.ScansExpectedAt,
 		&i.NegativesExpectedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }

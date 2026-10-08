@@ -30,7 +30,7 @@ type labQueries struct {
 	failOn  string
 }
 
-func (queries *labQueries) ListLabs(context.Context) ([]gen.Lab, error) {
+func (queries *labQueries) ListLabs(_ context.Context, _ uuid.UUID) ([]gen.Lab, error) {
 	if queries.failOn == "list" {
 		return nil, errBoom
 	}
@@ -59,7 +59,8 @@ func (queries *labQueries) UpdateLab(_ context.Context, arg gen.UpdateLabParams)
 	return lab, nil
 }
 
-func (queries *labQueries) GetLab(_ context.Context, id uuid.UUID) (gen.Lab, error) {
+func (queries *labQueries) GetLab(_ context.Context, arg gen.GetLabParams) (gen.Lab, error) {
+	id := arg.ID
 	lab, found := queries.labs[id]
 	if !found {
 		return gen.Lab{}, pgx.ErrNoRows
@@ -67,14 +68,15 @@ func (queries *labQueries) GetLab(_ context.Context, id uuid.UUID) (gen.Lab, err
 	return lab, nil
 }
 
-func (queries *labQueries) LabHasProcessing(context.Context, *uuid.UUID) (bool, error) {
+func (queries *labQueries) LabHasProcessing(_ context.Context, arg gen.LabHasProcessingParams) (bool, error) {
 	if queries.failOn == "used" {
 		return false, errBoom
 	}
 	return queries.inUse, nil
 }
 
-func (queries *labQueries) SoftDeleteLab(_ context.Context, id uuid.UUID) (int64, error) {
+func (queries *labQueries) SoftDeleteLab(_ context.Context, arg gen.SoftDeleteLabParams) (int64, error) {
+	id := arg.ID
 	queries.deleted = append(queries.deleted, id)
 	delete(queries.labs, id)
 	return 1, nil
