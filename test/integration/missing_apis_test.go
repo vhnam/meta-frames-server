@@ -76,15 +76,16 @@ func TestAuditEntryByID(test *testing.T) {
 	harness := newHarness(test)
 	harness.expect(harness.callAs("nam", "POST", "/labs", map[string]any{"name": "Lab A"}), http.StatusCreated)
 
-	entries := harness.auditTrail("entityType=lab")
+	entries := harness.auditTrailOf("nam", "entityType=lab")
 	if len(entries) != 1 {
 		test.Fatalf("entries = %v", entries)
 	}
 	id := int(entries[0]["id"].(float64))
-	entry := harness.expect(harness.call("GET", "/audit-logs/"+itoa(id), nil), http.StatusOK)
-	if entry.Body["entityType"] != "lab" || entry.Body["actor"] != "nam" {
+	entry := harness.expect(harness.callAs("nam", "GET", "/audit-logs/"+itoa(id), nil), http.StatusOK)
+	if entry.Body["entityType"] != "lab" || entry.Body["actor"] != actorEmail("nam") {
 		test.Fatalf("entry = %s", entry.Raw)
 	}
+	harness.expect(harness.call("GET", "/audit-logs/"+itoa(id), nil), http.StatusNotFound) // nam's, not tester's
 	harness.expect(harness.call("GET", "/audit-logs/999999", nil), http.StatusNotFound)
 	harness.expect(harness.call("GET", "/audit-logs/abc", nil), http.StatusBadRequest)
 }

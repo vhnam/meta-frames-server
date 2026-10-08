@@ -49,8 +49,8 @@ func TestFilmStocksBaseStocksAndInventory(test *testing.T) {
 
 	// UC-14.
 	addRoll := func(stockID string, format int, status string, expiryYear, expiryMonth any) {
-		harness.execSQL(`INSERT INTO roll (id, film_stock_id, format, exposures, status, expiry_year, expiry_month)
-		                 VALUES ($1, $2, $3, 36, $4, $5, $6)`, newID(), stockID, format, status, expiryYear, expiryMonth)
+		harness.execSQL(`INSERT INTO roll (id, film_stock_id, format, exposures, status, expiry_year, expiry_month, owner_id)
+		                 SELECT $1, $2, $3, 36, $4, $5, $6, owner_id FROM film_stock WHERE id = $2`, newID(), stockID, format, status, expiryYear, expiryMonth)
 	}
 	addRoll(cyberpunkID, 135, "in_stock", 2027, 6)
 	addRoll(cyberpunkID, 135, "in_stock", 2026, nil) // unknown month sorts as December 2026

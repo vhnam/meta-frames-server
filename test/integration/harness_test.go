@@ -17,18 +17,38 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
+	"meta-frames-server/internal/auth"
 	"meta-frames-server/internal/common/clock"
 	"meta-frames-server/internal/controllers"
 	"meta-frames-server/internal/db"
 	"meta-frames-server/internal/server"
 	"meta-frames-server/internal/services"
 	"meta-frames-server/internal/storage"
+	"meta-frames-server/internal/testutil"
 )
 
 type harness struct {
-	test    *testing.T
-	pool    *pgxpool.Pool
-	handler http.Handler
+	test     *testing.T
+	pool     *pgxpool.Pool
+	app      http.Handler // anonymous
+	handler  http.Handler // signed in as actorEmail("tester")
+	sessions map[string]*http.Cookie
+	mail     testutil.Mailbox // emails sent by internal/auth
+	google   *testutil.FakeGoogle
+}
+
+// actorEmail is the account of a named test user; audit entries record it as the actor.
+func actorEmail(name string) string { return name + "@example.test" }
+
+// sessionOf signs the named user up on first use and returns their session cookie.
+func (harness *harness) sessionOf(name string) *http.Cookie {
+	harness.test.Helper()
+	if cookie, ok := harness.sessions[name]; ok {
+		return cookie
+	}
+	cookie := testutil.SignUp(harness.test, harness.app, actorEmail(name))
+	harness.sessions[name] = cookie
+	return cookie
 }
 
 type response struct {
@@ -73,12 +93,27 @@ func newHarness(test *testing.T) *harness {
 	if err != nil {
 		test.Fatal(err)
 	}
-	appServices := services.New(db.NewPostgresStore(pool), files, clock.System{})
-	handler, err := server.NewHandler(controllers.New(appServices), []string{"*"})
+	store := db.NewPostgresStore(pool)
+	harness := &harness{test: test, pool: pool}
+	harness.google = testutil.NewFakeGoogle(test, "http://api.test/auth/oauth2/callback/google")
+	accounts, err := auth.New(store, auth.Config{
+		AppURL: "http://app.test",
+		APIURL: "http://api.test",
+		Mailer: &harness.mail,
+		Google: harness.google.Config(),
+	})
 	if err != nil {
 		test.Fatal(err)
 	}
-	return &harness{test: test, pool: pool, handler: handler}
+	appServices := services.New(store, files, clock.System{})
+	handler, err := server.NewHandler(controllers.New(appServices), accounts, []string{"*"})
+	if err != nil {
+		test.Fatal(err)
+	}
+	harness.app = handler
+	harness.handler = testutil.SignedIn(handler, testutil.SignUp(test, handler, actorEmail("tester")))
+	harness.sessions = map[string]*http.Cookie{}
+	return harness
 }
 
 func newID() string { return uuid.NewString() }

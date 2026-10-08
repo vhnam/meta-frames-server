@@ -15,16 +15,29 @@ import (
 
 	"meta-frames-server/internal/common/requestctx"
 
+	"meta-frames-server/internal/auth"
 	"meta-frames-server/internal/common/clock"
 	"meta-frames-server/internal/controllers"
 	"meta-frames-server/internal/services"
 	"meta-frames-server/internal/testutil"
 )
 
+// newHandler serves every request as a signed-in user.
 func newHandler(test *testing.T) http.Handler {
 	test.Helper()
-	appServices := services.New(testutil.Store{Querier: testutil.NewMemory()}, testutil.NewMemoryFiles(), clock.Fixed{})
-	handler, err := NewHandler(controllers.New(appServices), []string{"http://localhost:5173"})
+	handler := newAnonymousHandler(test)
+	return testutil.SignedIn(handler, testutil.SignUp(test, handler, "tester@example.com"))
+}
+
+func newAnonymousHandler(test *testing.T) http.Handler {
+	test.Helper()
+	store := testutil.Store{Querier: testutil.NewMemory()}
+	accounts, err := auth.New(store, auth.Config{Mailer: &testutil.Mailbox{}})
+	if err != nil {
+		test.Fatal(err)
+	}
+	appServices := services.New(store, testutil.NewMemoryFiles(), clock.Fixed{})
+	handler, err := NewHandler(controllers.New(appServices), accounts, []string{"http://localhost:5173"})
 	if err != nil {
 		test.Fatal(err)
 	}
@@ -103,7 +116,12 @@ func TestRequestContextCarriesTheActorAndRequestID(test *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.ContextWithFallback = true
-	router.Use(requestid.New(), requestContext())
+	signedIn := true
+	router.Use(requestid.New(), func(ctx *gin.Context) {
+		if signedIn {
+			ctx.Request = ctx.Request.WithContext(auth.WithUser(ctx.Request.Context(), &auth.User{Email: "nam@example.com"}))
+		}
+	}, requestContext())
 	var seen requestctx.Meta
 	router.GET("/x", func(ctx *gin.Context) {
 		seen, _ = requestctx.From(ctx) // the same lookup services do, via the gin context
@@ -111,22 +129,49 @@ func TestRequestContextCarriesTheActorAndRequestID(test *testing.T) {
 	})
 
 	request := httptest.NewRequest("GET", "/x", nil)
-	request.Header.Set("X-Actor", "  nam  ")
 	request.Header.Set("X-Request-ID", "req-42")
 	serve(router, request)
-	if seen.Actor != "nam" || seen.RequestID != "req-42" {
+	if seen.Actor != "nam@example.com" || seen.RequestID != "req-42" {
 		test.Fatalf("meta = %+v", seen)
 	}
 
-	long := httptest.NewRequest("GET", "/x", nil)
-	long.Header.Set("X-Actor", strings.Repeat("a", 500))
-	serve(router, long)
-	if len(seen.Actor) != maxActorBytes {
-		test.Fatalf("actor length = %d, want it capped at %d", len(seen.Actor), maxActorBytes)
-	}
-
+	signedIn = false
 	serve(router, httptest.NewRequest("GET", "/x", nil))
 	if seen.Actor != "" || seen.RequestID == "" {
-		test.Fatalf("without a header the actor is empty but the request id is generated, got %+v", seen)
+		test.Fatalf("without a user the actor is empty but the request id is generated, got %+v", seen)
+	}
+}
+
+func TestEveryOperationExceptHealthAndAuthNeedsASession(test *testing.T) {
+	handler := newAnonymousHandler(test)
+	for _, path := range []string{"/cameras", "/rolls", "/audit-logs", "/stats/gear", "/auth/me"} {
+		recorder := serve(handler, httptest.NewRequest("GET", path, nil))
+		if recorder.Code != http.StatusUnauthorized || !strings.Contains(recorder.Body.String(), "unauthorized") {
+			test.Fatalf("GET %s without a session: status=%d body=%s", path, recorder.Code, recorder.Body)
+		}
+	}
+	upload := httptest.NewRequest("POST", "/processing/"+uuid.NewString()+"/scans", strings.NewReader("x"))
+	upload.Header.Set("Content-Type", "multipart/form-data; boundary=x")
+	if recorder := serve(handler, upload); recorder.Code != http.StatusUnauthorized {
+		test.Fatalf("scan uploads skip validation but not the session check, got %d", recorder.Code)
+	}
+	if recorder := serve(handler, httptest.NewRequest("GET", "/health", nil)); recorder.Code != http.StatusOK {
+		test.Fatalf("/health must stay public, got %d", recorder.Code)
+	}
+	if recorder := serve(handler, httptest.NewRequest("GET", "/cameras/not-a-uuid", nil)); recorder.Code != http.StatusUnauthorized {
+		test.Fatalf("the session is checked before the request is validated, got %d", recorder.Code)
+	}
+
+	signedIn := testutil.SignedIn(handler, testutil.SignUp(test, handler, "tester@example.com"))
+	if recorder := serve(signedIn, httptest.NewRequest("GET", "/cameras", nil)); recorder.Code != http.StatusOK {
+		test.Fatalf("signed in: status=%d body=%s", recorder.Code, recorder.Body)
+	}
+}
+
+func TestCrossOriginWritesFromOtherOriginsAreRefused(test *testing.T) {
+	request := httptest.NewRequest("POST", "/auth/logout", nil)
+	request.Header.Set("Origin", "https://evil.example")
+	if recorder := serve(newHandler(test), request); recorder.Code != http.StatusForbidden {
+		test.Fatalf("a write from an unlisted origin must be a 403, got %d", recorder.Code)
 	}
 }
