@@ -7,6 +7,7 @@ import (
 
 	"meta-frames-server/internal/common/apperror"
 	"meta-frames-server/internal/common/pointers"
+	"meta-frames-server/internal/common/requestctx"
 	"meta-frames-server/internal/db"
 	"meta-frames-server/internal/db/gen"
 	"meta-frames-server/internal/services/lens"
@@ -53,7 +54,7 @@ func validateCameraInput(input Input) (validatedCamera, error) {
 
 // buildCameraViews adds built-in lens ids and loaded rolls (UC-09) to cameras.
 func buildCameraViews(ctx context.Context, queries gen.Querier, cameras []gen.Camera) ([]View, error) {
-	links, err := queries.ListBuiltInLensLinks(ctx)
+	links, err := queries.ListBuiltInLensLinks(ctx, requestctx.Owner(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +63,7 @@ func buildCameraViews(ctx context.Context, queries gen.Querier, cameras []gen.Ca
 		builtInLensByCamera[link.CameraID] = link.LensID
 	}
 
-	loadedRows, err := queries.ListLoadedRolls(ctx)
+	loadedRows, err := queries.ListLoadedRolls(ctx, requestctx.Owner(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +98,7 @@ func buildCameraView(ctx context.Context, queries gen.Querier, camera gen.Camera
 }
 
 func (service *Service) List(ctx context.Context, activeOnly bool) ([]View, error) {
-	cameras, err := service.store.Queries().ListCameras(ctx)
+	cameras, err := service.store.Queries().ListCameras(ctx, requestctx.Owner(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +116,7 @@ func (service *Service) List(ctx context.Context, activeOnly bool) ([]View, erro
 
 func (service *Service) Get(ctx context.Context, cameraID uuid.UUID) (View, error) {
 	queries := service.store.Queries()
-	camera, err := queries.GetCamera(ctx, cameraID)
+	camera, err := queries.GetCamera(ctx, gen.GetCameraParams{ID: cameraID, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return View{}, shared.NotFoundOr(err, "camera")
 	}
@@ -137,6 +138,7 @@ func (service *Service) Create(ctx context.Context, cameraID uuid.UUID, input In
 		saved, err = queries.InsertCamera(ctx, gen.InsertCameraParams{
 			ID: cameraID, Brand: valid.brand, Model: valid.model, Mount: valid.mount,
 			Description: pointers.TrimmedOrNil(input.Description), HasFixedLens: input.HasFixedLens,
+			OwnerID: requestctx.Owner(ctx),
 		})
 		if err != nil || !input.HasFixedLens {
 			return err
@@ -161,7 +163,7 @@ func (service *Service) Update(ctx context.Context, cameraID uuid.UUID, input In
 
 	var saved gen.Camera
 	err = service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		existing, err := queries.GetCameraForUpdate(ctx, cameraID)
+		existing, err := queries.GetCameraForUpdate(ctx, gen.GetCameraForUpdateParams{ID: cameraID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return shared.NotFoundOr(err, "camera")
 		}
@@ -171,6 +173,7 @@ func (service *Service) Update(ctx context.Context, cameraID uuid.UUID, input In
 		saved, err = queries.UpdateCamera(ctx, gen.UpdateCameraParams{
 			ID: cameraID, Brand: valid.brand, Model: valid.model, Mount: valid.mount,
 			Description: pointers.TrimmedOrNil(input.Description),
+			OwnerID:     requestctx.Owner(ctx),
 		})
 		return err
 	})
@@ -186,6 +189,7 @@ func (service *Service) createBuiltInLens(ctx context.Context, queries gen.Queri
 	if _, err := queries.InsertLens(ctx, gen.InsertLensParams{
 		ID: lensID, Brand: pointers.TrimmedOrNil(lens.Brand), Model: pointers.TrimmedOrNil(lens.Model),
 		FocalLength: int32(lens.FocalLength), MaxAperture: lens.MaxAperture, IsBuiltIn: true,
+		OwnerID: requestctx.Owner(ctx),
 	}); err != nil {
 		return err
 	}
@@ -196,11 +200,11 @@ func (service *Service) createBuiltInLens(ctx context.Context, queries gen.Queri
 func (service *Service) SetActive(ctx context.Context, cameraID uuid.UUID, active bool) (View, error) {
 	var saved gen.Camera
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		if _, err := queries.GetCameraForUpdate(ctx, cameraID); err != nil {
+		if _, err := queries.GetCameraForUpdate(ctx, gen.GetCameraForUpdateParams{ID: cameraID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return shared.NotFoundOr(err, "camera")
 		}
 		if !active {
-			loaded, err := queries.CameraIsLoaded(ctx, &cameraID)
+			loaded, err := queries.CameraIsLoaded(ctx, gen.CameraIsLoadedParams{CameraID: &cameraID, OwnerID: requestctx.Owner(ctx)})
 			if err != nil {
 				return err
 			}
@@ -209,12 +213,12 @@ func (service *Service) SetActive(ctx context.Context, cameraID uuid.UUID, activ
 			}
 		}
 		var err error
-		saved, err = queries.SetCameraActive(ctx, gen.SetCameraActiveParams{ID: cameraID, IsActive: active})
+		saved, err = queries.SetCameraActive(ctx, gen.SetCameraActiveParams{ID: cameraID, IsActive: active, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return err
 		}
 		// A built-in lens follows its camera (UC-06).
-		return queries.SetBuiltInLensActive(ctx, gen.SetBuiltInLensActiveParams{CameraID: cameraID, IsActive: active})
+		return queries.SetBuiltInLensActive(ctx, gen.SetBuiltInLensActiveParams{CameraID: cameraID, IsActive: active, OwnerID: requestctx.Owner(ctx)})
 	})
 	if err != nil {
 		return View{}, err
@@ -224,10 +228,10 @@ func (service *Service) SetActive(ctx context.Context, cameraID uuid.UUID, activ
 
 func (service *Service) ListLenses(ctx context.Context, cameraID uuid.UUID) ([]gen.Lens, error) {
 	queries := service.store.Queries()
-	if _, err := queries.GetCamera(ctx, cameraID); err != nil {
+	if _, err := queries.GetCamera(ctx, gen.GetCameraParams{ID: cameraID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 		return nil, shared.NotFoundOr(err, "camera")
 	}
-	return queries.ListCameraLenses(ctx, cameraID)
+	return queries.ListCameraLenses(ctx, gen.ListCameraLensesParams{CameraID: cameraID, OwnerID: requestctx.Owner(ctx)})
 }
 
 // SetLenses replaces the lenses linked to an interchangeable-lens camera (UC-08).
@@ -235,18 +239,18 @@ func (service *Service) SetLenses(ctx context.Context, cameraID uuid.UUID, lensI
 	lensIDs = shared.RemoveDuplicates(lensIDs)
 	var linked []gen.Lens
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		camera, err := queries.GetCameraForUpdate(ctx, cameraID)
+		camera, err := queries.GetCameraForUpdate(ctx, gen.GetCameraForUpdateParams{ID: cameraID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return shared.NotFoundOr(err, "camera")
 		}
 		if camera.HasFixedLens {
 			return apperror.Conflict("fixed_lens_camera", "a fixed-lens camera has exactly one built-in lens")
 		}
-		currentLenses, err := queries.ListCameraLenses(ctx, cameraID)
+		currentLenses, err := queries.ListCameraLenses(ctx, gen.ListCameraLensesParams{CameraID: cameraID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return err
 		}
-		requested, err := queries.GetLensesByIDs(ctx, lensIDs)
+		requested, err := queries.GetLensesByIDs(ctx, gen.GetLensesByIDsParams{Ids: lensIDs, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return err
 		}
@@ -262,7 +266,7 @@ func (service *Service) SetLenses(ctx context.Context, cameraID uuid.UUID, lensI
 				return err
 			}
 		}
-		linked, err = queries.ListCameraLenses(ctx, cameraID)
+		linked, err = queries.ListCameraLenses(ctx, gen.ListCameraLensesParams{CameraID: cameraID, OwnerID: requestctx.Owner(ctx)})
 		return err
 	})
 	return linked, err
@@ -287,20 +291,20 @@ func checkLinkableLenses(found []gen.Lens, requestedIDs []uuid.UUID, alreadyLink
 // Delete soft-deletes a camera that never held a roll, together with its built-in lens (UC-01 clean-up).
 func (service *Service) Delete(ctx context.Context, cameraID uuid.UUID) error {
 	return service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		if _, err := queries.GetCameraForUpdate(ctx, cameraID); err != nil {
+		if _, err := queries.GetCameraForUpdate(ctx, gen.GetCameraForUpdateParams{ID: cameraID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return shared.NotFoundOr(err, "camera")
 		}
-		rolls, err := queries.CountCameraRolls(ctx, &cameraID)
+		rolls, err := queries.CountCameraRolls(ctx, gen.CountCameraRollsParams{CameraID: &cameraID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return err
 		}
 		if rolls > 0 {
 			return apperror.Conflict("camera_in_use", "a camera that has held rolls cannot be deleted; deactivate it instead")
 		}
-		if err := queries.SoftDeleteBuiltInLenses(ctx, cameraID); err != nil {
+		if err := queries.SoftDeleteBuiltInLenses(ctx, gen.SoftDeleteBuiltInLensesParams{CameraID: cameraID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return err
 		}
-		_, err = queries.SoftDeleteCamera(ctx, cameraID)
+		_, err = queries.SoftDeleteCamera(ctx, gen.SoftDeleteCameraParams{ID: cameraID, OwnerID: requestctx.Owner(ctx)})
 		return err
 	})
 }

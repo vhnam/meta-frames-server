@@ -12,11 +12,16 @@ import (
 )
 
 const getLens = `-- name: GetLens :one
-SELECT id, brand, model, mount, description, focal_length, max_aperture, is_built_in, is_active, created_at, updated_at, deleted_at FROM lens WHERE id = $1 AND deleted_at IS NULL
+SELECT id, brand, model, mount, description, focal_length, max_aperture, is_built_in, is_active, created_at, updated_at, deleted_at, owner_id FROM lens WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
 `
 
-func (q *Queries) GetLens(ctx context.Context, id uuid.UUID) (Lens, error) {
-	row := q.db.QueryRow(ctx, getLens, id)
+type GetLensParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) GetLens(ctx context.Context, arg GetLensParams) (Lens, error) {
+	row := q.db.QueryRow(ctx, getLens, arg.ID, arg.OwnerID)
 	var i Lens
 	err := row.Scan(
 		&i.ID,
@@ -31,16 +36,22 @@ func (q *Queries) GetLens(ctx context.Context, id uuid.UUID) (Lens, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const getLensForUpdate = `-- name: GetLensForUpdate :one
-SELECT id, brand, model, mount, description, focal_length, max_aperture, is_built_in, is_active, created_at, updated_at, deleted_at FROM lens WHERE id = $1 AND deleted_at IS NULL FOR UPDATE
+SELECT id, brand, model, mount, description, focal_length, max_aperture, is_built_in, is_active, created_at, updated_at, deleted_at, owner_id FROM lens WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL FOR UPDATE
 `
 
-func (q *Queries) GetLensForUpdate(ctx context.Context, id uuid.UUID) (Lens, error) {
-	row := q.db.QueryRow(ctx, getLensForUpdate, id)
+type GetLensForUpdateParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) GetLensForUpdate(ctx context.Context, arg GetLensForUpdateParams) (Lens, error) {
+	row := q.db.QueryRow(ctx, getLensForUpdate, arg.ID, arg.OwnerID)
 	var i Lens
 	err := row.Scan(
 		&i.ID,
@@ -55,16 +66,22 @@ func (q *Queries) GetLensForUpdate(ctx context.Context, id uuid.UUID) (Lens, err
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const getLensesByIDs = `-- name: GetLensesByIDs :many
-SELECT id, brand, model, mount, description, focal_length, max_aperture, is_built_in, is_active, created_at, updated_at, deleted_at FROM lens WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL
+SELECT id, brand, model, mount, description, focal_length, max_aperture, is_built_in, is_active, created_at, updated_at, deleted_at, owner_id FROM lens WHERE id = ANY($1::uuid[]) AND owner_id = $2 AND deleted_at IS NULL
 `
 
-func (q *Queries) GetLensesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Lens, error) {
-	rows, err := q.db.Query(ctx, getLensesByIDs, dollar_1)
+type GetLensesByIDsParams struct {
+	Ids     []uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) GetLensesByIDs(ctx context.Context, arg GetLensesByIDsParams) ([]Lens, error) {
+	rows, err := q.db.Query(ctx, getLensesByIDs, arg.Ids, arg.OwnerID)
 	if err != nil {
 		return nil, err
 	}
@@ -85,6 +102,7 @@ func (q *Queries) GetLensesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]L
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.OwnerID,
 		); err != nil {
 			return nil, err
 		}
@@ -97,9 +115,9 @@ func (q *Queries) GetLensesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]L
 }
 
 const insertLens = `-- name: InsertLens :one
-INSERT INTO lens (id, brand, model, mount, description, focal_length, max_aperture, is_built_in)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, brand, model, mount, description, focal_length, max_aperture, is_built_in, is_active, created_at, updated_at, deleted_at
+INSERT INTO lens (id, brand, model, mount, description, focal_length, max_aperture, is_built_in, owner_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, brand, model, mount, description, focal_length, max_aperture, is_built_in, is_active, created_at, updated_at, deleted_at, owner_id
 `
 
 type InsertLensParams struct {
@@ -111,6 +129,7 @@ type InsertLensParams struct {
 	FocalLength int32
 	MaxAperture float64
 	IsBuiltIn   bool
+	OwnerID     uuid.UUID
 }
 
 func (q *Queries) InsertLens(ctx context.Context, arg InsertLensParams) (Lens, error) {
@@ -123,6 +142,7 @@ func (q *Queries) InsertLens(ctx context.Context, arg InsertLensParams) (Lens, e
 		arg.FocalLength,
 		arg.MaxAperture,
 		arg.IsBuiltIn,
+		arg.OwnerID,
 	)
 	var i Lens
 	err := row.Scan(
@@ -138,6 +158,7 @@ func (q *Queries) InsertLens(ctx context.Context, arg InsertLensParams) (Lens, e
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
@@ -146,6 +167,7 @@ const lensIsOnRolls = `-- name: LensIsOnRolls :one
 SELECT EXISTS (SELECT 1 FROM roll_lens WHERE lens_id = $1)
 `
 
+// The lens is checked to belong to the account first.
 func (q *Queries) LensIsOnRolls(ctx context.Context, lensID uuid.UUID) (bool, error) {
 	row := q.db.QueryRow(ctx, lensIsOnRolls, lensID)
 	var exists bool
@@ -154,19 +176,20 @@ func (q *Queries) LensIsOnRolls(ctx context.Context, lensID uuid.UUID) (bool, er
 }
 
 const listLenses = `-- name: ListLenses :many
-SELECT id, brand, model, mount, description, focal_length, max_aperture, is_built_in, is_active, created_at, updated_at, deleted_at FROM lens
-WHERE deleted_at IS NULL AND (NOT $1::bool OR is_active)
-ORDER BY ($2::text IS NOT NULL AND mount = $2::text) DESC,
+SELECT id, brand, model, mount, description, focal_length, max_aperture, is_built_in, is_active, created_at, updated_at, deleted_at, owner_id FROM lens
+WHERE owner_id = $1 AND deleted_at IS NULL AND (NOT $2::bool OR is_active)
+ORDER BY ($3::text IS NOT NULL AND mount = $3::text) DESC,
          focal_length, brand, model
 `
 
 type ListLensesParams struct {
+	OwnerID     uuid.UUID
 	ActiveOnly  bool
 	PreferMount *string
 }
 
 func (q *Queries) ListLenses(ctx context.Context, arg ListLensesParams) ([]Lens, error) {
-	rows, err := q.db.Query(ctx, listLenses, arg.ActiveOnly, arg.PreferMount)
+	rows, err := q.db.Query(ctx, listLenses, arg.OwnerID, arg.ActiveOnly, arg.PreferMount)
 	if err != nil {
 		return nil, err
 	}
@@ -187,6 +210,7 @@ func (q *Queries) ListLenses(ctx context.Context, arg ListLensesParams) ([]Lens,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.OwnerID,
 		); err != nil {
 			return nil, err
 		}
@@ -199,16 +223,17 @@ func (q *Queries) ListLenses(ctx context.Context, arg ListLensesParams) ([]Lens,
 }
 
 const setLensActive = `-- name: SetLensActive :one
-UPDATE lens SET is_active = $2 WHERE id = $1 AND deleted_at IS NULL RETURNING id, brand, model, mount, description, focal_length, max_aperture, is_built_in, is_active, created_at, updated_at, deleted_at
+UPDATE lens SET is_active = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL RETURNING id, brand, model, mount, description, focal_length, max_aperture, is_built_in, is_active, created_at, updated_at, deleted_at, owner_id
 `
 
 type SetLensActiveParams struct {
 	ID       uuid.UUID
 	IsActive bool
+	OwnerID  uuid.UUID
 }
 
 func (q *Queries) SetLensActive(ctx context.Context, arg SetLensActiveParams) (Lens, error) {
-	row := q.db.QueryRow(ctx, setLensActive, arg.ID, arg.IsActive)
+	row := q.db.QueryRow(ctx, setLensActive, arg.ID, arg.IsActive, arg.OwnerID)
 	var i Lens
 	err := row.Scan(
 		&i.ID,
@@ -223,16 +248,22 @@ func (q *Queries) SetLensActive(ctx context.Context, arg SetLensActiveParams) (L
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const softDeleteLens = `-- name: SoftDeleteLens :execrows
-UPDATE lens SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL
+UPDATE lens SET deleted_at = now() WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
 `
 
-func (q *Queries) SoftDeleteLens(ctx context.Context, id uuid.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, softDeleteLens, id)
+type SoftDeleteLensParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) SoftDeleteLens(ctx context.Context, arg SoftDeleteLensParams) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteLens, arg.ID, arg.OwnerID)
 	if err != nil {
 		return 0, err
 	}
@@ -242,8 +273,8 @@ func (q *Queries) SoftDeleteLens(ctx context.Context, id uuid.UUID) (int64, erro
 const updateLens = `-- name: UpdateLens :one
 UPDATE lens SET brand = $2, model = $3, mount = $4, description = $5,
                 focal_length = $6, max_aperture = $7
-WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, brand, model, mount, description, focal_length, max_aperture, is_built_in, is_active, created_at, updated_at, deleted_at
+WHERE id = $1 AND owner_id = $8 AND deleted_at IS NULL
+RETURNING id, brand, model, mount, description, focal_length, max_aperture, is_built_in, is_active, created_at, updated_at, deleted_at, owner_id
 `
 
 type UpdateLensParams struct {
@@ -254,6 +285,7 @@ type UpdateLensParams struct {
 	Description *string
 	FocalLength int32
 	MaxAperture float64
+	OwnerID     uuid.UUID
 }
 
 func (q *Queries) UpdateLens(ctx context.Context, arg UpdateLensParams) (Lens, error) {
@@ -265,6 +297,7 @@ func (q *Queries) UpdateLens(ctx context.Context, arg UpdateLensParams) (Lens, e
 		arg.Description,
 		arg.FocalLength,
 		arg.MaxAperture,
+		arg.OwnerID,
 	)
 	var i Lens
 	err := row.Scan(
@@ -280,6 +313,7 @@ func (q *Queries) UpdateLens(ctx context.Context, arg UpdateLensParams) (Lens, e
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }

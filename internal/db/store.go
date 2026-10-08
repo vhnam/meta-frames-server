@@ -63,15 +63,25 @@ func (store *PostgresStore) InTransaction(ctx context.Context, work func(queries
 	return transaction.Commit(ctx)
 }
 
-// stampAuditContext hands the caller's identity to the audit triggers for this transaction only
+// stampAuditContext hands the caller's identity (and account, for link-table rows that have no
+// owner column) to the audit triggers for this transaction only
 // (set_config(..., is_local => true) lasts until commit or rollback).
 func stampAuditContext(ctx context.Context, transaction pgx.Tx) error {
 	meta, ok := requestctx.From(ctx)
 	if !ok {
 		return nil
 	}
-	_, err := transaction.Exec(ctx, "SELECT set_config('app.request_id', $1, true), set_config('app.actor', $2, true)", meta.RequestID, meta.Actor)
+	_, err := transaction.Exec(ctx, "SELECT set_config('app.request_id', $1, true), set_config('app.actor', $2, true), set_config('app.owner_id', $3, true)",
+		meta.RequestID, meta.Actor, ownerSetting(meta.OwnerID))
 	return err
+}
+
+// ownerSetting is the app.owner_id value; empty (no owner) when there is no signed-in account.
+func ownerSetting(owner uuid.UUID) string {
+	if owner == uuid.Nil {
+		return ""
+	}
+	return owner.String()
 }
 
 func IsNoRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }

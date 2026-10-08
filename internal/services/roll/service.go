@@ -10,6 +10,7 @@ import (
 	"meta-frames-server/internal/common/apperror"
 	"meta-frames-server/internal/common/clock"
 	"meta-frames-server/internal/common/pointers"
+	"meta-frames-server/internal/common/requestctx"
 	"meta-frames-server/internal/db"
 	"meta-frames-server/internal/db/gen"
 	"meta-frames-server/internal/domain"
@@ -69,7 +70,9 @@ func filterToParams(filter Filter) gen.ListRollSummariesParams {
 
 // ---- shared queries ----
 
+// ListSummaries lists the caller's rolls that match params (its OwnerID is always the caller).
 func ListSummaries(ctx context.Context, queries gen.Querier, params gen.ListRollSummariesParams) ([]Summary, error) {
+	params.OwnerID = requestctx.Owner(ctx)
 	rows, err := queries.ListRollSummaries(ctx, params)
 	if err != nil {
 		return nil, err
@@ -98,13 +101,13 @@ func buildRollDetail(ctx context.Context, queries gen.Querier, today time.Time, 
 	if err != nil {
 		return Detail{}, err
 	}
-	stock, err := queries.GetFilmStock(ctx, summary.FilmStockID)
+	stock, err := queries.GetFilmStock(ctx, gen.GetFilmStockParams{ID: summary.FilmStockID, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return Detail{}, err
 	}
 	detail := Detail{Summary: summary, Stock: stock, Warnings: append([]string{}, warnings...)}
 	if stock.BaseStockID != nil {
-		base, err := queries.GetFilmStock(ctx, *stock.BaseStockID)
+		base, err := queries.GetFilmStock(ctx, gen.GetFilmStockParams{ID: *stock.BaseStockID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return detail, err
 		}
@@ -114,7 +117,7 @@ func buildRollDetail(ctx context.Context, queries gen.Querier, today time.Time, 
 		detail.Warnings = append(detail.Warnings, "roll is expired")
 	}
 
-	if detail.Lenses, err = queries.ListRollLenses(ctx, rollID); err != nil {
+	if detail.Lenses, err = queries.ListRollLenses(ctx, gen.ListRollLensesParams{RollID: rollID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 		return detail, err
 	}
 	if detail.Processing, err = processing.BuildViews(ctx, queries, rollID); err != nil {
@@ -123,7 +126,7 @@ func buildRollDetail(ctx context.Context, queries gen.Querier, today time.Time, 
 	if detail.Frames, err = scan.BuildFrameViews(ctx, queries, rollID); err != nil {
 		return detail, err
 	}
-	spend, err := queries.RollSpend(ctx, rollID)
+	spend, err := queries.RollSpend(ctx, gen.RollSpendParams{ID: rollID, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return detail, err
 	}
@@ -158,7 +161,7 @@ func (service *Service) AddBulk(ctx context.Context, input BulkInput) ([]Summary
 	var created []Summary
 	err = service.store.InTransaction(ctx, func(queries gen.Querier) error {
 		if input.IdempotencyKey != "" {
-			claimed, err := queries.ClaimIdempotencyKey(ctx, input.IdempotencyKey)
+			claimed, err := queries.ClaimIdempotencyKey(ctx, gen.ClaimIdempotencyKeyParams{Key: input.IdempotencyKey, OwnerID: requestctx.Owner(ctx)})
 			if err != nil {
 				return err
 			}
@@ -167,7 +170,7 @@ func (service *Service) AddBulk(ctx context.Context, input BulkInput) ([]Summary
 				return err
 			}
 		}
-		if _, err := queries.GetFilmStock(ctx, input.FilmStockID); err != nil {
+		if _, err := queries.GetFilmStock(ctx, gen.GetFilmStockParams{ID: input.FilmStockID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			if db.IsNoRows(err) {
 				return apperror.Unprocessable("unknown_film_stock", "film stock does not exist")
 			}
@@ -180,6 +183,7 @@ func (service *Service) AddBulk(ctx context.Context, input BulkInput) ([]Summary
 			if _, err := queries.InsertRoll(ctx, gen.InsertRollParams{
 				ID: rollIDs[index], FilmStockID: input.FilmStockID, Format: int32(input.Format), Exposures: int32(exposures),
 				Price: pointers.Int32(input.Price), ExpiryYear: pointers.Int32(input.ExpiryYear), ExpiryMonth: pointers.Int32(input.ExpiryMonth),
+				OwnerID: requestctx.Owner(ctx),
 			}); err != nil {
 				return err
 			}
@@ -197,6 +201,7 @@ func (service *Service) AddBulk(ctx context.Context, input BulkInput) ([]Summary
 		}
 		return queries.FinishIdempotencyKey(ctx, gen.FinishIdempotencyKeyParams{
 			Key: input.IdempotencyKey, Status: pointers.To(int32(201)), Response: json.RawMessage(stored),
+			OwnerID: requestctx.Owner(ctx),
 		})
 	})
 	return created, err
@@ -216,7 +221,7 @@ func summariesByID(ctx context.Context, queries gen.Querier, rollIDs []uuid.UUID
 
 // replayBulkRolls returns the rolls created by an earlier request with the same key.
 func replayBulkRolls(ctx context.Context, queries gen.Querier, key string) ([]Summary, error) {
-	stored, err := queries.GetIdempotencyKey(ctx, key)
+	stored, err := queries.GetIdempotencyKey(ctx, gen.GetIdempotencyKeyParams{Key: key, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return nil, err
 	}
@@ -241,14 +246,14 @@ func (service *Service) Update(ctx context.Context, rollID uuid.UUID, input Inpu
 
 	var detail Detail
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		roll, err := queries.GetRollForUpdate(ctx, rollID)
+		roll, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: rollID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return shared.NotFoundOr(err, "roll")
 		}
 		if input.FilmStockID != roll.FilmStockID && roll.Status != domain.RollStatusInStock {
 			return apperror.Conflict("stock_locked", "film stock can only change while the roll is in stock")
 		}
-		stock, err := queries.GetFilmStock(ctx, input.FilmStockID)
+		stock, err := queries.GetFilmStock(ctx, gen.GetFilmStockParams{ID: input.FilmStockID, OwnerID: requestctx.Owner(ctx)})
 		if db.IsNoRows(err) {
 			return apperror.Unprocessable("unknown_film_stock", "film stock does not exist")
 		}
@@ -260,6 +265,7 @@ func (service *Service) Update(ctx context.Context, rollID uuid.UUID, input Inpu
 			Price: pointers.Int32(input.Price), ExpiryYear: pointers.Int32(input.ExpiryYear), ExpiryMonth: pointers.Int32(input.ExpiryMonth),
 			ShotIso: normalizeShotISO(input.ShotISO, stock.BoxIso), StartedAt: input.StartedAt, FinishedAt: input.FinishedAt,
 			Description: pointers.TrimmedOrNil(input.Description),
+			OwnerID:     requestctx.Owner(ctx),
 		}); err != nil {
 			return err
 		}
@@ -273,7 +279,7 @@ func (service *Service) Update(ctx context.Context, rollID uuid.UUID, input Inpu
 func (service *Service) Load(ctx context.Context, rollID uuid.UUID, input LoadInput) (Detail, error) {
 	var detail Detail
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		roll, err := queries.GetRollForUpdate(ctx, rollID)
+		roll, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: rollID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return shared.NotFoundOr(err, "roll")
 		}
@@ -285,7 +291,7 @@ func (service *Service) Load(ctx context.Context, rollID uuid.UUID, input LoadIn
 		if roll.Status != domain.RollStatusInStock {
 			return apperror.Conflict("roll_not_in_stock", "only in-stock rolls can be loaded")
 		}
-		camera, err := queries.GetCameraForUpdate(ctx, input.CameraID)
+		camera, err := queries.GetCameraForUpdate(ctx, gen.GetCameraForUpdateParams{ID: input.CameraID, OwnerID: requestctx.Owner(ctx)})
 		if db.IsNoRows(err) {
 			return apperror.Unprocessable("unknown_camera", "camera does not exist")
 		}
@@ -295,14 +301,14 @@ func (service *Service) Load(ctx context.Context, rollID uuid.UUID, input LoadIn
 		if !camera.IsActive {
 			return apperror.Conflict("camera_inactive", "camera is inactive")
 		}
-		loaded, err := queries.CameraIsLoaded(ctx, &camera.ID)
+		loaded, err := queries.CameraIsLoaded(ctx, gen.CameraIsLoadedParams{CameraID: &camera.ID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return err
 		}
 		if loaded {
 			return apperror.Conflict("camera_loaded", "camera already holds a roll; finish it first")
 		}
-		stock, err := queries.GetFilmStock(ctx, roll.FilmStockID)
+		stock, err := queries.GetFilmStock(ctx, gen.GetFilmStockParams{ID: roll.FilmStockID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return err
 		}
@@ -318,6 +324,7 @@ func (service *Service) Load(ctx context.Context, rollID uuid.UUID, input LoadIn
 		if _, err := queries.LoadRoll(ctx, gen.LoadRollParams{
 			ID: rollID, CameraID: &camera.ID, StartedAt: pointers.To(shared.DateOrDefault(input.StartedAt, today)),
 			ShotIso: normalizeShotISO(input.ShotISO, stock.BoxIso),
+			OwnerID: requestctx.Owner(ctx),
 		}); err != nil {
 			return err
 		}
@@ -339,7 +346,7 @@ func (service *Service) Load(ctx context.Context, rollID uuid.UUID, input LoadIn
 // fixed-lens camera, or the lenses the photographer picked (all optional).
 func lensesForLoad(ctx context.Context, queries gen.Querier, camera gen.Camera, requested *[]uuid.UUID) ([]uuid.UUID, error) {
 	if camera.HasFixedLens {
-		linked, err := queries.ListCameraLenses(ctx, camera.ID)
+		linked, err := queries.ListCameraLenses(ctx, gen.ListCameraLensesParams{CameraID: camera.ID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return nil, err
 		}
@@ -352,7 +359,7 @@ func lensesForLoad(ctx context.Context, queries gen.Querier, camera gen.Camera, 
 		return nil, nil
 	}
 	lensIDs := shared.RemoveDuplicates(*requested)
-	found, err := queries.GetLensesByIDs(ctx, lensIDs)
+	found, err := queries.GetLensesByIDs(ctx, gen.GetLensesByIDsParams{Ids: lensIDs, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return nil, err
 	}
@@ -372,25 +379,25 @@ func (service *Service) SetLenses(ctx context.Context, rollID uuid.UUID, lensIDs
 	lensIDs = shared.RemoveDuplicates(lensIDs)
 	var lenses []gen.Lens
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		roll, err := queries.GetRollForUpdate(ctx, rollID)
+		roll, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: rollID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return shared.NotFoundOr(err, "roll")
 		}
 		if roll.CameraID == nil {
 			return apperror.Conflict("roll_not_loaded", "roll has not been loaded into a camera")
 		}
-		camera, err := queries.GetCamera(ctx, *roll.CameraID)
+		camera, err := queries.GetCamera(ctx, gen.GetCameraParams{ID: *roll.CameraID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return err
 		}
 		if camera.HasFixedLens {
 			return apperror.Conflict("fixed_lens_camera", "lenses of a fixed-lens camera cannot be changed")
 		}
-		current, err := queries.ListRollLenses(ctx, rollID)
+		current, err := queries.ListRollLenses(ctx, gen.ListRollLensesParams{RollID: rollID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return err
 		}
-		requested, err := queries.GetLensesByIDs(ctx, lensIDs)
+		requested, err := queries.GetLensesByIDs(ctx, gen.GetLensesByIDsParams{Ids: lensIDs, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return err
 		}
@@ -405,7 +412,7 @@ func (service *Service) SetLenses(ctx context.Context, rollID uuid.UUID, lensIDs
 				return err
 			}
 		}
-		lenses, err = queries.ListRollLenses(ctx, rollID)
+		lenses, err = queries.ListRollLenses(ctx, gen.ListRollLensesParams{RollID: rollID, OwnerID: requestctx.Owner(ctx)})
 		return err
 	})
 	return lenses, err
@@ -428,7 +435,7 @@ func checkUsableLenses(found []gen.Lens, requestedIDs []uuid.UUID, alreadyOnRoll
 func (service *Service) Finish(ctx context.Context, rollID uuid.UUID, finishedAt *time.Time) (Detail, error) {
 	var detail Detail
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		roll, err := queries.GetRollForUpdate(ctx, rollID)
+		roll, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: rollID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return shared.NotFoundOr(err, "roll")
 		}
@@ -436,7 +443,7 @@ func (service *Service) Finish(ctx context.Context, rollID uuid.UUID, finishedAt
 			return apperror.Conflict("roll_not_in_camera", "only a roll in a camera can be finished")
 		}
 		today := service.clock.Today()
-		if _, err := queries.FinishRoll(ctx, gen.FinishRollParams{ID: rollID, FinishedAt: pointers.To(shared.DateOrDefault(finishedAt, today))}); err != nil {
+		if _, err := queries.FinishRoll(ctx, gen.FinishRollParams{ID: rollID, FinishedAt: pointers.To(shared.DateOrDefault(finishedAt, today)), OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return err
 		}
 		detail, err = buildRollDetail(ctx, queries, today, rollID, nil)
@@ -457,14 +464,14 @@ func (service *Service) ExpiryReport(ctx context.Context) (ExpiryReport, error) 
 // Delete soft-deletes a roll that is still in stock, such as one entered by mistake.
 func (service *Service) Delete(ctx context.Context, rollID uuid.UUID) error {
 	return service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		roll, err := queries.GetRollForUpdate(ctx, rollID)
+		roll, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: rollID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return shared.NotFoundOr(err, "roll")
 		}
 		if roll.Status != domain.RollStatusInStock {
 			return apperror.Conflict("roll_not_in_stock", "only a roll that is still in stock can be deleted")
 		}
-		_, err = queries.SoftDeleteRoll(ctx, rollID)
+		_, err = queries.SoftDeleteRoll(ctx, gen.SoftDeleteRollParams{ID: rollID, OwnerID: requestctx.Owner(ctx)})
 		return err
 	})
 }

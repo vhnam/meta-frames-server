@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"meta-frames-server/internal/common/pointers"
+	"meta-frames-server/internal/common/requestctx"
 	"meta-frames-server/internal/db"
 	"meta-frames-server/internal/db/gen"
 	"meta-frames-server/internal/services/roll"
@@ -27,7 +28,7 @@ func (service *Service) SearchByFocalLength(ctx context.Context, focalLength int
 	}
 	hits := make([]SearchHit, len(rolls))
 	for index, summary := range rolls {
-		scans, err := queries.ListRollScans(ctx, summary.ID)
+		scans, err := queries.ListRollScans(ctx, gen.ListRollScansParams{RollID: summary.ID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return nil, err
 		}
@@ -42,12 +43,12 @@ func (service *Service) SearchByFocalLength(ctx context.Context, focalLength int
 
 // Gear ranks cameras and lenses by rolls shot, for all time or one year (UC-36).
 func (service *Service) Gear(ctx context.Context, year *int) (GearStats, error) {
-	queries := service.store.Queries()
-	cameras, err := queries.StatsCameras(ctx, pointers.Int32(year))
+	queries, owner := service.store.Queries(), requestctx.Owner(ctx)
+	cameras, err := queries.StatsCameras(ctx, gen.StatsCamerasParams{OwnerID: owner, Year: pointers.Int32(year)})
 	if err != nil {
 		return GearStats{}, err
 	}
-	lenses, err := queries.StatsLenses(ctx, pointers.Int32(year))
+	lenses, err := queries.StatsLenses(ctx, gen.StatsLensesParams{OwnerID: owner, Year: pointers.Int32(year)})
 	if err != nil {
 		return GearStats{}, err
 	}
@@ -65,7 +66,7 @@ func (service *Service) Gear(ctx context.Context, year *int) (GearStats, error) 
 func (service *Service) Film(ctx context.Context, groupByBase bool) ([]RankedItem, error) {
 	queries := service.store.Queries()
 	if groupByBase {
-		rows, err := queries.StatsFilmByBase(ctx)
+		rows, err := queries.StatsFilmByBase(ctx, requestctx.Owner(ctx))
 		if err != nil {
 			return nil, err
 		}
@@ -75,7 +76,7 @@ func (service *Service) Film(ctx context.Context, groupByBase bool) ([]RankedIte
 		}
 		return items, nil
 	}
-	rows, err := queries.StatsFilm(ctx)
+	rows, err := queries.StatsFilm(ctx, requestctx.Owner(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +89,7 @@ func (service *Service) Film(ctx context.Context, groupByBase bool) ([]RankedIte
 
 // Timeline counts rolls started per month for each year (UC-38).
 func (service *Service) Timeline(ctx context.Context) ([]YearTimeline, error) {
-	rows, err := service.store.Queries().StatsTimeline(ctx)
+	rows, err := service.store.Queries().StatsTimeline(ctx, requestctx.Owner(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -114,11 +115,11 @@ func foldTimeline(rows []gen.StatsTimelineRow) []YearTimeline {
 // Film cost is dated by when the roll was recorded; processing cost by its sent date.
 func (service *Service) Spending(ctx context.Context) ([]YearSpend, error) {
 	queries := service.store.Queries()
-	film, err := queries.StatsFilmSpend(ctx)
+	film, err := queries.StatsFilmSpend(ctx, requestctx.Owner(ctx))
 	if err != nil {
 		return nil, err
 	}
-	processing, err := queries.StatsProcessingSpend(ctx)
+	processing, err := queries.StatsProcessingSpend(ctx, requestctx.Owner(ctx))
 	if err != nil {
 		return nil, err
 	}

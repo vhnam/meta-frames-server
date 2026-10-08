@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"meta-frames-server/internal/common/requestctx"
 	"meta-frames-server/internal/db"
 	"meta-frames-server/internal/db/gen"
 	"meta-frames-server/internal/services/shared"
@@ -44,11 +45,12 @@ func (service *Service) List(ctx context.Context, filter Filter) ([]gen.AuditLog
 	return service.store.Queries().ListAuditLogs(ctx, gen.ListAuditLogsParams{
 		EntityType: filter.EntityType, EntityID: filter.EntityID, Action: filter.Action,
 		PageSize: int32(limit), PageOffset: int32(offset),
+		OwnerID: requestctx.Owner(ctx),
 	})
 }
 
 // Get returns one audit entry.
 func (service *Service) Get(ctx context.Context, id int64) (gen.AuditLog, error) {
-	entry, err := service.store.Queries().GetAuditLog(ctx, id)
+	entry, err := service.store.Queries().GetAuditLog(ctx, gen.GetAuditLogParams{ID: id, OwnerID: requestctx.Owner(ctx)})
 	return entry, shared.NotFoundOr(err, "audit entry")
 }

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Meta-Frame API
-  version: 0.4.0
+  version: 0.5.0
   description: |
     REST API for tracking rolls of film: gear, stock, shooting, processing and scans.
 
@@ -11,14 +11,29 @@ info:
     **Deleting.** Nothing is physically deleted: `DELETE` sets `deleted_at` and the record disappears from
     every read. A deleted id stays reserved. Deleting something that is still in use is a `409`.
 
-    **Audit.** Every change is recorded with its before/after row. Send `X-Actor: <name>` on any request to
-    attribute the change; read the trail at `GET /audit-logs`.
+    **Audit.** Every change is recorded with its before/after row and the email of the signed-in user who
+    made it; read the trail at `GET /audit-logs`.
 
     **Errors** always have the shape `{ code, message }`.
+
+    **Accounts.** `/auth/*` handles registration, password login, sign-in with Google, logout and password
+    recovery (powered by authboss). A successful register or login sets an HTTP-only session cookie; send it back
+    (`credentials: "include"`) and read the signed-in user at `GET /auth/me`.
+
+    **Your records only.** Every record belongs to the account that created it. Lists, searches, stats and the
+    audit log only include your own records; another account's record answers `404` as if it did not exist,
+    and a `PUT` with an id another account already uses is a `409 already_exists`.
+
+    **Every other endpoint needs a session** and answers `401` without one; only `/health` and the `/auth`
+    routes above are public. Five wrong passwords within 15 minutes lock the account for 15 minutes (`429`).
+    Logging out ends the session on the server; resetting the password ends every session of the account.
 servers:
   - url: http://localhost:8080
+security:
+  - sessionCookie: []
 tags:
   - { name: System, description: Liveness check }
+  - { name: Auth, description: "Accounts: register, log in, log out, recover a password" }
   - { name: Cameras, description: Camera bodies and their lenses }
   - { name: Lenses, description: Lenses }
   - { name: Film stocks, description: Film stocks and inventory }
@@ -34,6 +49,7 @@ paths:
     get:
       tags: [System]
       operationId: getHealth
+      security: [] # public
       summary: Liveness check (does not touch the database)
       responses:
         "200":
@@ -47,6 +63,291 @@ paths:
                   value:
                     status: ok
 
+  /auth/register:
+    post:
+      tags: [Auth]
+      operationId: register
+      security: [] # public
+      summary: Create an account with email and password, and log it in
+      description: |
+        The password needs at least 8 characters with an upper-case letter, a lower-case letter, a digit and a
+        symbol. On success the response sets the session cookie.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterInput" }
+            examples:
+              withName:
+                summary: Email, password and display name
+                value:
+                  email: ansel@example.com
+                  password: "Zone-System5"
+                  name: Ansel
+      responses:
+        "201":
+          description: Registered and logged in
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResult" }
+              examples:
+                registered:
+                  summary: New account, now logged in
+                  value:
+                    message: Account successfully created, you are now logged in
+                    user:
+                      id: 5a0c2f6e-8d31-4b7a-9e15-3c7f1d2b4a60
+                      email: ansel@example.com
+                      name: Ansel
+                      createdAt: "2026-10-07T09:00:00Z"
+        "400": { $ref: "#/components/responses/AuthBadRequest" }
+        "409":
+          description: The email already has an account
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+              examples:
+                emailTaken:
+                  summary: Email already registered
+                  value:
+                    code: email_taken
+                    message: User already exists
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      security: [] # public
+      summary: Log in with email and password
+      description: On success the response sets the session cookie.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginInput" }
+            examples:
+              credentials:
+                summary: Email and password
+                value:
+                  email: ansel@example.com
+                  password: "Zone-System5"
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResult" }
+              examples:
+                loggedIn:
+                  summary: Logged in
+                  value:
+                    message: Logged in
+                    user:
+                      id: 5a0c2f6e-8d31-4b7a-9e15-3c7f1d2b4a60
+                      email: ansel@example.com
+                      name: Ansel
+                      createdAt: "2026-10-07T09:00:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Unknown email or wrong password (the two are not told apart)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+              examples:
+                invalidCredentials:
+                  summary: Wrong email or password
+                  value:
+                    code: invalid_credentials
+                    message: Invalid Credentials
+        "429":
+          description: Too many wrong passwords; the account is locked for 15 minutes
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+              examples:
+                locked:
+                  summary: Account locked
+                  value:
+                    code: account_locked
+                    message: Your account has been locked, please contact the administrator.
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      security: [] # public
+      summary: Log out and clear the session cookie
+      responses:
+        "200":
+          description: Logged out (also when nobody was logged in)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResult" }
+              examples:
+                loggedOut:
+                  summary: Logged out
+                  value:
+                    message: You have been logged out
+
+  /auth/recover:
+    post:
+      tags: [Auth]
+      operationId: startPasswordRecovery
+      security: [] # public
+      summary: Email a password-reset link
+      description: |
+        Sends a link to `{APP_URL}/recover/end?token=...`. The answer is the same whether or not the email has an
+        account, so the endpoint cannot be used to discover accounts. The token is valid for 24 hours.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecoverStartInput" }
+            examples:
+              email:
+                summary: Account email
+                value:
+                  email: ansel@example.com
+      responses:
+        "200":
+          description: Recovery started (if the account exists)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResult" }
+              examples:
+                sent:
+                  summary: Email sent if the account exists
+                  value:
+                    message: An email has been sent to you with further instructions on how to reset your password.
+        "400": { $ref: "#/components/responses/AuthBadRequest" }
+
+  /auth/recover/end:
+    post:
+      tags: [Auth]
+      operationId: resetPassword
+      security: [] # public
+      summary: Set a new password with the token from the recovery email
+      description: The token works once. The user is not logged in afterwards; call `POST /auth/login`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResetPasswordInput" }
+            examples:
+              reset:
+                summary: Token from the email and the new password
+                value:
+                  token: "q3Jv0b5i8W1Xw9yQ5lD0p6c8R2nS7tU4vA1bC3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5zA7bC9dE1fG3hI5jK7lM9nO1pQ3rS5tU7vW9xY1zA3bC5dE7fA=="
+                  password: "Fresh-Neg4tive"
+      responses:
+        "200":
+          description: Password changed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResult" }
+              examples:
+                changed:
+                  summary: Password changed
+                  value:
+                    message: Successfully updated password
+        "400": { $ref: "#/components/responses/AuthBadRequest" }
+        "422":
+          description: The token is unknown, already used or expired
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+              examples:
+                invalidToken:
+                  summary: Bad or expired token
+                  value:
+                    code: invalid_token
+                    message: recovery token is invalid
+
+  /auth/oauth2/google:
+    get:
+      tags: [Auth]
+      operationId: startGoogleSignIn
+      security: [] # public
+      summary: Start "Sign in with Google" (navigate the browser here)
+      description: |
+        Not for `fetch`: send the browser here (`window.location`). It redirects to Google, Google redirects back to
+        `/auth/oauth2/callback/google`, and that ends on the front end with the session cookie set. A Google
+        account whose verified email matches an existing account signs in to that account and links it.
+        `404 not_configured` when the server has no Google client.
+      parameters:
+        - name: redir
+          in: query
+          description: Front-end path to land on after sign-in, such as `/rolls`. Anything but a path becomes `/`.
+          schema: { type: string, example: /rolls }
+      responses:
+        "302":
+          description: Redirect to Google's sign-in page
+          headers:
+            Location: { schema: { type: string }, description: "Google's authorization URL" }
+        "404":
+          description: Google sign-in is not configured
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+              examples:
+                notConfigured:
+                  summary: No Google client configured
+                  value:
+                    code: not_configured
+                    message: sign-in with Google is not configured
+
+  /auth/oauth2/callback/google:
+    get:
+      tags: [Auth]
+      operationId: finishGoogleSignIn
+      security: [] # public
+      summary: Google's redirect back after sign-in (register this URL with Google)
+      description: |
+        Google sends the browser here. On success the session cookie is set and the browser goes to
+        `{APP_URL}{redir}`. On failure it goes to `{APP_URL}/login?error=<code>`, where code is `google_denied`
+        (the user cancelled), `email_not_verified`, `account_conflict` (the email's account is linked to another
+        Google account), `account_locked` or `google_failed`.
+      parameters:
+        - { name: code, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { type: string } }
+        - { name: error, in: query, schema: { type: string } }
+      responses:
+        "302":
+          description: Redirect to the front end
+          headers:
+            Location: { schema: { type: string }, description: "`{APP_URL}{redir}`, or `{APP_URL}/login?error=<code>`" }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      operationId: getCurrentUser
+      summary: The user of the current session
+      responses:
+        "200":
+          description: Signed-in user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+              examples:
+                me:
+                  summary: Signed-in user
+                  value:
+                    id: 5a0c2f6e-8d31-4b7a-9e15-3c7f1d2b4a60
+                    email: ansel@example.com
+                    name: Ansel
+                    createdAt: "2026-10-07T09:00:00Z"
+        "401":
+          description: No valid session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+              examples:
+                unauthorized:
+                  summary: Not logged in
+                  value:
+                    code: unauthorized
+                    message: not logged in
+
   /cameras:
     get:
       tags: [Cameras]
@@ -55,6 +356,7 @@ paths:
       parameters:
         - { name: activeOnly, in: query, schema: { type: boolean, default: false } }
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Cameras
           content:
@@ -120,6 +422,7 @@ paths:
                     brand: Canon
                     model: "40mm f/1.7"
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "201":
           description: Created
           content:
@@ -159,6 +462,7 @@ paths:
       tags: [Cameras]
       operationId: getCamera
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Camera
           content:
@@ -236,6 +540,7 @@ paths:
                   mount: F
                   hasFixedLens: false
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Updated
           content:
@@ -279,6 +584,7 @@ paths:
       operationId: deleteCamera
       summary: Delete a camera that never held a roll, together with its built-in lens
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "204": { description: Deleted }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -306,6 +612,7 @@ paths:
                 value:
                   isActive: true
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Camera
           content:
@@ -335,6 +642,7 @@ paths:
       tags: [Cameras]
       operationId: listCameraLenses
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Lenses linked to the camera
           content:
@@ -388,6 +696,7 @@ paths:
                 value:
                   lensIds: []
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Lenses now linked
           content:
@@ -431,6 +740,7 @@ paths:
         - { name: activeOnly, in: query, schema: { type: boolean, default: false } }
         - { name: preferMount, in: query, description: Lenses with this mount are listed first, schema: { type: string } }
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Lenses
           content:
@@ -499,6 +809,7 @@ paths:
                   focalLength: 28
                   maxAperture: 2.8
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "201":
           description: Created
           content:
@@ -529,6 +840,7 @@ paths:
       tags: [Lenses]
       operationId: getLens
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Lens
           content:
@@ -599,6 +911,7 @@ paths:
                   focalLength: 50
                   maxAperture: 1.8
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Updated
           content:
@@ -645,6 +958,7 @@ paths:
       operationId: deleteLens
       summary: Delete a lens that was never used on a roll
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "204": { description: Deleted }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -672,6 +986,7 @@ paths:
                 value:
                   isActive: true
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Lens
           content:
@@ -703,6 +1018,7 @@ paths:
       parameters:
         - { name: q, in: query, description: Match brand or name, schema: { type: string } }
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Film stocks
           content:
@@ -774,6 +1090,7 @@ paths:
                   packaging: respooled
                   baseStockId: f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "201":
           description: Created
           content:
@@ -835,6 +1152,7 @@ paths:
       operationId: getFilmStock
       summary: Stock with its base stock and stocks sharing the base (UC-13)
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Detail
           content:
@@ -928,6 +1246,7 @@ paths:
                   process: C-41
                   packaging: factory
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Updated
           content:
@@ -991,6 +1310,7 @@ paths:
       operationId: deleteFilmStock
       summary: Delete a film stock that no roll or derived stock uses
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "204": { description: Deleted }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -1006,6 +1326,7 @@ paths:
         - { name: process, in: query, schema: { $ref: "#/components/schemas/Process" } }
         - { name: iso, in: query, schema: { type: integer, minimum: 1 } }
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Inventory
           content:
@@ -1041,6 +1362,7 @@ paths:
       tags: [Labs]
       operationId: listLabs
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Labs
           content:
@@ -1075,6 +1397,7 @@ paths:
                 value:
                   name: Home darkroom
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "201":
           description: Created
           content:
@@ -1099,6 +1422,7 @@ paths:
       tags: [Labs]
       operationId: getLab
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Lab
           content:
@@ -1140,6 +1464,7 @@ paths:
                   name: Saigon Film Lab
                   address: "99 Le Loi, District 1, Ho Chi Minh City"
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Updated
           content:
@@ -1175,6 +1500,7 @@ paths:
       operationId: deleteLab
       summary: Delete a lab without processing history (UC-23)
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "204": { description: Deleted }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -1194,6 +1520,7 @@ paths:
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
         - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Audit entries
           content:
@@ -1217,7 +1544,7 @@ paths:
                         brand: Nikon
                         model: FM3A
                         deleted_at: "2026-10-02T09:30:00Z"
-                      actor: bob
+                      actor: bob@example.com
                       requestId: 5c6d7e8f-9a0b-4c1d-8e2f-3a4b5c6d7e8f
                       createdAt: "2026-10-02T09:30:00Z"
                     - id: 42
@@ -1236,7 +1563,7 @@ paths:
                         model: FM3A
                         is_active: true
                         deleted_at: null
-                      actor: nam
+                      actor: nam@example.com
                       requestId: 3f6c1a1e-9d0b-4b5e-8f6a-0c2d7e1b5a90
                       createdAt: "2026-10-02T09:15:00Z"
                     - id: 41
@@ -1249,7 +1576,7 @@ paths:
                         model: FM2
                         is_active: true
                         deleted_at: null
-                      actor: nam
+                      actor: nam@example.com
                       requestId: 8a1d2c3b-4e5f-4a6b-9c7d-0e1f2a3b4c5d
                       createdAt: "2026-10-02T09:00:00Z"
         "400": { $ref: "#/components/responses/BadRequest" }
@@ -1262,6 +1589,7 @@ paths:
       operationId: getAuditLog
       summary: One audit entry
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Audit entry
           content:
@@ -1287,7 +1615,7 @@ paths:
                       model: FM3A
                       is_active: true
                       deleted_at: null
-                    actor: nam
+                    actor: nam@example.com
                     requestId: 3f6c1a1e-9d0b-4b5e-8f6a-0c2d7e1b5a90
                     createdAt: "2026-10-02T09:15:00Z"
         "400": { $ref: "#/components/responses/BadRequest" }
@@ -1307,6 +1635,7 @@ paths:
         - { name: startedFrom, in: query, schema: { type: string, format: date } }
         - { name: startedTo, in: query, schema: { type: string, format: date } }
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Rolls
           content:
@@ -1378,6 +1707,7 @@ paths:
                   format: 135
                   quantity: 1
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "201":
           description: Created
           content:
@@ -1421,6 +1751,7 @@ paths:
       operationId: getExpiry
       summary: In-stock rolls expired or expiring within 6 months (UC-21)
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Expiry view
           content:
@@ -1456,6 +1787,7 @@ paths:
       operationId: getRoll
       summary: Roll details (UC-22)
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Roll
           content:
@@ -1564,6 +1896,7 @@ paths:
                   finishedAt: "2026-09-28"
                   description: Hanoi street trip
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Roll
           content:
@@ -1654,6 +1987,7 @@ paths:
       operationId: deleteRoll
       summary: Delete a roll that is still in stock (a mistaken entry); rolls that were loaded cannot be deleted
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "204": { description: Deleted }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -1685,6 +2019,7 @@ paths:
                 value:
                   cameraId: 0b9e4c52-3a1f-4d85-8c36-9e5a7d2f1b02
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Loaded
           content:
@@ -1790,6 +2125,7 @@ paths:
                   lensIds:
                     - a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Lenses
           content:
@@ -1835,6 +2171,7 @@ paths:
                 summary: "No body: finished today"
                 value: {}
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Roll
           content:
@@ -1929,6 +2266,7 @@ paths:
       operationId: listRollProcessing
       summary: Processing history of a roll (UC-29)
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Jobs
           content:
@@ -2011,6 +2349,7 @@ paths:
                   process: BW
                   sentAt: "2026-09-20"
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Updated
           content:
@@ -2080,6 +2419,7 @@ paths:
       operationId: listRollFrames
       summary: Frames of a roll that have notes or scans, ordered by number
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Frames
           content:
@@ -2108,6 +2448,7 @@ paths:
       tags: [Rolls]
       operationId: getFrame
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Frame
           content:
@@ -2145,6 +2486,7 @@ paths:
                 summary: Clear the note
                 value: {}
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Frame
           content:
@@ -2172,6 +2514,7 @@ paths:
       tags: [Processing]
       operationId: getProcessing
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Job
           content:
@@ -2203,6 +2546,7 @@ paths:
       operationId: deleteProcessing
       summary: Delete a processing job that has no scans; the roll status is recomputed
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "204": { description: Deleted }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -2228,6 +2572,7 @@ paths:
                 summary: "No body: arrived today"
                 value: {}
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Job
           content:
@@ -2276,6 +2621,7 @@ paths:
                 summary: "No body: came back today"
                 value: {}
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Job
           content:
@@ -2311,6 +2657,7 @@ paths:
       operationId: listNegativesAtLab
       summary: Lab jobs whose negatives are not back yet (UC-27)
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Jobs
           content:
@@ -2338,6 +2685,7 @@ paths:
       parameters:
         - { name: scanner, in: query, schema: { $ref: "#/components/schemas/Scanner" } }
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Scans
           content:
@@ -2394,6 +2742,7 @@ paths:
                   file:
                     - "000007.jpg"
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Import result
           content:
@@ -2460,6 +2809,7 @@ paths:
                     - "000001.jpg"
                   offset: 1
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Mapping
           content:
@@ -2487,6 +2837,7 @@ paths:
       operationId: compareFrame
       summary: Noritsu vs Frontier for one frame, with previous/next frame (UC-33)
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Comparison
           content:
@@ -2545,6 +2896,7 @@ paths:
       operationId: getScan
       summary: Scan metadata (the image itself is at /scans/{id}/file)
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Scan
           content:
@@ -2569,6 +2921,7 @@ paths:
       operationId: deleteScan
       summary: Delete a scan; the image file is kept in storage
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "204": { description: Deleted }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -2581,6 +2934,7 @@ paths:
       operationId: getScanFile
       summary: Full-size scan image
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Image bytes
           content:
@@ -2596,6 +2950,7 @@ paths:
       parameters:
         - { name: focalLength, in: query, required: true, schema: { type: integer, minimum: 1 } }
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Rolls
           content:
@@ -2638,6 +2993,7 @@ paths:
       parameters:
         - { name: year, in: query, schema: { type: integer } }
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Ranking
           content:
@@ -2665,6 +3021,7 @@ paths:
       parameters:
         - { name: groupByBase, in: query, schema: { type: boolean, default: false } }
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Ranking
           content:
@@ -2688,6 +3045,7 @@ paths:
       operationId: getTimelineStats
       summary: Rolls started per month, per year (UC-38)
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Timeline
           content:
@@ -2718,6 +3076,7 @@ paths:
       operationId: getSpendingStats
       summary: Film and processing cost per month and year (UC-39)
       responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
           description: Spending
           content:
@@ -2738,6 +3097,12 @@ paths:
                           incomplete: false
 
 components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: metaframes_session
+      description: Set by `POST /auth/login` and `POST /auth/register`.
   parameters:
     Id:
       name: id
@@ -2746,6 +3111,33 @@ components:
       schema: { type: string, format: uuid }
 
   responses:
+    Unauthorized:
+      description: No valid session; log in first
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          examples:
+            unauthorized:
+              summary: Not logged in
+              value:
+                code: unauthorized
+                message: not logged in
+    AuthBadRequest:
+      description: The body does not match the schema, or a field breaks an account rule (such as password strength)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          examples:
+            weakPassword:
+              summary: Password too weak
+              value:
+                code: validation_failed
+                message: "password: Must be at least 8 characters, Must contain at least 1 symbol"
+            badEmail:
+              summary: Not an email address
+              value:
+                code: validation_failed
+                message: "email: Must be a valid e-mail address"
     BadRequest:
       description: "Malformed request: the body, a parameter or an id does not match the schema"
       content:
@@ -2894,6 +3286,73 @@ components:
       example:
         code: not_found
         message: camera not found
+
+    User:
+      type: object
+      required: [id, email, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+        createdAt: { type: string, format: date-time }
+      example:
+        id: 5a0c2f6e-8d31-4b7a-9e15-3c7f1d2b4a60
+        email: ansel@example.com
+        name: Ansel
+        createdAt: "2026-10-07T09:00:00Z"
+
+    AuthResult:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
+        user: { $ref: "#/components/schemas/User" }
+      example:
+        message: Logged in
+
+    RegisterInput:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password: { type: string, minLength: 8, maxLength: 72 }
+        name: { type: string, maxLength: 100 }
+      example:
+        email: ansel@example.com
+        password: "Zone-System5"
+        name: Ansel
+
+    LoginInput:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email: { type: string, maxLength: 254 }
+        password: { type: string, maxLength: 72 }
+      example:
+        email: ansel@example.com
+        password: "Zone-System5"
+
+    RecoverStartInput:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email: { type: string, maxLength: 254 }
+      example:
+        email: ansel@example.com
+
+    ResetPasswordInput:
+      type: object
+      additionalProperties: false
+      required: [token, password]
+      properties:
+        token: { type: string, minLength: 1 }
+        password: { type: string, minLength: 8, maxLength: 72 }
+      example:
+        token: "q3Jv0b5i8W1Xw9yQ5lD0p6c8R2nS7tU4vA1bC3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5zA7bC9dE1fG3hI5jK7lM9nO1pQ3rS5tU7vW9xY1zA3bC5dE7fA=="
+        password: "Fresh-Neg4tive"
 
     ActiveInput:
       type: object
@@ -3862,7 +4321,7 @@ components:
         action: { $ref: "#/components/schemas/AuditAction" }
         before: { type: object, nullable: true, additionalProperties: true, description: "Row before the change, keyed by database column name; absent for create" }
         after: { type: object, nullable: true, additionalProperties: true, description: "Row after the change, keyed by database column name; absent for a hard delete" }
-        actor: { type: string, description: Value of the X-Actor request header }
+        actor: { type: string, description: Email of the signed-in user who made the change }
         requestId: { type: string, description: X-Request-ID of the request that made the change }
         createdAt: { type: string, format: date-time }
       example:
@@ -3872,6 +4331,6 @@ components:
         action: update
         before: { id: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01, brand: Nikon, model: FM2, isActive: true }
         after: { id: 7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01, brand: Nikon, model: FM3A, isActive: true }
-        actor: nam
+        actor: nam@example.com
         requestId: 3f6c1a1e-9d0b-4b5e-8f6a-0c2d7e1b5a90
         createdAt: "2026-10-02T09:15:00Z"

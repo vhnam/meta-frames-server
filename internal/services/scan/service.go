@@ -12,6 +12,7 @@ import (
 	"meta-frames-server/internal/common/apperror"
 	"meta-frames-server/internal/common/clock"
 	"meta-frames-server/internal/common/pointers"
+	"meta-frames-server/internal/common/requestctx"
 	"meta-frames-server/internal/db"
 	"meta-frames-server/internal/db/gen"
 	"meta-frames-server/internal/domain"
@@ -42,11 +43,11 @@ type ScanFile struct {
 // ---- shared queries ----
 
 func BuildFrameViews(ctx context.Context, queries gen.Querier, rollID uuid.UUID) ([]FrameView, error) {
-	frames, err := queries.ListFrames(ctx, rollID)
+	frames, err := queries.ListFrames(ctx, gen.ListFramesParams{RollID: rollID, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return nil, err
 	}
-	scans, err := queries.ListRollScans(ctx, rollID)
+	scans, err := queries.ListRollScans(ctx, gen.ListRollScansParams{RollID: rollID, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return nil, err
 	}
@@ -73,14 +74,14 @@ func BuildFrameViews(ctx context.Context, queries gen.Querier, rollID uuid.UUID)
 func (service *Service) SaveFrameNotes(ctx context.Context, rollID uuid.UUID, number int, notes *string) (FrameView, error) {
 	var view FrameView
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		if _, err := queries.GetRollForUpdate(ctx, rollID); err != nil {
+		if _, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: rollID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return shared.NotFoundOr(err, "roll")
 		}
-		frame, err := queries.UpsertFrame(ctx, gen.UpsertFrameParams{ID: service.newID(), RollID: rollID, Number: int32(number)})
+		frame, err := queries.UpsertFrame(ctx, gen.UpsertFrameParams{ID: service.newID(), RollID: rollID, Number: int32(number), OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return err
 		}
-		if _, err := queries.SetFrameNotes(ctx, gen.SetFrameNotesParams{ID: frame.ID, Notes: pointers.TrimmedOrNil(notes)}); err != nil {
+		if _, err := queries.SetFrameNotes(ctx, gen.SetFrameNotesParams{ID: frame.ID, Notes: pointers.TrimmedOrNil(notes), OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return err
 		}
 		frames, err := BuildFrameViews(ctx, queries, rollID)
@@ -112,10 +113,10 @@ func toScanView(row gen.ListProcessingScansRow) View {
 // ListScans returns the scan grid of a job ordered by frame number (UC-32).
 func (service *Service) ListScans(ctx context.Context, jobID uuid.UUID, scanner *string) ([]View, error) {
 	queries := service.store.Queries()
-	if _, err := queries.GetProcessing(ctx, jobID); err != nil {
+	if _, err := queries.GetProcessing(ctx, gen.GetProcessingParams{ID: jobID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 		return nil, shared.NotFoundOr(err, "processing job")
 	}
-	rows, err := queries.ListProcessingScans(ctx, gen.ListProcessingScansParams{ProcessingID: jobID, Scanner: scanner})
+	rows, err := queries.ListProcessingScans(ctx, gen.ListProcessingScansParams{ProcessingID: jobID, Scanner: scanner, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +158,7 @@ func (service *Service) Compare(ctx context.Context, jobID uuid.UUID, frameNumbe
 		comparison.Missing = append(comparison.Missing, domain.ScannerFrontier)
 	}
 
-	numbers, err := service.store.Queries().ListJobFrameNumbers(ctx, jobID)
+	numbers, err := service.store.Queries().ListJobFrameNumbers(ctx, gen.ListJobFrameNumbersParams{ProcessingID: jobID, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return FrameComparison{}, err
 	}
@@ -180,7 +181,7 @@ func neighbourFrames(numbers []int32, current int) (previous, next *int) {
 
 // OpenFile opens a stored scan image for download.
 func (service *Service) OpenFile(ctx context.Context, scanID uuid.UUID) (ScanFile, error) {
-	scan, err := service.store.Queries().GetScan(ctx, scanID)
+	scan, err := service.store.Queries().GetScan(ctx, gen.GetScanParams{ID: scanID, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return ScanFile{}, shared.NotFoundOr(err, "scan")
 	}
@@ -198,7 +199,7 @@ func (service *Service) OpenFile(ctx context.Context, scanID uuid.UUID) (ScanFil
 
 // PreviewImport maps file names to frame numbers before any upload happens.
 func (service *Service) PreviewImport(ctx context.Context, jobID uuid.UUID, input ImportPreviewInput) ([]ImportPreviewItem, error) {
-	if _, err := service.store.Queries().GetProcessing(ctx, jobID); err != nil {
+	if _, err := service.store.Queries().GetProcessing(ctx, gen.GetProcessingParams{ID: jobID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 		return nil, shared.NotFoundOr(err, "processing job")
 	}
 	return buildImportPreview(input), nil
@@ -206,7 +207,7 @@ func (service *Service) PreviewImport(ctx context.Context, jobID uuid.UUID, inpu
 
 // PrepareImport checks that the job can receive scans and returns it.
 func (service *Service) PrepareImport(ctx context.Context, jobID uuid.UUID) (gen.Processing, error) {
-	job, err := service.store.Queries().GetProcessing(ctx, jobID)
+	job, err := service.store.Queries().GetProcessing(ctx, gen.GetProcessingParams{ID: jobID, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return gen.Processing{}, shared.NotFoundOr(err, "processing job")
 	}
@@ -254,14 +255,14 @@ func (service *Service) ImportFile(ctx context.Context, job gen.Processing, opti
 		replacedID string
 	)
 	err = service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		if _, err := queries.GetRollForUpdate(ctx, job.RollID); err != nil {
+		if _, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: job.RollID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return err
 		}
-		frame, err := queries.UpsertFrame(ctx, gen.UpsertFrameParams{ID: service.newID(), RollID: job.RollID, Number: int32(frameNumber)})
+		frame, err := queries.UpsertFrame(ctx, gen.UpsertFrameParams{ID: service.newID(), RollID: job.RollID, Number: int32(frameNumber), OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return err
 		}
-		existing, lookupErr := queries.GetScanSlot(ctx, gen.GetScanSlotParams{ProcessingID: job.ID, FrameID: frame.ID, Scanner: options.Scanner})
+		existing, lookupErr := queries.GetScanSlot(ctx, gen.GetScanSlotParams{ProcessingID: job.ID, FrameID: frame.ID, Scanner: options.Scanner, OwnerID: requestctx.Owner(ctx)})
 		switch {
 		case lookupErr == nil && !options.ReplaceExisting:
 			outcome.Skipped = true
@@ -270,6 +271,7 @@ func (service *Service) ImportFile(ctx context.Context, job gen.Processing, opti
 			replacedID = existing.FileKey
 			scan, err := queries.ReplaceScan(ctx, gen.ReplaceScanParams{
 				ID: existing.ID, FileKey: fileKey, FileName: fileName, ContentType: contentType, SizeBytes: size,
+				OwnerID: requestctx.Owner(ctx),
 			})
 			outcome.Scan = &View{Scan: scan, FrameNumber: frame.Number}
 			return err
@@ -277,6 +279,7 @@ func (service *Service) ImportFile(ctx context.Context, job gen.Processing, opti
 			scan, err := queries.InsertScan(ctx, gen.InsertScanParams{
 				ID: scanID, ProcessingID: job.ID, FrameID: frame.ID, Scanner: options.Scanner,
 				FileKey: fileKey, FileName: fileName, ContentType: contentType, SizeBytes: size,
+				OwnerID: requestctx.Owner(ctx),
 			})
 			outcome.Scan = &View{Scan: scan, FrameNumber: frame.Number}
 			return err
@@ -302,16 +305,16 @@ func (service *Service) ImportFile(ctx context.Context, job gen.Processing, opti
 func (service *Service) CompleteImport(ctx context.Context, jobID uuid.UUID, importedCount int) (processing.View, error) {
 	var view processing.View
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		job, err := queries.GetProcessingForUpdate(ctx, jobID)
+		job, err := queries.GetProcessingForUpdate(ctx, gen.GetProcessingForUpdateParams{ID: jobID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return err
 		}
 		if job.ScansReceivedAt == nil && importedCount > 0 {
-			if _, err := queries.GetRollForUpdate(ctx, job.RollID); err != nil {
+			if _, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: job.RollID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 				return err
 			}
 			today := service.clock.Today()
-			if _, err := queries.SetScansReceived(ctx, gen.SetScansReceivedParams{ID: jobID, ScansReceivedAt: &today}); err != nil {
+			if _, err := queries.SetScansReceived(ctx, gen.SetScansReceivedParams{ID: jobID, ScansReceivedAt: &today, OwnerID: requestctx.Owner(ctx)}); err != nil {
 				return err
 			}
 			if err := processing.RefreshRollStatus(ctx, queries, job.RollID); err != nil {
@@ -327,11 +330,11 @@ func (service *Service) CompleteImport(ctx context.Context, jobID uuid.UUID, imp
 // Get returns one scan's metadata.
 func (service *Service) Get(ctx context.Context, scanID uuid.UUID) (View, error) {
 	queries := service.store.Queries()
-	scan, err := queries.GetScan(ctx, scanID)
+	scan, err := queries.GetScan(ctx, gen.GetScanParams{ID: scanID, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return View{}, shared.NotFoundOr(err, "scan")
 	}
-	frame, err := queries.GetFrame(ctx, scan.FrameID)
+	frame, err := queries.GetFrame(ctx, gen.GetFrameParams{ID: scan.FrameID, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return View{}, err
 	}
@@ -341,10 +344,10 @@ func (service *Service) Get(ctx context.Context, scanID uuid.UUID) (View, error)
 // Delete soft-deletes a scan. The image stays in storage so the delete can be undone.
 func (service *Service) Delete(ctx context.Context, scanID uuid.UUID) error {
 	return service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		if _, err := queries.GetScan(ctx, scanID); err != nil {
+		if _, err := queries.GetScan(ctx, gen.GetScanParams{ID: scanID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return shared.NotFoundOr(err, "scan")
 		}
-		_, err := queries.SoftDeleteScan(ctx, scanID)
+		_, err := queries.SoftDeleteScan(ctx, gen.SoftDeleteScanParams{ID: scanID, OwnerID: requestctx.Owner(ctx)})
 		return err
 	})
 }
@@ -352,7 +355,7 @@ func (service *Service) Delete(ctx context.Context, scanID uuid.UUID) error {
 // ListFrames returns the frames of a roll that have notes or scans, ordered by number.
 func (service *Service) ListFrames(ctx context.Context, rollID uuid.UUID) ([]FrameView, error) {
 	queries := service.store.Queries()
-	if _, err := queries.GetRoll(ctx, rollID); err != nil {
+	if _, err := queries.GetRoll(ctx, gen.GetRollParams{ID: rollID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 		return nil, shared.NotFoundOr(err, "roll")
 	}
 	return BuildFrameViews(ctx, queries, rollID)

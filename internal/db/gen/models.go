@@ -12,6 +12,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AppUser struct {
+	ID                 uuid.UUID
+	Email              string
+	Name               *string
+	PasswordHash       *string
+	RecoverSelector    *string
+	RecoverVerifier    *string
+	RecoverTokenExpiry pgtype.Timestamptz
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+	AttemptCount       int32
+	LastAttempt        pgtype.Timestamptz
+	LockedUntil        pgtype.Timestamptz
+	Oauth2Provider     *string
+	Oauth2Uid          *string
+}
+
 type AuditLog struct {
 	ID         int64
 	EntityType string
@@ -22,6 +39,7 @@ type AuditLog struct {
 	Actor      *string
 	RequestID  *string
 	CreatedAt  pgtype.Timestamptz
+	OwnerID    uuid.UUID
 }
 
 type Camera struct {
@@ -35,6 +53,7 @@ type Camera struct {
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
 	DeletedAt    pgtype.Timestamptz
+	OwnerID      uuid.UUID
 }
 
 type CameraLens struct {
@@ -57,6 +76,7 @@ type FilmStock struct {
 	CreatedAt   pgtype.Timestamptz
 	UpdatedAt   pgtype.Timestamptz
 	DeletedAt   pgtype.Timestamptz
+	OwnerID     uuid.UUID
 }
 
 type Frame struct {
@@ -67,6 +87,7 @@ type Frame struct {
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
 	DeletedAt pgtype.Timestamptz
+	OwnerID   uuid.UUID
 }
 
 type IdempotencyKey struct {
@@ -74,6 +95,7 @@ type IdempotencyKey struct {
 	Status    *int32
 	Response  json.RawMessage
 	CreatedAt pgtype.Timestamptz
+	OwnerID   uuid.UUID
 }
 
 type Lab struct {
@@ -83,6 +105,7 @@ type Lab struct {
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
 	DeletedAt pgtype.Timestamptz
+	OwnerID   uuid.UUID
 }
 
 type Lens struct {
@@ -98,6 +121,7 @@ type Lens struct {
 	CreatedAt   pgtype.Timestamptz
 	UpdatedAt   pgtype.Timestamptz
 	DeletedAt   pgtype.Timestamptz
+	OwnerID     uuid.UUID
 }
 
 type Processing struct {
@@ -116,6 +140,7 @@ type Processing struct {
 	DeletedAt           pgtype.Timestamptz
 	ScansExpectedAt     *time.Time
 	NegativesExpectedAt *time.Time
+	OwnerID             uuid.UUID
 }
 
 type ProcessingScanOrder struct {
@@ -143,6 +168,7 @@ type Roll struct {
 	CreatedAt   pgtype.Timestamptz
 	UpdatedAt   pgtype.Timestamptz
 	DeletedAt   pgtype.Timestamptz
+	OwnerID     uuid.UUID
 }
 
 type RollLens struct {
@@ -162,4 +188,12 @@ type Scan struct {
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
 	DeletedAt    pgtype.Timestamptz
+	OwnerID      uuid.UUID
+}
+
+type UserSession struct {
+	TokenHash []byte
+	UserID    uuid.UUID
+	CreatedAt pgtype.Timestamptz
+	ExpiresAt pgtype.Timestamptz
 }

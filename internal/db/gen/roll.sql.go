@@ -15,11 +15,16 @@ import (
 )
 
 const claimIdempotencyKey = `-- name: ClaimIdempotencyKey :execrows
-INSERT INTO idempotency_key (key) VALUES ($1) ON CONFLICT DO NOTHING
+INSERT INTO idempotency_key (key, owner_id) VALUES ($1, $2) ON CONFLICT DO NOTHING
 `
 
-func (q *Queries) ClaimIdempotencyKey(ctx context.Context, key string) (int64, error) {
-	result, err := q.db.Exec(ctx, claimIdempotencyKey, key)
+type ClaimIdempotencyKeyParams struct {
+	Key     string
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) ClaimIdempotencyKey(ctx context.Context, arg ClaimIdempotencyKeyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, claimIdempotencyKey, arg.Key, arg.OwnerID)
 	if err != nil {
 		return 0, err
 	}
@@ -41,31 +46,38 @@ func (q *Queries) DeleteRollLensesExcept(ctx context.Context, arg DeleteRollLens
 }
 
 const finishIdempotencyKey = `-- name: FinishIdempotencyKey :exec
-UPDATE idempotency_key SET status = $2, response = $3 WHERE key = $1
+UPDATE idempotency_key SET status = $2, response = $3 WHERE key = $1 AND owner_id = $4
 `
 
 type FinishIdempotencyKeyParams struct {
 	Key      string
 	Status   *int32
 	Response json.RawMessage
+	OwnerID  uuid.UUID
 }
 
 func (q *Queries) FinishIdempotencyKey(ctx context.Context, arg FinishIdempotencyKeyParams) error {
-	_, err := q.db.Exec(ctx, finishIdempotencyKey, arg.Key, arg.Status, arg.Response)
+	_, err := q.db.Exec(ctx, finishIdempotencyKey,
+		arg.Key,
+		arg.Status,
+		arg.Response,
+		arg.OwnerID,
+	)
 	return err
 }
 
 const finishRoll = `-- name: FinishRoll :one
-UPDATE roll SET status = 'done_shooting', finished_at = $2 WHERE id = $1 AND deleted_at IS NULL RETURNING id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at
+UPDATE roll SET status = 'done_shooting', finished_at = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL RETURNING id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at, owner_id
 `
 
 type FinishRollParams struct {
 	ID         uuid.UUID
 	FinishedAt *time.Time
+	OwnerID    uuid.UUID
 }
 
 func (q *Queries) FinishRoll(ctx context.Context, arg FinishRollParams) (Roll, error) {
-	row := q.db.QueryRow(ctx, finishRoll, arg.ID, arg.FinishedAt)
+	row := q.db.QueryRow(ctx, finishRoll, arg.ID, arg.FinishedAt, arg.OwnerID)
 	var i Roll
 	err := row.Scan(
 		&i.ID,
@@ -84,16 +96,22 @@ func (q *Queries) FinishRoll(ctx context.Context, arg FinishRollParams) (Roll, e
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const getFrame = `-- name: GetFrame :one
-SELECT id, roll_id, number, notes, created_at, updated_at, deleted_at FROM frame WHERE id = $1
+SELECT id, roll_id, number, notes, created_at, updated_at, deleted_at, owner_id FROM frame WHERE id = $1 AND owner_id = $2
 `
 
-func (q *Queries) GetFrame(ctx context.Context, id uuid.UUID) (Frame, error) {
-	row := q.db.QueryRow(ctx, getFrame, id)
+type GetFrameParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) GetFrame(ctx context.Context, arg GetFrameParams) (Frame, error) {
+	row := q.db.QueryRow(ctx, getFrame, arg.ID, arg.OwnerID)
 	var i Frame
 	err := row.Scan(
 		&i.ID,
@@ -103,21 +121,23 @@ func (q *Queries) GetFrame(ctx context.Context, id uuid.UUID) (Frame, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const getFrameByNumber = `-- name: GetFrameByNumber :one
-SELECT id, roll_id, number, notes, created_at, updated_at, deleted_at FROM frame WHERE roll_id = $1 AND number = $2
+SELECT id, roll_id, number, notes, created_at, updated_at, deleted_at, owner_id FROM frame WHERE roll_id = $1 AND number = $2 AND owner_id = $3
 `
 
 type GetFrameByNumberParams struct {
-	RollID uuid.UUID
-	Number int32
+	RollID  uuid.UUID
+	Number  int32
+	OwnerID uuid.UUID
 }
 
 func (q *Queries) GetFrameByNumber(ctx context.Context, arg GetFrameByNumberParams) (Frame, error) {
-	row := q.db.QueryRow(ctx, getFrameByNumber, arg.RollID, arg.Number)
+	row := q.db.QueryRow(ctx, getFrameByNumber, arg.RollID, arg.Number, arg.OwnerID)
 	var i Frame
 	err := row.Scan(
 		&i.ID,
@@ -127,32 +147,44 @@ func (q *Queries) GetFrameByNumber(ctx context.Context, arg GetFrameByNumberPara
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const getIdempotencyKey = `-- name: GetIdempotencyKey :one
-SELECT key, status, response, created_at FROM idempotency_key WHERE key = $1
+SELECT key, status, response, created_at, owner_id FROM idempotency_key WHERE key = $1 AND owner_id = $2
 `
 
-func (q *Queries) GetIdempotencyKey(ctx context.Context, key string) (IdempotencyKey, error) {
-	row := q.db.QueryRow(ctx, getIdempotencyKey, key)
+type GetIdempotencyKeyParams struct {
+	Key     string
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) GetIdempotencyKey(ctx context.Context, arg GetIdempotencyKeyParams) (IdempotencyKey, error) {
+	row := q.db.QueryRow(ctx, getIdempotencyKey, arg.Key, arg.OwnerID)
 	var i IdempotencyKey
 	err := row.Scan(
 		&i.Key,
 		&i.Status,
 		&i.Response,
 		&i.CreatedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const getRoll = `-- name: GetRoll :one
-SELECT id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at FROM roll WHERE id = $1 AND deleted_at IS NULL
+SELECT id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at, owner_id FROM roll WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
 `
 
-func (q *Queries) GetRoll(ctx context.Context, id uuid.UUID) (Roll, error) {
-	row := q.db.QueryRow(ctx, getRoll, id)
+type GetRollParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) GetRoll(ctx context.Context, arg GetRollParams) (Roll, error) {
+	row := q.db.QueryRow(ctx, getRoll, arg.ID, arg.OwnerID)
 	var i Roll
 	err := row.Scan(
 		&i.ID,
@@ -171,16 +203,22 @@ func (q *Queries) GetRoll(ctx context.Context, id uuid.UUID) (Roll, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const getRollForUpdate = `-- name: GetRollForUpdate :one
-SELECT id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at FROM roll WHERE id = $1 AND deleted_at IS NULL FOR UPDATE
+SELECT id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at, owner_id FROM roll WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL FOR UPDATE
 `
 
-func (q *Queries) GetRollForUpdate(ctx context.Context, id uuid.UUID) (Roll, error) {
-	row := q.db.QueryRow(ctx, getRollForUpdate, id)
+type GetRollForUpdateParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) GetRollForUpdate(ctx context.Context, arg GetRollForUpdateParams) (Roll, error) {
+	row := q.db.QueryRow(ctx, getRollForUpdate, arg.ID, arg.OwnerID)
 	var i Roll
 	err := row.Scan(
 		&i.ID,
@@ -199,14 +237,15 @@ func (q *Queries) GetRollForUpdate(ctx context.Context, id uuid.UUID) (Roll, err
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const insertRoll = `-- name: InsertRoll :one
-INSERT INTO roll (id, film_stock_id, format, exposures, price, expiry_year, expiry_month)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at
+INSERT INTO roll (id, film_stock_id, format, exposures, price, expiry_year, expiry_month, owner_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at, owner_id
 `
 
 type InsertRollParams struct {
@@ -217,6 +256,7 @@ type InsertRollParams struct {
 	Price       *int32
 	ExpiryYear  *int32
 	ExpiryMonth *int32
+	OwnerID     uuid.UUID
 }
 
 func (q *Queries) InsertRoll(ctx context.Context, arg InsertRollParams) (Roll, error) {
@@ -228,6 +268,7 @@ func (q *Queries) InsertRoll(ctx context.Context, arg InsertRollParams) (Roll, e
 		arg.Price,
 		arg.ExpiryYear,
 		arg.ExpiryMonth,
+		arg.OwnerID,
 	)
 	var i Roll
 	err := row.Scan(
@@ -247,11 +288,13 @@ func (q *Queries) InsertRoll(ctx context.Context, arg InsertRollParams) (Roll, e
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const insertRollLens = `-- name: InsertRollLens :exec
+
 INSERT INTO roll_lens (roll_id, lens_id) VALUES ($1, $2) ON CONFLICT DO NOTHING
 `
 
@@ -260,17 +303,23 @@ type InsertRollLensParams struct {
 	LensID uuid.UUID
 }
 
+// The roll and lenses are checked to belong to the account before these run.
 func (q *Queries) InsertRollLens(ctx context.Context, arg InsertRollLensParams) error {
 	_, err := q.db.Exec(ctx, insertRollLens, arg.RollID, arg.LensID)
 	return err
 }
 
 const listFrames = `-- name: ListFrames :many
-SELECT id, roll_id, number, notes, created_at, updated_at, deleted_at FROM frame WHERE roll_id = $1 ORDER BY number
+SELECT id, roll_id, number, notes, created_at, updated_at, deleted_at, owner_id FROM frame WHERE roll_id = $1 AND owner_id = $2 ORDER BY number
 `
 
-func (q *Queries) ListFrames(ctx context.Context, rollID uuid.UUID) ([]Frame, error) {
-	rows, err := q.db.Query(ctx, listFrames, rollID)
+type ListFramesParams struct {
+	RollID  uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) ListFrames(ctx context.Context, arg ListFramesParams) ([]Frame, error) {
+	rows, err := q.db.Query(ctx, listFrames, arg.RollID, arg.OwnerID)
 	if err != nil {
 		return nil, err
 	}
@@ -286,6 +335,7 @@ func (q *Queries) ListFrames(ctx context.Context, rollID uuid.UUID) ([]Frame, er
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.OwnerID,
 		); err != nil {
 			return nil, err
 		}
@@ -298,12 +348,17 @@ func (q *Queries) ListFrames(ctx context.Context, rollID uuid.UUID) ([]Frame, er
 }
 
 const listRollLenses = `-- name: ListRollLenses :many
-SELECT l.id, l.brand, l.model, l.mount, l.description, l.focal_length, l.max_aperture, l.is_built_in, l.is_active, l.created_at, l.updated_at, l.deleted_at FROM lens l JOIN roll_lens rl ON rl.lens_id = l.id
-WHERE rl.roll_id = $1 ORDER BY l.focal_length, l.brand, l.model
+SELECT l.id, l.brand, l.model, l.mount, l.description, l.focal_length, l.max_aperture, l.is_built_in, l.is_active, l.created_at, l.updated_at, l.deleted_at, l.owner_id FROM lens l JOIN roll_lens rl ON rl.lens_id = l.id
+WHERE rl.roll_id = $1 AND l.owner_id = $2 ORDER BY l.focal_length, l.brand, l.model
 `
 
-func (q *Queries) ListRollLenses(ctx context.Context, rollID uuid.UUID) ([]Lens, error) {
-	rows, err := q.db.Query(ctx, listRollLenses, rollID)
+type ListRollLensesParams struct {
+	RollID  uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) ListRollLenses(ctx context.Context, arg ListRollLensesParams) ([]Lens, error) {
+	rows, err := q.db.Query(ctx, listRollLenses, arg.RollID, arg.OwnerID)
 	if err != nil {
 		return nil, err
 	}
@@ -324,6 +379,7 @@ func (q *Queries) ListRollLenses(ctx context.Context, rollID uuid.UUID) ([]Lens,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.OwnerID,
 		); err != nil {
 			return nil, err
 		}
@@ -336,9 +392,14 @@ func (q *Queries) ListRollLenses(ctx context.Context, rollID uuid.UUID) ([]Lens,
 }
 
 const listRollScans = `-- name: ListRollScans :many
-SELECT s.id, s.processing_id, s.frame_id, s.scanner, s.file_key, s.file_name, s.content_type, s.size_bytes, s.created_at, s.updated_at, s.deleted_at, f.number AS frame_number FROM scan s JOIN frame f ON f.id = s.frame_id
-WHERE f.roll_id = $1 AND s.deleted_at IS NULL ORDER BY f.number, s.scanner
+SELECT s.id, s.processing_id, s.frame_id, s.scanner, s.file_key, s.file_name, s.content_type, s.size_bytes, s.created_at, s.updated_at, s.deleted_at, s.owner_id, f.number AS frame_number FROM scan s JOIN frame f ON f.id = s.frame_id
+WHERE f.roll_id = $1 AND s.owner_id = $2 AND s.deleted_at IS NULL ORDER BY f.number, s.scanner
 `
+
+type ListRollScansParams struct {
+	RollID  uuid.UUID
+	OwnerID uuid.UUID
+}
 
 type ListRollScansRow struct {
 	ID           uuid.UUID
@@ -352,11 +413,12 @@ type ListRollScansRow struct {
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
 	DeletedAt    pgtype.Timestamptz
+	OwnerID      uuid.UUID
 	FrameNumber  int32
 }
 
-func (q *Queries) ListRollScans(ctx context.Context, rollID uuid.UUID) ([]ListRollScansRow, error) {
-	rows, err := q.db.Query(ctx, listRollScans, rollID)
+func (q *Queries) ListRollScans(ctx context.Context, arg ListRollScansParams) ([]ListRollScansRow, error) {
+	rows, err := q.db.Query(ctx, listRollScans, arg.RollID, arg.OwnerID)
 	if err != nil {
 		return nil, err
 	}
@@ -376,6 +438,7 @@ func (q *Queries) ListRollScans(ctx context.Context, rollID uuid.UUID) ([]ListRo
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.OwnerID,
 			&i.FrameNumber,
 		); err != nil {
 			return nil, err
@@ -389,29 +452,30 @@ func (q *Queries) ListRollScans(ctx context.Context, rollID uuid.UUID) ([]ListRo
 }
 
 const listRollSummaries = `-- name: ListRollSummaries :many
-SELECT r.id, r.film_stock_id, r.camera_id, r.format, r.exposures, r.status, r.shot_iso, r.expiry_year, r.expiry_month, r.price, r.description, r.started_at, r.finished_at, r.created_at, r.updated_at, r.deleted_at, fs.brand AS stock_brand, fs.name AS stock_name, fs.box_iso,
+SELECT r.id, r.film_stock_id, r.camera_id, r.format, r.exposures, r.status, r.shot_iso, r.expiry_year, r.expiry_month, r.price, r.description, r.started_at, r.finished_at, r.created_at, r.updated_at, r.deleted_at, r.owner_id, fs.brand AS stock_brand, fs.name AS stock_name, fs.box_iso,
        c.brand AS camera_brand, c.model AS camera_model,
        EXISTS (SELECT 1 FROM processing p
                WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.lab_id IS NOT NULL AND p.negatives_returned_at IS NULL) AS negatives_at_lab
 FROM roll r
 JOIN film_stock fs ON fs.id = r.film_stock_id
 LEFT JOIN camera c ON c.id = r.camera_id
-WHERE r.deleted_at IS NULL
-  AND ($1::text IS NULL OR r.status = $1)
-  AND ($2::uuid IS NULL OR r.film_stock_id = $2)
-  AND ($3::uuid IS NULL OR r.camera_id = $3)
-  AND ($4::uuid IS NULL OR EXISTS (SELECT 1 FROM roll_lens rl WHERE rl.roll_id = r.id AND rl.lens_id = $4))
-  AND ($5::int IS NULL OR r.format = $5)
-  AND ($6::date IS NULL OR r.started_at >= $6)
-  AND ($7::date IS NULL OR r.started_at <= $7)
-  AND ($8::uuid IS NULL OR r.id = $8)
-  AND ($9::int IS NULL OR EXISTS (
+WHERE r.owner_id = $1 AND r.deleted_at IS NULL
+  AND ($2::text IS NULL OR r.status = $2)
+  AND ($3::uuid IS NULL OR r.film_stock_id = $3)
+  AND ($4::uuid IS NULL OR r.camera_id = $4)
+  AND ($5::uuid IS NULL OR EXISTS (SELECT 1 FROM roll_lens rl WHERE rl.roll_id = r.id AND rl.lens_id = $5))
+  AND ($6::int IS NULL OR r.format = $6)
+  AND ($7::date IS NULL OR r.started_at >= $7)
+  AND ($8::date IS NULL OR r.started_at <= $8)
+  AND ($9::uuid IS NULL OR r.id = $9)
+  AND ($10::int IS NULL OR EXISTS (
         SELECT 1 FROM roll_lens rl JOIN lens l ON l.id = rl.lens_id
-        WHERE rl.roll_id = r.id AND l.focal_length = $9))
+        WHERE rl.roll_id = r.id AND l.focal_length = $10))
 ORDER BY r.created_at DESC
 `
 
 type ListRollSummariesParams struct {
+	OwnerID     uuid.UUID
 	Status      *string
 	FilmStockID *uuid.UUID
 	CameraID    *uuid.UUID
@@ -440,6 +504,7 @@ type ListRollSummariesRow struct {
 	CreatedAt      pgtype.Timestamptz
 	UpdatedAt      pgtype.Timestamptz
 	DeletedAt      pgtype.Timestamptz
+	OwnerID        uuid.UUID
 	StockBrand     string
 	StockName      string
 	BoxIso         int32
@@ -450,6 +515,7 @@ type ListRollSummariesRow struct {
 
 func (q *Queries) ListRollSummaries(ctx context.Context, arg ListRollSummariesParams) ([]ListRollSummariesRow, error) {
 	rows, err := q.db.Query(ctx, listRollSummaries,
+		arg.OwnerID,
 		arg.Status,
 		arg.FilmStockID,
 		arg.CameraID,
@@ -484,6 +550,7 @@ func (q *Queries) ListRollSummaries(ctx context.Context, arg ListRollSummariesPa
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.OwnerID,
 			&i.StockBrand,
 			&i.StockName,
 			&i.BoxIso,
@@ -503,8 +570,8 @@ func (q *Queries) ListRollSummaries(ctx context.Context, arg ListRollSummariesPa
 
 const loadRoll = `-- name: LoadRoll :one
 UPDATE roll SET camera_id = $2, status = 'in_camera', started_at = $3, shot_iso = $4
-WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at
+WHERE id = $1 AND owner_id = $5 AND deleted_at IS NULL
+RETURNING id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at, owner_id
 `
 
 type LoadRollParams struct {
@@ -512,6 +579,7 @@ type LoadRollParams struct {
 	CameraID  *uuid.UUID
 	StartedAt *time.Time
 	ShotIso   *int32
+	OwnerID   uuid.UUID
 }
 
 func (q *Queries) LoadRoll(ctx context.Context, arg LoadRollParams) (Roll, error) {
@@ -520,6 +588,7 @@ func (q *Queries) LoadRoll(ctx context.Context, arg LoadRollParams) (Roll, error
 		arg.CameraID,
 		arg.StartedAt,
 		arg.ShotIso,
+		arg.OwnerID,
 	)
 	var i Roll
 	err := row.Scan(
@@ -539,6 +608,7 @@ func (q *Queries) LoadRoll(ctx context.Context, arg LoadRollParams) (Roll, error
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
@@ -546,25 +616,35 @@ func (q *Queries) LoadRoll(ctx context.Context, arg LoadRollParams) (Roll, error
 const rollHasOpenJob = `-- name: RollHasOpenJob :one
 SELECT EXISTS (
   SELECT 1 FROM processing
-  WHERE roll_id = $1 AND deleted_at IS NULL
+  WHERE roll_id = $1 AND owner_id = $2 AND deleted_at IS NULL
     AND ((type IN ('develop_scan', 'scan') AND scans_received_at IS NULL)
       OR (type IN ('develop', 'print') AND negatives_returned_at IS NULL))
 )
 `
 
-func (q *Queries) RollHasOpenJob(ctx context.Context, rollID uuid.UUID) (bool, error) {
-	row := q.db.QueryRow(ctx, rollHasOpenJob, rollID)
+type RollHasOpenJobParams struct {
+	RollID  uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) RollHasOpenJob(ctx context.Context, arg RollHasOpenJobParams) (bool, error) {
+	row := q.db.QueryRow(ctx, rollHasOpenJob, arg.RollID, arg.OwnerID)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
 }
 
 const rollHasScansReceived = `-- name: RollHasScansReceived :one
-SELECT EXISTS (SELECT 1 FROM processing WHERE roll_id = $1 AND deleted_at IS NULL AND scans_received_at IS NOT NULL)
+SELECT EXISTS (SELECT 1 FROM processing WHERE roll_id = $1 AND owner_id = $2 AND deleted_at IS NULL AND scans_received_at IS NOT NULL)
 `
 
-func (q *Queries) RollHasScansReceived(ctx context.Context, rollID uuid.UUID) (bool, error) {
-	row := q.db.QueryRow(ctx, rollHasScansReceived, rollID)
+type RollHasScansReceivedParams struct {
+	RollID  uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) RollHasScansReceived(ctx context.Context, arg RollHasScansReceivedParams) (bool, error) {
+	row := q.db.QueryRow(ctx, rollHasScansReceived, arg.RollID, arg.OwnerID)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
@@ -574,8 +654,13 @@ const rollSpend = `-- name: RollSpend :one
 SELECT COALESCE(r.price, 0)::int AS roll_price, (r.price IS NULL)::bool AS roll_price_missing,
        (SELECT COALESCE(sum(price), 0) FROM processing WHERE roll_id = r.id AND deleted_at IS NULL)::int AS processing_price,
        EXISTS (SELECT 1 FROM processing WHERE roll_id = r.id AND deleted_at IS NULL AND price IS NULL)::bool AS processing_price_missing
-FROM roll r WHERE r.id = $1 AND r.deleted_at IS NULL
+FROM roll r WHERE r.id = $1 AND r.owner_id = $2 AND r.deleted_at IS NULL
 `
+
+type RollSpendParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
 
 type RollSpendRow struct {
 	RollPrice              int32
@@ -584,8 +669,8 @@ type RollSpendRow struct {
 	ProcessingPriceMissing bool
 }
 
-func (q *Queries) RollSpend(ctx context.Context, id uuid.UUID) (RollSpendRow, error) {
-	row := q.db.QueryRow(ctx, rollSpend, id)
+func (q *Queries) RollSpend(ctx context.Context, arg RollSpendParams) (RollSpendRow, error) {
+	row := q.db.QueryRow(ctx, rollSpend, arg.ID, arg.OwnerID)
 	var i RollSpendRow
 	err := row.Scan(
 		&i.RollPrice,
@@ -597,16 +682,17 @@ func (q *Queries) RollSpend(ctx context.Context, id uuid.UUID) (RollSpendRow, er
 }
 
 const setFrameNotes = `-- name: SetFrameNotes :one
-UPDATE frame SET notes = $2 WHERE id = $1 RETURNING id, roll_id, number, notes, created_at, updated_at, deleted_at
+UPDATE frame SET notes = $2 WHERE id = $1 AND owner_id = $3 RETURNING id, roll_id, number, notes, created_at, updated_at, deleted_at, owner_id
 `
 
 type SetFrameNotesParams struct {
-	ID    uuid.UUID
-	Notes *string
+	ID      uuid.UUID
+	Notes   *string
+	OwnerID uuid.UUID
 }
 
 func (q *Queries) SetFrameNotes(ctx context.Context, arg SetFrameNotesParams) (Frame, error) {
-	row := q.db.QueryRow(ctx, setFrameNotes, arg.ID, arg.Notes)
+	row := q.db.QueryRow(ctx, setFrameNotes, arg.ID, arg.Notes, arg.OwnerID)
 	var i Frame
 	err := row.Scan(
 		&i.ID,
@@ -616,30 +702,37 @@ func (q *Queries) SetFrameNotes(ctx context.Context, arg SetFrameNotesParams) (F
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const setRollStatus = `-- name: SetRollStatus :exec
-UPDATE roll SET status = $2 WHERE id = $1 AND deleted_at IS NULL
+UPDATE roll SET status = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL
 `
 
 type SetRollStatusParams struct {
-	ID     uuid.UUID
-	Status string
+	ID      uuid.UUID
+	Status  string
+	OwnerID uuid.UUID
 }
 
 func (q *Queries) SetRollStatus(ctx context.Context, arg SetRollStatusParams) error {
-	_, err := q.db.Exec(ctx, setRollStatus, arg.ID, arg.Status)
+	_, err := q.db.Exec(ctx, setRollStatus, arg.ID, arg.Status, arg.OwnerID)
 	return err
 }
 
 const softDeleteRoll = `-- name: SoftDeleteRoll :execrows
-UPDATE roll SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL
+UPDATE roll SET deleted_at = now() WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
 `
 
-func (q *Queries) SoftDeleteRoll(ctx context.Context, id uuid.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, softDeleteRoll, id)
+type SoftDeleteRollParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) SoftDeleteRoll(ctx context.Context, arg SoftDeleteRollParams) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteRoll, arg.ID, arg.OwnerID)
 	if err != nil {
 		return 0, err
 	}
@@ -650,8 +743,8 @@ const updateRoll = `-- name: UpdateRoll :one
 UPDATE roll SET film_stock_id = $2, format = $3, exposures = $4, price = $5,
        expiry_year = $6, expiry_month = $7, shot_iso = $8, started_at = $9,
        finished_at = $10, description = $11
-WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at
+WHERE id = $1 AND owner_id = $12 AND deleted_at IS NULL
+RETURNING id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at, owner_id
 `
 
 type UpdateRollParams struct {
@@ -666,6 +759,7 @@ type UpdateRollParams struct {
 	StartedAt   *time.Time
 	FinishedAt  *time.Time
 	Description *string
+	OwnerID     uuid.UUID
 }
 
 func (q *Queries) UpdateRoll(ctx context.Context, arg UpdateRollParams) (Roll, error) {
@@ -681,6 +775,7 @@ func (q *Queries) UpdateRoll(ctx context.Context, arg UpdateRollParams) (Roll, e
 		arg.StartedAt,
 		arg.FinishedAt,
 		arg.Description,
+		arg.OwnerID,
 	)
 	var i Roll
 	err := row.Scan(
@@ -700,24 +795,33 @@ func (q *Queries) UpdateRoll(ctx context.Context, arg UpdateRollParams) (Roll, e
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const upsertFrame = `-- name: UpsertFrame :one
-INSERT INTO frame (id, roll_id, number) VALUES ($1, $2, $3)
+INSERT INTO frame (id, roll_id, number, owner_id) VALUES ($1, $2, $3, $4)
 ON CONFLICT (roll_id, number) DO UPDATE SET number = EXCLUDED.number
-RETURNING id, roll_id, number, notes, created_at, updated_at, deleted_at
+RETURNING id, roll_id, number, notes, created_at, updated_at, deleted_at, owner_id
 `
 
 type UpsertFrameParams struct {
-	ID     uuid.UUID
-	RollID uuid.UUID
-	Number int32
+	ID      uuid.UUID
+	RollID  uuid.UUID
+	Number  int32
+	OwnerID uuid.UUID
 }
 
+// The roll is checked to belong to the account first; the composite foreign key refuses a frame
+// whose owner differs from its roll's.
 func (q *Queries) UpsertFrame(ctx context.Context, arg UpsertFrameParams) (Frame, error) {
-	row := q.db.QueryRow(ctx, upsertFrame, arg.ID, arg.RollID, arg.Number)
+	row := q.db.QueryRow(ctx, upsertFrame,
+		arg.ID,
+		arg.RollID,
+		arg.Number,
+		arg.OwnerID,
+	)
 	var i Frame
 	err := row.Scan(
 		&i.ID,
@@ -727,6 +831,7 @@ func (q *Queries) UpsertFrame(ctx context.Context, arg UpsertFrameParams) (Frame
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }

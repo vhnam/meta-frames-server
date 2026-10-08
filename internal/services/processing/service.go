@@ -9,6 +9,7 @@ import (
 	"meta-frames-server/internal/common/apperror"
 	"meta-frames-server/internal/common/clock"
 	"meta-frames-server/internal/common/pointers"
+	"meta-frames-server/internal/common/requestctx"
 	"meta-frames-server/internal/db"
 	"meta-frames-server/internal/db/gen"
 	"meta-frames-server/internal/domain"
@@ -92,7 +93,7 @@ func syncScanOrders(ctx context.Context, queries gen.Querier, jobID uuid.UUID, o
 	for _, order := range orders {
 		wanted[order.Scanner] = true
 	}
-	current, err := queries.ListScanOrders(ctx, []uuid.UUID{jobID})
+	current, err := queries.ListScanOrders(ctx, gen.ListScanOrdersParams{ProcessingIds: []uuid.UUID{jobID}, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return err
 	}
@@ -122,7 +123,7 @@ func JobProducesScans(jobType string) bool {
 // ---- shared queries ----
 
 func BuildViews(ctx context.Context, queries gen.Querier, rollID uuid.UUID) ([]View, error) {
-	rows, err := queries.ListRollProcessing(ctx, rollID)
+	rows, err := queries.ListRollProcessing(ctx, gen.ListRollProcessingParams{RollID: rollID, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +131,7 @@ func BuildViews(ctx context.Context, queries gen.Querier, rollID uuid.UUID) ([]V
 	for index, row := range rows {
 		ids[index] = row.ID
 	}
-	orderRows, err := queries.ListScanOrders(ctx, ids)
+	orderRows, err := queries.ListScanOrders(ctx, gen.ListScanOrdersParams{ProcessingIds: ids, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +152,7 @@ func BuildViews(ctx context.Context, queries gen.Querier, rollID uuid.UUID) ([]V
 }
 
 func BuildView(ctx context.Context, queries gen.Querier, jobID uuid.UUID) (View, error) {
-	job, err := queries.GetProcessing(ctx, jobID)
+	job, err := queries.GetProcessing(ctx, gen.GetProcessingParams{ID: jobID, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return View{}, shared.NotFoundOr(err, "processing job")
 	}
@@ -169,7 +170,7 @@ func BuildView(ctx context.Context, queries gen.Querier, jobID uuid.UUID) (View,
 
 // RefreshRollStatus applies the lifecycle rule of section 1.3 after a job changes.
 func RefreshRollStatus(ctx context.Context, queries gen.Querier, rollID uuid.UUID) error {
-	roll, err := queries.GetRoll(ctx, rollID)
+	roll, err := queries.GetRoll(ctx, gen.GetRollParams{ID: rollID, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return err
 	}
@@ -178,13 +179,13 @@ func RefreshRollStatus(ctx context.Context, queries gen.Querier, rollID uuid.UUI
 	default:
 		return nil
 	}
-	hasOpenJob, err := queries.RollHasOpenJob(ctx, rollID)
+	hasOpenJob, err := queries.RollHasOpenJob(ctx, gen.RollHasOpenJobParams{RollID: rollID, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return err
 	}
 	hasReceivedScans := false
 	if !hasOpenJob {
-		if hasReceivedScans, err = queries.RollHasScansReceived(ctx, rollID); err != nil {
+		if hasReceivedScans, err = queries.RollHasScansReceived(ctx, gen.RollHasScansReceivedParams{RollID: rollID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return err
 		}
 	}
@@ -192,14 +193,14 @@ func RefreshRollStatus(ctx context.Context, queries gen.Querier, rollID uuid.UUI
 	if next == roll.Status {
 		return nil
 	}
-	return queries.SetRollStatus(ctx, gen.SetRollStatusParams{ID: rollID, Status: next})
+	return queries.SetRollStatus(ctx, gen.SetRollStatusParams{ID: rollID, Status: next, OwnerID: requestctx.Owner(ctx)})
 }
 
 // ---- use cases ----
 
 func (service *Service) ListForRoll(ctx context.Context, rollID uuid.UUID) ([]View, error) {
 	queries := service.store.Queries()
-	if _, err := queries.GetRoll(ctx, rollID); err != nil {
+	if _, err := queries.GetRoll(ctx, gen.GetRollParams{ID: rollID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 		return nil, shared.NotFoundOr(err, "roll")
 	}
 	return BuildViews(ctx, queries, rollID)
@@ -217,12 +218,12 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 		created bool
 	)
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		roll, err := queries.GetRollForUpdate(ctx, rollID)
+		roll, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: rollID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return shared.NotFoundOr(err, "roll")
 		}
 		if input.LabID != nil {
-			if _, err := queries.GetLab(ctx, *input.LabID); err != nil {
+			if _, err := queries.GetLab(ctx, gen.GetLabParams{ID: *input.LabID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 				if db.IsNoRows(err) {
 					return apperror.Unprocessable("unknown_lab", "lab does not exist")
 				}
@@ -243,7 +244,7 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 			return apperror.Unprocessable("invalid_scans_expected_at", "scansExpectedAt cannot be before sentAt")
 		}
 
-		existing, lookupErr := queries.GetProcessingForUpdate(ctx, jobID)
+		existing, lookupErr := queries.GetProcessingForUpdate(ctx, gen.GetProcessingForUpdateParams{ID: jobID, OwnerID: requestctx.Owner(ctx)})
 		if lookupErr != nil && !db.IsNoRows(lookupErr) {
 			return lookupErr
 		}
@@ -256,6 +257,7 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 			}
 			if _, err := queries.UpdateProcessing(ctx, gen.UpdateProcessingParams{
 				ID: jobID, LabID: input.LabID, SentAt: sentAt, ScansExpectedAt: input.ScansExpectedAt, NegativesExpectedAt: input.NegativesExpectedAt, Price: pointers.Int32(input.Price), Notes: pointers.TrimmedOrNil(input.Notes),
+				OwnerID: requestctx.Owner(ctx),
 			}); err != nil {
 				return err
 			}
@@ -277,13 +279,14 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 			if _, err := queries.InsertProcessing(ctx, gen.InsertProcessingParams{
 				ID: jobID, RollID: rollID, LabID: input.LabID, Type: input.Type, Process: process,
 				SentAt: sentAt, ScansExpectedAt: input.ScansExpectedAt, NegativesExpectedAt: input.NegativesExpectedAt, Price: pointers.Int32(input.Price), Notes: pointers.TrimmedOrNil(input.Notes),
+				OwnerID: requestctx.Owner(ctx),
 			}); err != nil {
 				return err
 			}
 			if err := syncScanOrders(ctx, queries, jobID, input.ScanOrders); err != nil {
 				return err
 			}
-			if err := queries.SetRollStatus(ctx, gen.SetRollStatusParams{ID: rollID, Status: domain.RollStatusAtLab}); err != nil {
+			if err := queries.SetRollStatus(ctx, gen.SetRollStatusParams{ID: rollID, Status: domain.RollStatusAtLab, OwnerID: requestctx.Owner(ctx)}); err != nil {
 				return err
 			}
 		}
@@ -298,7 +301,7 @@ func resolveProcess(ctx context.Context, queries gen.Querier, stockID uuid.UUID,
 	if requested != nil {
 		return *requested, nil
 	}
-	stock, err := queries.GetFilmStock(ctx, stockID)
+	stock, err := queries.GetFilmStock(ctx, gen.GetFilmStockParams{ID: stockID, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return "", err
 	}
@@ -309,18 +312,18 @@ func resolveProcess(ctx context.Context, queries gen.Querier, stockID uuid.UUID,
 func (service *Service) RecordScansReceived(ctx context.Context, jobID uuid.UUID, receivedAt *time.Time) (View, error) {
 	var view View
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		job, err := queries.GetProcessingForUpdate(ctx, jobID)
+		job, err := queries.GetProcessingForUpdate(ctx, gen.GetProcessingForUpdateParams{ID: jobID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return shared.NotFoundOr(err, "processing job")
 		}
 		if !JobProducesScans(job.Type) {
 			return apperror.Conflict("no_scans_expected", "this job type does not produce scans")
 		}
-		if _, err := queries.GetRollForUpdate(ctx, job.RollID); err != nil {
+		if _, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: job.RollID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return err
 		}
 		date := shared.DateOrDefault(receivedAt, service.clock.Today())
-		if _, err := queries.SetScansReceived(ctx, gen.SetScansReceivedParams{ID: jobID, ScansReceivedAt: &date}); err != nil {
+		if _, err := queries.SetScansReceived(ctx, gen.SetScansReceivedParams{ID: jobID, ScansReceivedAt: &date, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return err
 		}
 		if err := RefreshRollStatus(ctx, queries, job.RollID); err != nil {
@@ -336,18 +339,18 @@ func (service *Service) RecordScansReceived(ctx context.Context, jobID uuid.UUID
 func (service *Service) RecordNegativesReturned(ctx context.Context, jobID uuid.UUID, returnedAt *time.Time) (View, error) {
 	var view View
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		job, err := queries.GetProcessingForUpdate(ctx, jobID)
+		job, err := queries.GetProcessingForUpdate(ctx, gen.GetProcessingForUpdateParams{ID: jobID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return shared.NotFoundOr(err, "processing job")
 		}
 		if job.LabID == nil {
 			return apperror.Conflict("home_processing", "negatives of home-processed rolls do not need to be returned")
 		}
-		if _, err := queries.GetRollForUpdate(ctx, job.RollID); err != nil {
+		if _, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: job.RollID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return err
 		}
 		date := shared.DateOrDefault(returnedAt, service.clock.Today())
-		if _, err := queries.SetNegativesReturned(ctx, gen.SetNegativesReturnedParams{ID: jobID, NegativesReturnedAt: &date}); err != nil {
+		if _, err := queries.SetNegativesReturned(ctx, gen.SetNegativesReturnedParams{ID: jobID, NegativesReturnedAt: &date, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return err
 		}
 		if err := RefreshRollStatus(ctx, queries, job.RollID); err != nil {
@@ -361,30 +364,30 @@ func (service *Service) RecordNegativesReturned(ctx context.Context, jobID uuid.
 
 // NegativesAtLab lists lab jobs whose negatives are not back yet (UC-27).
 func (service *Service) NegativesAtLab(ctx context.Context) ([]gen.NegativesAtLabRow, error) {
-	return service.store.Queries().NegativesAtLab(ctx)
+	return service.store.Queries().NegativesAtLab(ctx, requestctx.Owner(ctx))
 }
 
 // Delete soft-deletes a job that has no scans, then recomputes the roll's status (UC-28).
 func (service *Service) Delete(ctx context.Context, jobID uuid.UUID) error {
 	return service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		job, err := queries.GetProcessingForUpdate(ctx, jobID)
+		job, err := queries.GetProcessingForUpdate(ctx, gen.GetProcessingForUpdateParams{ID: jobID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return shared.NotFoundOr(err, "processing job")
 		}
-		hasScans, err := queries.ProcessingHasScans(ctx, jobID)
+		hasScans, err := queries.ProcessingHasScans(ctx, gen.ProcessingHasScansParams{ProcessingID: jobID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return err
 		}
 		if hasScans {
 			return apperror.Conflict("job_has_scans", "a job with scans cannot be deleted; delete its scans first")
 		}
-		if _, err := queries.GetRollForUpdate(ctx, job.RollID); err != nil {
+		if _, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: job.RollID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return err
 		}
-		if _, err := queries.SoftDeleteProcessing(ctx, jobID); err != nil {
+		if _, err := queries.SoftDeleteProcessing(ctx, gen.SoftDeleteProcessingParams{ID: jobID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return err
 		}
-		remaining, err := queries.ListRollProcessing(ctx, job.RollID)
+		remaining, err := queries.ListRollProcessing(ctx, gen.ListRollProcessingParams{RollID: job.RollID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return err
 		}
@@ -392,13 +395,13 @@ func (service *Service) Delete(ctx context.Context, jobID uuid.UUID) error {
 			return RefreshRollStatus(ctx, queries, job.RollID)
 		}
 		// No job left: the roll is back to "done shooting".
-		roll, err := queries.GetRoll(ctx, job.RollID)
+		roll, err := queries.GetRoll(ctx, gen.GetRollParams{ID: job.RollID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return err
 		}
 		switch roll.Status {
 		case domain.RollStatusAtLab, domain.RollStatusDeveloped, domain.RollStatusScanned:
-			return queries.SetRollStatus(ctx, gen.SetRollStatusParams{ID: job.RollID, Status: domain.RollStatusDoneShooting})
+			return queries.SetRollStatus(ctx, gen.SetRollStatusParams{ID: job.RollID, Status: domain.RollStatusDoneShooting, OwnerID: requestctx.Owner(ctx)})
 		}
 		return nil
 	})

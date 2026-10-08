@@ -14,10 +14,15 @@ import (
 const statsCameras = `-- name: StatsCameras :many
 SELECT c.id, (c.brand || ' ' || c.model)::text AS label, count(*)::int AS rolls
 FROM roll r JOIN camera c ON c.id = r.camera_id
-WHERE r.deleted_at IS NULL AND r.status <> 'in_stock'
-  AND ($1::int IS NULL OR EXTRACT(YEAR FROM r.started_at) = $1)
+WHERE r.owner_id = $1 AND r.deleted_at IS NULL AND r.status <> 'in_stock'
+  AND ($2::int IS NULL OR EXTRACT(YEAR FROM r.started_at) = $2)
 GROUP BY c.id ORDER BY rolls DESC, label
 `
+
+type StatsCamerasParams struct {
+	OwnerID uuid.UUID
+	Year    *int32
+}
 
 type StatsCamerasRow struct {
 	ID    uuid.UUID
@@ -25,8 +30,8 @@ type StatsCamerasRow struct {
 	Rolls int32
 }
 
-func (q *Queries) StatsCameras(ctx context.Context, year *int32) ([]StatsCamerasRow, error) {
-	rows, err := q.db.Query(ctx, statsCameras, year)
+func (q *Queries) StatsCameras(ctx context.Context, arg StatsCamerasParams) ([]StatsCamerasRow, error) {
+	rows, err := q.db.Query(ctx, statsCameras, arg.OwnerID, arg.Year)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +53,7 @@ func (q *Queries) StatsCameras(ctx context.Context, year *int32) ([]StatsCameras
 const statsFilm = `-- name: StatsFilm :many
 SELECT fs.id, (fs.brand || ' ' || fs.name)::text AS label, count(*)::int AS rolls
 FROM roll r JOIN film_stock fs ON fs.id = r.film_stock_id
-WHERE r.deleted_at IS NULL AND r.status <> 'in_stock'
+WHERE r.owner_id = $1 AND r.deleted_at IS NULL AND r.status <> 'in_stock'
 GROUP BY fs.id ORDER BY rolls DESC, label
 `
 
@@ -58,8 +63,8 @@ type StatsFilmRow struct {
 	Rolls int32
 }
 
-func (q *Queries) StatsFilm(ctx context.Context) ([]StatsFilmRow, error) {
-	rows, err := q.db.Query(ctx, statsFilm)
+func (q *Queries) StatsFilm(ctx context.Context, ownerID uuid.UUID) ([]StatsFilmRow, error) {
+	rows, err := q.db.Query(ctx, statsFilm, ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +88,7 @@ SELECT g.id, (g.brand || ' ' || g.name)::text AS label, count(*)::int AS rolls
 FROM roll r
 JOIN film_stock fs ON fs.id = r.film_stock_id
 JOIN film_stock g ON g.id = COALESCE(fs.base_stock_id, fs.id)
-WHERE r.deleted_at IS NULL AND r.status <> 'in_stock'
+WHERE r.owner_id = $1 AND r.deleted_at IS NULL AND r.status <> 'in_stock'
 GROUP BY g.id ORDER BY rolls DESC, label
 `
 
@@ -94,8 +99,8 @@ type StatsFilmByBaseRow struct {
 }
 
 // Groups stocks by their base stock (a stock without a base is its own group).
-func (q *Queries) StatsFilmByBase(ctx context.Context) ([]StatsFilmByBaseRow, error) {
-	rows, err := q.db.Query(ctx, statsFilmByBase)
+func (q *Queries) StatsFilmByBase(ctx context.Context, ownerID uuid.UUID) ([]StatsFilmByBaseRow, error) {
+	rows, err := q.db.Query(ctx, statsFilmByBase, ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +122,7 @@ func (q *Queries) StatsFilmByBase(ctx context.Context) ([]StatsFilmByBaseRow, er
 const statsFilmSpend = `-- name: StatsFilmSpend :many
 SELECT EXTRACT(YEAR FROM created_at)::int AS year, EXTRACT(MONTH FROM created_at)::int AS month,
        COALESCE(sum(price), 0)::int AS cost, (count(*) FILTER (WHERE price IS NULL))::int AS missing
-FROM roll WHERE deleted_at IS NULL GROUP BY 1, 2
+FROM roll WHERE owner_id = $1 AND deleted_at IS NULL GROUP BY 1, 2
 `
 
 type StatsFilmSpendRow struct {
@@ -128,8 +133,8 @@ type StatsFilmSpendRow struct {
 }
 
 // Film cost is dated by when the roll was recorded (no purchase date is stored).
-func (q *Queries) StatsFilmSpend(ctx context.Context) ([]StatsFilmSpendRow, error) {
-	rows, err := q.db.Query(ctx, statsFilmSpend)
+func (q *Queries) StatsFilmSpend(ctx context.Context, ownerID uuid.UUID) ([]StatsFilmSpendRow, error) {
+	rows, err := q.db.Query(ctx, statsFilmSpend, ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -157,10 +162,15 @@ const statsLenses = `-- name: StatsLenses :many
 SELECT l.id, trim(COALESCE(l.brand, '') || ' ' || COALESCE(l.model, '') || ' ' || l.focal_length || 'mm f/' || l.max_aperture)::text AS label,
        count(*)::int AS rolls
 FROM roll r JOIN roll_lens rl ON rl.roll_id = r.id JOIN lens l ON l.id = rl.lens_id
-WHERE r.deleted_at IS NULL AND r.status <> 'in_stock'
-  AND ($1::int IS NULL OR EXTRACT(YEAR FROM r.started_at) = $1)
+WHERE r.owner_id = $1 AND r.deleted_at IS NULL AND r.status <> 'in_stock'
+  AND ($2::int IS NULL OR EXTRACT(YEAR FROM r.started_at) = $2)
 GROUP BY l.id ORDER BY rolls DESC, label
 `
+
+type StatsLensesParams struct {
+	OwnerID uuid.UUID
+	Year    *int32
+}
 
 type StatsLensesRow struct {
 	ID    uuid.UUID
@@ -168,8 +178,8 @@ type StatsLensesRow struct {
 	Rolls int32
 }
 
-func (q *Queries) StatsLenses(ctx context.Context, year *int32) ([]StatsLensesRow, error) {
-	rows, err := q.db.Query(ctx, statsLenses, year)
+func (q *Queries) StatsLenses(ctx context.Context, arg StatsLensesParams) ([]StatsLensesRow, error) {
+	rows, err := q.db.Query(ctx, statsLenses, arg.OwnerID, arg.Year)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +201,7 @@ func (q *Queries) StatsLenses(ctx context.Context, year *int32) ([]StatsLensesRo
 const statsProcessingSpend = `-- name: StatsProcessingSpend :many
 SELECT EXTRACT(YEAR FROM sent_at)::int AS year, EXTRACT(MONTH FROM sent_at)::int AS month,
        COALESCE(sum(price), 0)::int AS cost, (count(*) FILTER (WHERE price IS NULL))::int AS missing
-FROM processing WHERE deleted_at IS NULL GROUP BY 1, 2
+FROM processing WHERE owner_id = $1 AND deleted_at IS NULL GROUP BY 1, 2
 `
 
 type StatsProcessingSpendRow struct {
@@ -201,8 +211,8 @@ type StatsProcessingSpendRow struct {
 	Missing int32
 }
 
-func (q *Queries) StatsProcessingSpend(ctx context.Context) ([]StatsProcessingSpendRow, error) {
-	rows, err := q.db.Query(ctx, statsProcessingSpend)
+func (q *Queries) StatsProcessingSpend(ctx context.Context, ownerID uuid.UUID) ([]StatsProcessingSpendRow, error) {
+	rows, err := q.db.Query(ctx, statsProcessingSpend, ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +238,7 @@ func (q *Queries) StatsProcessingSpend(ctx context.Context) ([]StatsProcessingSp
 
 const statsTimeline = `-- name: StatsTimeline :many
 SELECT EXTRACT(YEAR FROM started_at)::int AS year, EXTRACT(MONTH FROM started_at)::int AS month, count(*)::int AS rolls
-FROM roll WHERE deleted_at IS NULL AND started_at IS NOT NULL
+FROM roll WHERE owner_id = $1 AND deleted_at IS NULL AND started_at IS NOT NULL
 GROUP BY 1, 2 ORDER BY 1, 2
 `
 
@@ -238,8 +248,8 @@ type StatsTimelineRow struct {
 	Rolls int32
 }
 
-func (q *Queries) StatsTimeline(ctx context.Context) ([]StatsTimelineRow, error) {
-	rows, err := q.db.Query(ctx, statsTimeline)
+func (q *Queries) StatsTimeline(ctx context.Context, ownerID uuid.UUID) ([]StatsTimelineRow, error) {
+	rows, err := q.db.Query(ctx, statsTimeline, ownerID)
 	if err != nil {
 		return nil, err
 	}

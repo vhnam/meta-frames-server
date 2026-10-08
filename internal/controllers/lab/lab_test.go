@@ -23,7 +23,7 @@ type queries struct {
 
 var errBoom = errors.New("boom")
 
-func (stub *queries) ListLabs(context.Context) ([]gen.Lab, error) {
+func (stub *queries) ListLabs(_ context.Context, _ uuid.UUID) ([]gen.Lab, error) {
 	if stub.fail {
 		return nil, errBoom
 	}
@@ -49,18 +49,20 @@ func (stub *queries) UpdateLab(_ context.Context, arg gen.UpdateLabParams) (gen.
 	return lab, nil
 }
 
-func (stub *queries) GetLab(_ context.Context, id uuid.UUID) (gen.Lab, error) {
+func (stub *queries) GetLab(_ context.Context, arg gen.GetLabParams) (gen.Lab, error) {
+	id := arg.ID
 	if lab, found := stub.labs[id]; found {
 		return lab, nil
 	}
 	return gen.Lab{}, pgx.ErrNoRows
 }
 
-func (stub *queries) LabHasProcessing(context.Context, *uuid.UUID) (bool, error) {
+func (stub *queries) LabHasProcessing(_ context.Context, arg gen.LabHasProcessingParams) (bool, error) {
 	return stub.used, nil
 }
 
-func (stub *queries) SoftDeleteLab(_ context.Context, id uuid.UUID) (int64, error) {
+func (stub *queries) SoftDeleteLab(_ context.Context, arg gen.SoftDeleteLabParams) (int64, error) {
+	id := arg.ID
 	delete(stub.labs, id)
 	return 1, nil
 }

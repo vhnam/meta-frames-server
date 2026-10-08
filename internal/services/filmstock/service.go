@@ -7,6 +7,7 @@ import (
 
 	"meta-frames-server/internal/common/apperror"
 	"meta-frames-server/internal/common/pointers"
+	"meta-frames-server/internal/common/requestctx"
 	"meta-frames-server/internal/db"
 	"meta-frames-server/internal/db/gen"
 	"meta-frames-server/internal/domain"
@@ -37,18 +38,18 @@ func stockWarnings(stock gen.FilmStock) []string {
 func buildStockDetail(ctx context.Context, queries gen.Querier, stock gen.FilmStock) (Detail, error) {
 	detail := Detail{Stock: stock, Warnings: stockWarnings(stock), Siblings: []gen.FilmStock{}, Derived: []gen.FilmStock{}}
 	if stock.BaseStockID != nil {
-		base, err := queries.GetFilmStock(ctx, *stock.BaseStockID)
+		base, err := queries.GetFilmStock(ctx, gen.GetFilmStockParams{ID: *stock.BaseStockID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return detail, err
 		}
 		detail.BaseStock = &base
-		siblings, err := queries.ListSiblingStocks(ctx, gen.ListSiblingStocksParams{BaseStockID: stock.BaseStockID, ID: stock.ID})
+		siblings, err := queries.ListSiblingStocks(ctx, gen.ListSiblingStocksParams{BaseStockID: stock.BaseStockID, ID: stock.ID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return detail, err
 		}
 		detail.Siblings = siblings
 	}
-	derived, err := queries.ListDerivedStocks(ctx, &stock.ID)
+	derived, err := queries.ListDerivedStocks(ctx, gen.ListDerivedStocksParams{BaseStockID: &stock.ID, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return detail, err
 	}
@@ -57,13 +58,13 @@ func buildStockDetail(ctx context.Context, queries gen.Querier, stock gen.FilmSt
 }
 
 func (service *Service) List(ctx context.Context, query *string) ([]gen.FilmStock, error) {
-	return service.store.Queries().ListFilmStocks(ctx, pointers.TrimmedOrNil(query))
+	return service.store.Queries().ListFilmStocks(ctx, gen.ListFilmStocksParams{OwnerID: requestctx.Owner(ctx), Q: pointers.TrimmedOrNil(query)})
 }
 
 // Get returns a stock with its base and related stocks (UC-13).
 func (service *Service) Get(ctx context.Context, stockID uuid.UUID) (Detail, error) {
 	queries := service.store.Queries()
-	stock, err := queries.GetFilmStock(ctx, stockID)
+	stock, err := queries.GetFilmStock(ctx, gen.GetFilmStockParams{ID: stockID, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return Detail{}, shared.NotFoundOr(err, "film stock")
 	}
@@ -95,6 +96,7 @@ func (service *Service) Create(ctx context.Context, stockID uuid.UUID, input Inp
 			Process: input.Process, Packaging: input.Packaging,
 			StockOrigin: pointers.TrimmedOrNil(input.StockOrigin), PackOrigin: pointers.TrimmedOrNil(input.PackOrigin),
 			Description: pointers.TrimmedOrNil(input.Description), BaseStockID: input.BaseStockID,
+			OwnerID: requestctx.Owner(ctx),
 		})
 		if err != nil {
 			return err
@@ -120,7 +122,7 @@ func (service *Service) Update(ctx context.Context, stockID uuid.UUID, input Inp
 		if err := checkBaseStock(ctx, queries, stockID, input.BaseStockID); err != nil {
 			return err
 		}
-		if _, err := queries.GetFilmStockForUpdate(ctx, stockID); err != nil {
+		if _, err := queries.GetFilmStockForUpdate(ctx, gen.GetFilmStockForUpdateParams{ID: stockID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return shared.NotFoundOr(err, "film stock")
 		}
 		saved, err := queries.UpdateFilmStock(ctx, gen.UpdateFilmStockParams{
@@ -128,6 +130,7 @@ func (service *Service) Update(ctx context.Context, stockID uuid.UUID, input Inp
 			Process: input.Process, Packaging: input.Packaging,
 			StockOrigin: pointers.TrimmedOrNil(input.StockOrigin), PackOrigin: pointers.TrimmedOrNil(input.PackOrigin),
 			Description: pointers.TrimmedOrNil(input.Description), BaseStockID: input.BaseStockID,
+			OwnerID: requestctx.Owner(ctx),
 		})
 		if err != nil {
 			return err
@@ -156,7 +159,7 @@ func checkBaseStock(ctx context.Context, queries gen.Querier, stockID uuid.UUID,
 			break
 		}
 		visited[*current] = true
-		stock, err := queries.GetFilmStock(ctx, *current)
+		stock, err := queries.GetFilmStock(ctx, gen.GetFilmStockParams{ID: *current, OwnerID: requestctx.Owner(ctx)})
 		if db.IsNoRows(err) {
 			return apperror.Unprocessable("unknown_base_stock", "base stock does not exist")
 		}
@@ -171,11 +174,11 @@ func checkBaseStock(ctx context.Context, queries gen.Querier, stockID uuid.UUID,
 // Inventory lists stocks that have unused rolls on hand (UC-14).
 func (service *Service) Inventory(ctx context.Context, filter InventoryFilter) ([]InventoryItem, error) {
 	queries := service.store.Queries()
-	rows, err := queries.InventoryRows(ctx, gen.InventoryRowsParams{Type: filter.Type, Process: filter.Process, Iso: int32Pointer(filter.ISO)})
+	rows, err := queries.InventoryRows(ctx, gen.InventoryRowsParams{Type: filter.Type, Process: filter.Process, Iso: int32Pointer(filter.ISO), OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return nil, err
 	}
-	expiries, err := queries.SoonestExpiries(ctx, gen.SoonestExpiriesParams{Type: filter.Type, Process: filter.Process, Iso: int32Pointer(filter.ISO)})
+	expiries, err := queries.SoonestExpiries(ctx, gen.SoonestExpiriesParams{Type: filter.Type, Process: filter.Process, Iso: int32Pointer(filter.ISO), OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +188,7 @@ func (service *Service) Inventory(ctx context.Context, filter InventoryFilter) (
 			stockIDs = append(stockIDs, row.StockID)
 		}
 	}
-	stocks, err := queries.GetFilmStocksByIDs(ctx, stockIDs)
+	stocks, err := queries.GetFilmStocksByIDs(ctx, gen.GetFilmStocksByIDsParams{Ids: stockIDs, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +223,7 @@ func buildInventory(rows []gen.InventoryRowsRow, expiries []gen.SoonestExpiriesR
 // Delete soft-deletes a stock that no roll and no derived stock refers to.
 func (service *Service) Delete(ctx context.Context, stockID uuid.UUID) error {
 	return service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		if _, err := queries.GetFilmStockForUpdate(ctx, stockID); err != nil {
+		if _, err := queries.GetFilmStockForUpdate(ctx, gen.GetFilmStockForUpdateParams{ID: stockID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return shared.NotFoundOr(err, "film stock")
 		}
 		used, err := queries.FilmStockInUse(ctx, stockID)
@@ -230,7 +233,7 @@ func (service *Service) Delete(ctx context.Context, stockID uuid.UUID) error {
 		if used {
 			return apperror.Conflict("film_stock_in_use", "a film stock with rolls or derived stocks cannot be deleted")
 		}
-		_, err = queries.SoftDeleteFilmStock(ctx, stockID)
+		_, err = queries.SoftDeleteFilmStock(ctx, gen.SoftDeleteFilmStockParams{ID: stockID, OwnerID: requestctx.Owner(ctx)})
 		return err
 	})
 }

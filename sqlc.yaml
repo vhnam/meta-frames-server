@@ -33,6 +33,10 @@ sql:
               import: time
               type: Time
               pointer: true
+          # owner_id is nullable only for rows created before accounts existed, and queries never
+          # return those; a plain uuid.UUID keeps call sites simple (a NULL scans as uuid.Nil).
+          - column: "*.owner_id"
+            go_type: github.com/google/uuid.UUID
           # jsonb as []byte is encoded as bytea hex in the simple protocol, which is not valid JSON.
           - column: idempotency_key.response
             go_type:

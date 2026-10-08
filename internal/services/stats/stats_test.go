@@ -90,31 +90,31 @@ func (queries *statsQueries) err() error {
 	return nil
 }
 
-func (queries *statsQueries) StatsCameras(context.Context, *int32) ([]gen.StatsCamerasRow, error) {
+func (queries *statsQueries) StatsCameras(_ context.Context, arg gen.StatsCamerasParams) ([]gen.StatsCamerasRow, error) {
 	return []gen.StatsCamerasRow{{ID: uuid.New(), Label: "Nikon FM2", Rolls: 3}}, queries.err()
 }
 
-func (queries *statsQueries) StatsLenses(context.Context, *int32) ([]gen.StatsLensesRow, error) {
+func (queries *statsQueries) StatsLenses(_ context.Context, arg gen.StatsLensesParams) ([]gen.StatsLensesRow, error) {
 	return []gen.StatsLensesRow{{ID: uuid.New(), Label: "50mm", Rolls: 2}}, queries.err()
 }
 
-func (queries *statsQueries) StatsFilm(context.Context) ([]gen.StatsFilmRow, error) {
+func (queries *statsQueries) StatsFilm(_ context.Context, _ uuid.UUID) ([]gen.StatsFilmRow, error) {
 	return []gen.StatsFilmRow{{Label: "Kodak Gold", Rolls: 4}}, queries.err()
 }
 
-func (queries *statsQueries) StatsFilmByBase(context.Context) ([]gen.StatsFilmByBaseRow, error) {
+func (queries *statsQueries) StatsFilmByBase(_ context.Context, _ uuid.UUID) ([]gen.StatsFilmByBaseRow, error) {
 	return []gen.StatsFilmByBaseRow{{Label: "Kodak", Rolls: 6}}, queries.err()
 }
 
-func (queries *statsQueries) StatsTimeline(context.Context) ([]gen.StatsTimelineRow, error) {
+func (queries *statsQueries) StatsTimeline(_ context.Context, _ uuid.UUID) ([]gen.StatsTimelineRow, error) {
 	return []gen.StatsTimelineRow{{Year: 2026, Month: 1, Rolls: 2}, {Year: 2026, Month: 3, Rolls: 1}}, queries.err()
 }
 
-func (queries *statsQueries) StatsFilmSpend(context.Context) ([]gen.StatsFilmSpendRow, error) {
+func (queries *statsQueries) StatsFilmSpend(_ context.Context, _ uuid.UUID) ([]gen.StatsFilmSpendRow, error) {
 	return []gen.StatsFilmSpendRow{{Year: 2026, Month: 1, Cost: 100, Missing: 1}}, queries.err()
 }
 
-func (queries *statsQueries) StatsProcessingSpend(context.Context) ([]gen.StatsProcessingSpendRow, error) {
+func (queries *statsQueries) StatsProcessingSpend(_ context.Context, _ uuid.UUID) ([]gen.StatsProcessingSpendRow, error) {
 	return []gen.StatsProcessingSpendRow{{Year: 2026, Month: 1, Cost: 50}, {Year: 2025, Month: 12, Cost: 10}}, queries.err()
 }
 

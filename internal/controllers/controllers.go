@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"meta-frames-server/internal/api"
+	"meta-frames-server/internal/controllers/account"
 	"meta-frames-server/internal/controllers/audit"
 	"meta-frames-server/internal/controllers/camera"
 	"meta-frames-server/internal/controllers/filmstock"
@@ -20,6 +21,7 @@ import (
 
 // Each area lives in its own subpackage; local aliases give the embedded fields distinct names.
 type (
+	accountController    = account.Controller
 	auditController      = audit.Controller
 	cameraController     = camera.Controller
 	labController        = lab.Controller
@@ -34,6 +36,7 @@ type (
 // Controllers implements the generated strict server by embedding one controller per area.
 type Controllers struct {
 	*HealthController
+	*accountController
 	*auditController
 	*cameraController
 	*lensController
@@ -50,6 +53,7 @@ var _ api.StrictServerInterface = (*Controllers)(nil)
 func New(appServices *services.Services) *Controllers {
 	return &Controllers{
 		HealthController:     &HealthController{},
+		accountController:    account.New(),
 		auditController:      audit.New(appServices.Audit),
 		cameraController:     camera.New(appServices.Cameras),
 		lensController:       lens.New(appServices.Lenses),

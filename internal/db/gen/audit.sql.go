@@ -12,11 +12,16 @@ import (
 )
 
 const getAuditLog = `-- name: GetAuditLog :one
-SELECT id, entity_type, entity_id, action, before, after, actor, request_id, created_at FROM audit_log WHERE id = $1
+SELECT id, entity_type, entity_id, action, before, after, actor, request_id, created_at, owner_id FROM audit_log WHERE id = $1 AND owner_id = $2
 `
 
-func (q *Queries) GetAuditLog(ctx context.Context, id int64) (AuditLog, error) {
-	row := q.db.QueryRow(ctx, getAuditLog, id)
+type GetAuditLogParams struct {
+	ID      int64
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) GetAuditLog(ctx context.Context, arg GetAuditLogParams) (AuditLog, error) {
+	row := q.db.QueryRow(ctx, getAuditLog, arg.ID, arg.OwnerID)
 	var i AuditLog
 	err := row.Scan(
 		&i.ID,
@@ -28,20 +33,23 @@ func (q *Queries) GetAuditLog(ctx context.Context, id int64) (AuditLog, error) {
 		&i.Actor,
 		&i.RequestID,
 		&i.CreatedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const listAuditLogs = `-- name: ListAuditLogs :many
-SELECT id, entity_type, entity_id, action, before, after, actor, request_id, created_at FROM audit_log
-WHERE ($1::text IS NULL OR entity_type = $1)
-  AND ($2::uuid IS NULL OR entity_id = $2)
-  AND ($3::text IS NULL OR action = $3)
+SELECT id, entity_type, entity_id, action, before, after, actor, request_id, created_at, owner_id FROM audit_log
+WHERE owner_id = $1
+  AND ($2::text IS NULL OR entity_type = $2)
+  AND ($3::uuid IS NULL OR entity_id = $3)
+  AND ($4::text IS NULL OR action = $4)
 ORDER BY id DESC
-LIMIT $5 OFFSET $4
+LIMIT $6 OFFSET $5
 `
 
 type ListAuditLogsParams struct {
+	OwnerID    uuid.UUID
 	EntityType *string
 	EntityID   *uuid.UUID
 	Action     *string
@@ -51,6 +59,7 @@ type ListAuditLogsParams struct {
 
 func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error) {
 	rows, err := q.db.Query(ctx, listAuditLogs,
+		arg.OwnerID,
 		arg.EntityType,
 		arg.EntityID,
 		arg.Action,
@@ -74,6 +83,7 @@ func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([
 			&i.Actor,
 			&i.RequestID,
 			&i.CreatedAt,
+			&i.OwnerID,
 		); err != nil {
 			return nil, err
 		}
