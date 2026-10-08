@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"meta-frames-server/internal/db/gen"
@@ -38,6 +39,8 @@ type Memory struct {
 	Expiries    []gen.SoonestExpiriesRow
 	Idempotency map[string]gen.IdempotencyKey
 	Spend       gen.RollSpendRow
+	Users       map[uuid.UUID]gen.AppUser
+	Sessions    map[string]gen.UserSession // by token hash
 
 	HasOpenJob       bool
 	HasReceivedScans bool
@@ -49,12 +52,14 @@ func NewMemory() *Memory {
 		Cameras: map[uuid.UUID]gen.Camera{}, Lenses: map[uuid.UUID]gen.Lens{}, LoadedCameras: map[uuid.UUID]bool{},
 		Stocks: map[uuid.UUID]gen.FilmStock{}, Rolls: map[uuid.UUID]gen.Roll{}, Jobs: map[uuid.UUID]gen.Processing{},
 		Frames: map[uuid.UUID]gen.Frame{}, Scans: map[uuid.UUID]gen.Scan{}, Idempotency: map[string]gen.IdempotencyKey{}, Labs: map[uuid.UUID]gen.Lab{},
+		Users: map[uuid.UUID]gen.AppUser{}, Sessions: map[string]gen.UserSession{},
 	}
 }
 
 // ---- cameras ----
 
-func (queries *Memory) GetCamera(_ context.Context, id uuid.UUID) (gen.Camera, error) {
+func (queries *Memory) GetCamera(_ context.Context, arg gen.GetCameraParams) (gen.Camera, error) {
+	id := arg.ID
 	camera, found := queries.Cameras[id]
 	if !found || camera.DeletedAt.Valid {
 		return gen.Camera{}, pgx.ErrNoRows
@@ -62,8 +67,8 @@ func (queries *Memory) GetCamera(_ context.Context, id uuid.UUID) (gen.Camera, e
 	return camera, nil
 }
 
-func (queries *Memory) GetCameraForUpdate(ctx context.Context, id uuid.UUID) (gen.Camera, error) {
-	return queries.GetCamera(ctx, id)
+func (queries *Memory) GetCameraForUpdate(ctx context.Context, arg gen.GetCameraForUpdateParams) (gen.Camera, error) {
+	return queries.GetCamera(ctx, gen.GetCameraParams(arg))
 }
 
 func (queries *Memory) InsertCamera(_ context.Context, arg gen.InsertCameraParams) (gen.Camera, error) {
@@ -86,7 +91,8 @@ func (queries *Memory) SetCameraActive(_ context.Context, arg gen.SetCameraActiv
 	return camera, nil
 }
 
-func (queries *Memory) CameraIsLoaded(_ context.Context, cameraID *uuid.UUID) (bool, error) {
+func (queries *Memory) CameraIsLoaded(_ context.Context, arg gen.CameraIsLoadedParams) (bool, error) {
+	cameraID := arg.CameraID
 	return queries.LoadedCameras[*cameraID], nil
 }
 
@@ -100,7 +106,7 @@ func (queries *Memory) SetBuiltInLensActive(_ context.Context, arg gen.SetBuiltI
 	return nil
 }
 
-func (queries *Memory) ListBuiltInLensLinks(context.Context) ([]gen.CameraLens, error) {
+func (queries *Memory) ListBuiltInLensLinks(_ context.Context, _ uuid.UUID) ([]gen.CameraLens, error) {
 	var links []gen.CameraLens
 	for _, link := range queries.Links {
 		if lens := queries.Lenses[link.LensID]; lens.IsBuiltIn && !lens.DeletedAt.Valid {
@@ -110,13 +116,14 @@ func (queries *Memory) ListBuiltInLensLinks(context.Context) ([]gen.CameraLens, 
 	return links, nil
 }
 
-func (queries *Memory) ListLoadedRolls(context.Context) ([]gen.ListLoadedRollsRow, error) {
+func (queries *Memory) ListLoadedRolls(_ context.Context, _ uuid.UUID) ([]gen.ListLoadedRollsRow, error) {
 	return nil, nil
 }
 
 // ---- lenses ----
 
-func (queries *Memory) GetLens(_ context.Context, id uuid.UUID) (gen.Lens, error) {
+func (queries *Memory) GetLens(_ context.Context, arg gen.GetLensParams) (gen.Lens, error) {
+	id := arg.ID
 	lens, found := queries.Lenses[id]
 	if !found || lens.DeletedAt.Valid {
 		return gen.Lens{}, pgx.ErrNoRows
@@ -124,8 +131,8 @@ func (queries *Memory) GetLens(_ context.Context, id uuid.UUID) (gen.Lens, error
 	return lens, nil
 }
 
-func (queries *Memory) GetLensForUpdate(ctx context.Context, id uuid.UUID) (gen.Lens, error) {
-	return queries.GetLens(ctx, id)
+func (queries *Memory) GetLensForUpdate(ctx context.Context, arg gen.GetLensForUpdateParams) (gen.Lens, error) {
+	return queries.GetLens(ctx, gen.GetLensParams(arg))
 }
 
 func (queries *Memory) InsertLens(_ context.Context, arg gen.InsertLensParams) (gen.Lens, error) {
@@ -158,7 +165,8 @@ func (queries *Memory) InsertCameraLens(_ context.Context, arg gen.InsertCameraL
 	return nil
 }
 
-func (queries *Memory) ListCameraLenses(_ context.Context, cameraID uuid.UUID) ([]gen.Lens, error) {
+func (queries *Memory) ListCameraLenses(_ context.Context, arg gen.ListCameraLensesParams) ([]gen.Lens, error) {
+	cameraID := arg.CameraID
 	var lenses []gen.Lens
 	for _, link := range queries.Links {
 		if lens := queries.Lenses[link.LensID]; link.CameraID == cameraID && !lens.DeletedAt.Valid {
@@ -168,7 +176,8 @@ func (queries *Memory) ListCameraLenses(_ context.Context, cameraID uuid.UUID) (
 	return lenses, nil
 }
 
-func (queries *Memory) GetLensesByIDs(_ context.Context, ids []uuid.UUID) ([]gen.Lens, error) {
+func (queries *Memory) GetLensesByIDs(_ context.Context, arg gen.GetLensesByIDsParams) ([]gen.Lens, error) {
+	ids := arg.Ids
 	var lenses []gen.Lens
 	for _, id := range ids {
 		if lens, found := queries.Lenses[id]; found && !lens.DeletedAt.Valid {
@@ -180,7 +189,8 @@ func (queries *Memory) GetLensesByIDs(_ context.Context, ids []uuid.UUID) ([]gen
 
 // ---- film stocks ----
 
-func (queries *Memory) GetFilmStock(_ context.Context, id uuid.UUID) (gen.FilmStock, error) {
+func (queries *Memory) GetFilmStock(_ context.Context, arg gen.GetFilmStockParams) (gen.FilmStock, error) {
+	id := arg.ID
 	stock, found := queries.Stocks[id]
 	if !found || stock.DeletedAt.Valid {
 		return gen.FilmStock{}, pgx.ErrNoRows
@@ -188,8 +198,8 @@ func (queries *Memory) GetFilmStock(_ context.Context, id uuid.UUID) (gen.FilmSt
 	return stock, nil
 }
 
-func (queries *Memory) GetFilmStockForUpdate(ctx context.Context, id uuid.UUID) (gen.FilmStock, error) {
-	return queries.GetFilmStock(ctx, id)
+func (queries *Memory) GetFilmStockForUpdate(ctx context.Context, arg gen.GetFilmStockForUpdateParams) (gen.FilmStock, error) {
+	return queries.GetFilmStock(ctx, gen.GetFilmStockParams(arg))
 }
 
 func (queries *Memory) InsertFilmStock(_ context.Context, arg gen.InsertFilmStockParams) (gen.FilmStock, error) {
@@ -219,7 +229,8 @@ func (queries *Memory) ListSiblingStocks(_ context.Context, arg gen.ListSiblingS
 	return siblings, nil
 }
 
-func (queries *Memory) ListDerivedStocks(_ context.Context, baseID *uuid.UUID) ([]gen.FilmStock, error) {
+func (queries *Memory) ListDerivedStocks(_ context.Context, arg gen.ListDerivedStocksParams) ([]gen.FilmStock, error) {
+	baseID := arg.BaseStockID
 	var derived []gen.FilmStock
 	for _, stock := range queries.Stocks {
 		if !stock.DeletedAt.Valid && stock.BaseStockID != nil && *stock.BaseStockID == *baseID {
@@ -232,7 +243,8 @@ func (queries *Memory) ListDerivedStocks(_ context.Context, baseID *uuid.UUID) (
 
 // ---- rolls, jobs, frames, scans ----
 
-func (queries *Memory) GetRoll(_ context.Context, id uuid.UUID) (gen.Roll, error) {
+func (queries *Memory) GetRoll(_ context.Context, arg gen.GetRollParams) (gen.Roll, error) {
+	id := arg.ID
 	roll, found := queries.Rolls[id]
 	if !found || roll.DeletedAt.Valid {
 		return gen.Roll{}, pgx.ErrNoRows
@@ -240,8 +252,8 @@ func (queries *Memory) GetRoll(_ context.Context, id uuid.UUID) (gen.Roll, error
 	return roll, nil
 }
 
-func (queries *Memory) GetRollForUpdate(ctx context.Context, id uuid.UUID) (gen.Roll, error) {
-	return queries.GetRoll(ctx, id)
+func (queries *Memory) GetRollForUpdate(ctx context.Context, arg gen.GetRollForUpdateParams) (gen.Roll, error) {
+	return queries.GetRoll(ctx, gen.GetRollParams(arg))
 }
 
 func (queries *Memory) SetRollStatus(_ context.Context, arg gen.SetRollStatusParams) error {
@@ -251,15 +263,16 @@ func (queries *Memory) SetRollStatus(_ context.Context, arg gen.SetRollStatusPar
 	return nil
 }
 
-func (queries *Memory) RollHasOpenJob(context.Context, uuid.UUID) (bool, error) {
+func (queries *Memory) RollHasOpenJob(_ context.Context, arg gen.RollHasOpenJobParams) (bool, error) {
 	return queries.HasOpenJob, nil
 }
 
-func (queries *Memory) RollHasScansReceived(context.Context, uuid.UUID) (bool, error) {
+func (queries *Memory) RollHasScansReceived(_ context.Context, arg gen.RollHasScansReceivedParams) (bool, error) {
 	return queries.HasReceivedScans, nil
 }
 
-func (queries *Memory) GetProcessing(_ context.Context, id uuid.UUID) (gen.Processing, error) {
+func (queries *Memory) GetProcessing(_ context.Context, arg gen.GetProcessingParams) (gen.Processing, error) {
+	id := arg.ID
 	job, found := queries.Jobs[id]
 	if !found || job.DeletedAt.Valid {
 		return gen.Processing{}, pgx.ErrNoRows
@@ -267,8 +280,8 @@ func (queries *Memory) GetProcessing(_ context.Context, id uuid.UUID) (gen.Proce
 	return job, nil
 }
 
-func (queries *Memory) GetProcessingForUpdate(ctx context.Context, id uuid.UUID) (gen.Processing, error) {
-	return queries.GetProcessing(ctx, id)
+func (queries *Memory) GetProcessingForUpdate(ctx context.Context, arg gen.GetProcessingForUpdateParams) (gen.Processing, error) {
+	return queries.GetProcessing(ctx, gen.GetProcessingParams(arg))
 }
 
 func (queries *Memory) SetScansReceived(_ context.Context, arg gen.SetScansReceivedParams) (gen.Processing, error) {
@@ -285,7 +298,8 @@ func (queries *Memory) SetNegativesReturned(_ context.Context, arg gen.SetNegati
 	return job, nil
 }
 
-func (queries *Memory) ListRollProcessing(_ context.Context, rollID uuid.UUID) ([]gen.ListRollProcessingRow, error) {
+func (queries *Memory) ListRollProcessing(_ context.Context, arg gen.ListRollProcessingParams) ([]gen.ListRollProcessingRow, error) {
+	rollID := arg.RollID
 	var rows []gen.ListRollProcessingRow
 	for _, job := range queries.Jobs {
 		if job.RollID == rollID && !job.DeletedAt.Valid {
@@ -363,7 +377,7 @@ func (files *MemoryFiles) Delete(key string) error {
 
 // ---- listings ----
 
-func (queries *Memory) ListCameras(context.Context) ([]gen.Camera, error) {
+func (queries *Memory) ListCameras(_ context.Context, _ uuid.UUID) ([]gen.Camera, error) {
 	var cameras []gen.Camera
 	for _, camera := range queries.Cameras {
 		if !camera.DeletedAt.Valid {
@@ -384,7 +398,7 @@ func (queries *Memory) ListLenses(_ context.Context, arg gen.ListLensesParams) (
 	return lenses, nil
 }
 
-func (queries *Memory) ListFilmStocks(_ context.Context, _ *string) ([]gen.FilmStock, error) {
+func (queries *Memory) ListFilmStocks(_ context.Context, arg gen.ListFilmStocksParams) ([]gen.FilmStock, error) {
 	var stocks []gen.FilmStock
 	for _, stock := range queries.Stocks {
 		if !stock.DeletedAt.Valid {
@@ -449,7 +463,8 @@ func (queries *Memory) ListRollSummaries(_ context.Context, arg gen.ListRollSumm
 	return rows, nil
 }
 
-func (queries *Memory) ListRollLenses(_ context.Context, rollID uuid.UUID) ([]gen.Lens, error) {
+func (queries *Memory) ListRollLenses(_ context.Context, arg gen.ListRollLensesParams) ([]gen.Lens, error) {
+	rollID := arg.RollID
 	var lenses []gen.Lens
 	for _, link := range queries.RollLenses {
 		if link.RollID == rollID {
@@ -499,11 +514,12 @@ func (queries *Memory) DeleteCameraLensesExcept(_ context.Context, arg gen.Delet
 	return nil
 }
 
-func (queries *Memory) RollSpend(context.Context, uuid.UUID) (gen.RollSpendRow, error) {
+func (queries *Memory) RollSpend(_ context.Context, arg gen.RollSpendParams) (gen.RollSpendRow, error) {
 	return queries.Spend, nil
 }
 
-func (queries *Memory) ListFrames(_ context.Context, rollID uuid.UUID) ([]gen.Frame, error) {
+func (queries *Memory) ListFrames(_ context.Context, arg gen.ListFramesParams) ([]gen.Frame, error) {
+	rollID := arg.RollID
 	var frames []gen.Frame
 	for _, frame := range queries.Frames {
 		if frame.RollID == rollID {
@@ -521,7 +537,8 @@ func (queries *Memory) SetFrameNotes(_ context.Context, arg gen.SetFrameNotesPar
 	return frame, nil
 }
 
-func (queries *Memory) ListRollScans(_ context.Context, rollID uuid.UUID) ([]gen.ListRollScansRow, error) {
+func (queries *Memory) ListRollScans(_ context.Context, arg gen.ListRollScansParams) ([]gen.ListRollScansRow, error) {
+	rollID := arg.RollID
 	var rows []gen.ListRollScansRow
 	for _, scan := range queries.Scans {
 		frame := queries.Frames[scan.FrameID]
@@ -554,7 +571,8 @@ func (queries *Memory) ListProcessingScans(_ context.Context, arg gen.ListProces
 	return rows, nil
 }
 
-func (queries *Memory) GetScan(_ context.Context, id uuid.UUID) (gen.Scan, error) {
+func (queries *Memory) GetScan(_ context.Context, arg gen.GetScanParams) (gen.Scan, error) {
+	id := arg.ID
 	scan, found := queries.Scans[id]
 	if !found || scan.DeletedAt.Valid {
 		return gen.Scan{}, pgx.ErrNoRows
@@ -564,7 +582,8 @@ func (queries *Memory) GetScan(_ context.Context, id uuid.UUID) (gen.Scan, error
 
 // ---- idempotency keys ----
 
-func (queries *Memory) ClaimIdempotencyKey(_ context.Context, key string) (int64, error) {
+func (queries *Memory) ClaimIdempotencyKey(_ context.Context, arg gen.ClaimIdempotencyKeyParams) (int64, error) {
+	key := arg.Key
 	if _, seen := queries.Idempotency[key]; seen {
 		return 0, nil
 	}
@@ -572,7 +591,8 @@ func (queries *Memory) ClaimIdempotencyKey(_ context.Context, key string) (int64
 	return 1, nil
 }
 
-func (queries *Memory) GetIdempotencyKey(_ context.Context, key string) (gen.IdempotencyKey, error) {
+func (queries *Memory) GetIdempotencyKey(_ context.Context, arg gen.GetIdempotencyKeyParams) (gen.IdempotencyKey, error) {
+	key := arg.Key
 	return queries.Idempotency[key], nil
 }
 
@@ -583,7 +603,8 @@ func (queries *Memory) FinishIdempotencyKey(_ context.Context, arg gen.FinishIde
 
 // ---- labs, processing, inventory ----
 
-func (queries *Memory) GetLab(_ context.Context, id uuid.UUID) (gen.Lab, error) {
+func (queries *Memory) GetLab(_ context.Context, arg gen.GetLabParams) (gen.Lab, error) {
+	id := arg.ID
 	lab, found := queries.Labs[id]
 	if !found || lab.DeletedAt.Valid {
 		return gen.Lab{}, pgx.ErrNoRows
@@ -604,7 +625,7 @@ func (queries *Memory) UpdateProcessing(_ context.Context, arg gen.UpdateProcess
 	return job, nil
 }
 
-func (queries *Memory) NegativesAtLab(context.Context) ([]gen.NegativesAtLabRow, error) {
+func (queries *Memory) NegativesAtLab(_ context.Context, _ uuid.UUID) ([]gen.NegativesAtLabRow, error) {
 	return queries.AtLabRows, nil
 }
 
@@ -616,7 +637,8 @@ func (queries *Memory) SoonestExpiries(context.Context, gen.SoonestExpiriesParam
 	return queries.Expiries, nil
 }
 
-func (queries *Memory) GetFilmStocksByIDs(_ context.Context, ids []uuid.UUID) ([]gen.FilmStock, error) {
+func (queries *Memory) GetFilmStocksByIDs(_ context.Context, arg gen.GetFilmStocksByIDsParams) ([]gen.FilmStock, error) {
+	ids := arg.Ids
 	var stocks []gen.FilmStock
 	for _, id := range ids {
 		if stock, found := queries.Stocks[id]; found && !stock.DeletedAt.Valid {
@@ -626,7 +648,8 @@ func (queries *Memory) GetFilmStocksByIDs(_ context.Context, ids []uuid.UUID) ([
 	return stocks, nil
 }
 
-func (queries *Memory) ListJobFrameNumbers(_ context.Context, jobID uuid.UUID) ([]int32, error) {
+func (queries *Memory) ListJobFrameNumbers(_ context.Context, arg gen.ListJobFrameNumbersParams) ([]int32, error) {
+	jobID := arg.ProcessingID
 	seen := map[int32]bool{}
 	var numbers []int32
 	for _, scan := range queries.Scans {
@@ -641,7 +664,8 @@ func (queries *Memory) ListJobFrameNumbers(_ context.Context, jobID uuid.UUID) (
 
 // ---- deletes ----
 
-func (queries *Memory) CountCameraRolls(_ context.Context, cameraID *uuid.UUID) (int64, error) {
+func (queries *Memory) CountCameraRolls(_ context.Context, arg gen.CountCameraRollsParams) (int64, error) {
+	cameraID := arg.CameraID
 	var count int64
 	for _, roll := range queries.Rolls {
 		if roll.CameraID != nil && *roll.CameraID == *cameraID {
@@ -653,7 +677,8 @@ func (queries *Memory) CountCameraRolls(_ context.Context, cameraID *uuid.UUID) 
 
 var deletedNow = pgtype.Timestamptz{Time: time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC), Valid: true}
 
-func (queries *Memory) SoftDeleteBuiltInLenses(_ context.Context, cameraID uuid.UUID) error {
+func (queries *Memory) SoftDeleteBuiltInLenses(_ context.Context, arg gen.SoftDeleteBuiltInLensesParams) error {
+	cameraID := arg.CameraID
 	for _, link := range queries.Links {
 		if lens, found := queries.Lenses[link.LensID]; found && link.CameraID == cameraID && lens.IsBuiltIn && !lens.DeletedAt.Valid {
 			lens.DeletedAt = deletedNow
@@ -663,7 +688,8 @@ func (queries *Memory) SoftDeleteBuiltInLenses(_ context.Context, cameraID uuid.
 	return nil
 }
 
-func (queries *Memory) SoftDeleteCamera(_ context.Context, id uuid.UUID) (int64, error) {
+func (queries *Memory) SoftDeleteCamera(_ context.Context, arg gen.SoftDeleteCameraParams) (int64, error) {
+	id := arg.ID
 	camera, found := queries.Cameras[id]
 	if !found || camera.DeletedAt.Valid {
 		return 0, nil
@@ -682,7 +708,8 @@ func (queries *Memory) LensIsOnRolls(_ context.Context, lensID uuid.UUID) (bool,
 	return false, nil
 }
 
-func (queries *Memory) SoftDeleteLens(_ context.Context, id uuid.UUID) (int64, error) {
+func (queries *Memory) SoftDeleteLens(_ context.Context, arg gen.SoftDeleteLensParams) (int64, error) {
+	id := arg.ID
 	lens, found := queries.Lenses[id]
 	if !found || lens.DeletedAt.Valid {
 		return 0, nil
@@ -706,7 +733,8 @@ func (queries *Memory) FilmStockInUse(_ context.Context, id uuid.UUID) (bool, er
 	return false, nil
 }
 
-func (queries *Memory) SoftDeleteFilmStock(_ context.Context, id uuid.UUID) (int64, error) {
+func (queries *Memory) SoftDeleteFilmStock(_ context.Context, arg gen.SoftDeleteFilmStockParams) (int64, error) {
+	id := arg.ID
 	stock, found := queries.Stocks[id]
 	if !found || stock.DeletedAt.Valid {
 		return 0, nil
@@ -716,7 +744,8 @@ func (queries *Memory) SoftDeleteFilmStock(_ context.Context, id uuid.UUID) (int
 	return 1, nil
 }
 
-func (queries *Memory) GetFrame(_ context.Context, id uuid.UUID) (gen.Frame, error) {
+func (queries *Memory) GetFrame(_ context.Context, arg gen.GetFrameParams) (gen.Frame, error) {
+	id := arg.ID
 	frame, found := queries.Frames[id]
 	if !found {
 		return gen.Frame{}, pgx.ErrNoRows
@@ -724,7 +753,8 @@ func (queries *Memory) GetFrame(_ context.Context, id uuid.UUID) (gen.Frame, err
 	return frame, nil
 }
 
-func (queries *Memory) SoftDeleteRoll(_ context.Context, id uuid.UUID) (int64, error) {
+func (queries *Memory) SoftDeleteRoll(_ context.Context, arg gen.SoftDeleteRollParams) (int64, error) {
+	id := arg.ID
 	roll, found := queries.Rolls[id]
 	if !found || roll.DeletedAt.Valid {
 		return 0, nil
@@ -734,7 +764,8 @@ func (queries *Memory) SoftDeleteRoll(_ context.Context, id uuid.UUID) (int64, e
 	return 1, nil
 }
 
-func (queries *Memory) SoftDeleteProcessing(_ context.Context, id uuid.UUID) (int64, error) {
+func (queries *Memory) SoftDeleteProcessing(_ context.Context, arg gen.SoftDeleteProcessingParams) (int64, error) {
+	id := arg.ID
 	job, found := queries.Jobs[id]
 	if !found || job.DeletedAt.Valid {
 		return 0, nil
@@ -744,7 +775,8 @@ func (queries *Memory) SoftDeleteProcessing(_ context.Context, id uuid.UUID) (in
 	return 1, nil
 }
 
-func (queries *Memory) ProcessingHasScans(_ context.Context, jobID uuid.UUID) (bool, error) {
+func (queries *Memory) ProcessingHasScans(_ context.Context, arg gen.ProcessingHasScansParams) (bool, error) {
+	jobID := arg.ProcessingID
 	for _, scan := range queries.Scans {
 		if scan.ProcessingID == jobID && !scan.DeletedAt.Valid {
 			return true, nil
@@ -753,7 +785,8 @@ func (queries *Memory) ProcessingHasScans(_ context.Context, jobID uuid.UUID) (b
 	return false, nil
 }
 
-func (queries *Memory) SoftDeleteScan(_ context.Context, id uuid.UUID) (int64, error) {
+func (queries *Memory) SoftDeleteScan(_ context.Context, arg gen.SoftDeleteScanParams) (int64, error) {
+	id := arg.ID
 	scan, found := queries.Scans[id]
 	if !found || scan.DeletedAt.Valid {
 		return 0, nil
@@ -765,7 +798,8 @@ func (queries *Memory) SoftDeleteScan(_ context.Context, id uuid.UUID) (int64, e
 
 // ---- scan orders ----
 
-func (queries *Memory) ListScanOrders(_ context.Context, jobIDs []uuid.UUID) ([]gen.ListScanOrdersRow, error) {
+func (queries *Memory) ListScanOrders(_ context.Context, arg gen.ListScanOrdersParams) ([]gen.ListScanOrdersRow, error) {
+	jobIDs := arg.ProcessingIds
 	var rows []gen.ListScanOrdersRow
 	for _, order := range queries.ScanOrders {
 		for _, jobID := range jobIDs {
@@ -813,4 +847,105 @@ func (queries *Memory) ScanOrderExists(_ context.Context, arg gen.ScanOrderExist
 		}
 	}
 	return false, nil
+}
+
+// ---- users ----
+
+func (queries *Memory) GetUserByEmail(_ context.Context, email string) (gen.AppUser, error) {
+	for _, user := range queries.Users {
+		if user.Email == email {
+			return user, nil
+		}
+	}
+	return gen.AppUser{}, pgx.ErrNoRows
+}
+
+func (queries *Memory) GetUserByRecoverSelector(_ context.Context, selector *string) (gen.AppUser, error) {
+	for _, user := range queries.Users {
+		if user.RecoverSelector != nil && selector != nil && *user.RecoverSelector == *selector {
+			return user, nil
+		}
+	}
+	return gen.AppUser{}, pgx.ErrNoRows
+}
+
+func (queries *Memory) GetUserByOAuth2(_ context.Context, arg gen.GetUserByOAuth2Params) (gen.AppUser, error) {
+	for _, user := range queries.Users {
+		if user.Oauth2Uid != nil && arg.Oauth2Uid != nil && *user.Oauth2Uid == *arg.Oauth2Uid &&
+			user.Oauth2Provider != nil && arg.Oauth2Provider != nil && *user.Oauth2Provider == *arg.Oauth2Provider {
+			return user, nil
+		}
+	}
+	return gen.AppUser{}, pgx.ErrNoRows
+}
+
+func (queries *Memory) InsertUser(ctx context.Context, arg gen.InsertUserParams) (gen.AppUser, error) {
+	if _, err := queries.GetUserByEmail(ctx, arg.Email); err == nil {
+		return gen.AppUser{}, &pgconn.PgError{Code: "23505"}
+	}
+	now := pgtype.Timestamptz{Time: time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC), Valid: true}
+	user := gen.AppUser{
+		ID: arg.ID, Email: arg.Email, Name: arg.Name, PasswordHash: arg.PasswordHash,
+		Oauth2Provider: arg.Oauth2Provider, Oauth2Uid: arg.Oauth2Uid, CreatedAt: now, UpdatedAt: now,
+	}
+	queries.Users[arg.ID] = user
+	return user, nil
+}
+
+func (queries *Memory) UpdateUser(_ context.Context, arg gen.UpdateUserParams) (gen.AppUser, error) {
+	user, found := queries.Users[arg.ID]
+	if !found {
+		return gen.AppUser{}, pgx.ErrNoRows
+	}
+	user.Name, user.PasswordHash = arg.Name, arg.PasswordHash
+	user.RecoverSelector, user.RecoverVerifier, user.RecoverTokenExpiry = arg.RecoverSelector, arg.RecoverVerifier, arg.RecoverTokenExpiry
+	user.AttemptCount, user.LastAttempt, user.LockedUntil = arg.AttemptCount, arg.LastAttempt, arg.LockedUntil
+	user.Oauth2Provider, user.Oauth2Uid = arg.Oauth2Provider, arg.Oauth2Uid
+	queries.Users[arg.ID] = user
+	return user, nil
+}
+
+// ClaimUnownedData has nothing to hand over: the fake keeps no owners.
+func (queries *Memory) ClaimUnownedData(context.Context, uuid.UUID) error { return nil }
+
+// ---- sessions ----
+
+func (queries *Memory) InsertSession(_ context.Context, arg gen.InsertSessionParams) error {
+	queries.Sessions[string(arg.TokenHash)] = gen.UserSession{TokenHash: arg.TokenHash, UserID: arg.UserID, ExpiresAt: arg.ExpiresAt}
+	return nil
+}
+
+func (queries *Memory) GetSessionUser(_ context.Context, tokenHash []byte) (gen.AppUser, error) {
+	session, found := queries.Sessions[string(tokenHash)]
+	if !found || !session.ExpiresAt.Time.After(time.Now()) {
+		return gen.AppUser{}, pgx.ErrNoRows
+	}
+	user, found := queries.Users[session.UserID]
+	if !found {
+		return gen.AppUser{}, pgx.ErrNoRows
+	}
+	return user, nil
+}
+
+func (queries *Memory) DeleteSession(_ context.Context, tokenHash []byte) error {
+	delete(queries.Sessions, string(tokenHash))
+	return nil
+}
+
+func (queries *Memory) DeleteUserSessions(_ context.Context, userID uuid.UUID) error {
+	for key, session := range queries.Sessions {
+		if session.UserID == userID {
+			delete(queries.Sessions, key)
+		}
+	}
+	return nil
+}
+
+func (queries *Memory) DeleteExpiredSessions(context.Context) error {
+	for key, session := range queries.Sessions {
+		if !session.ExpiresAt.Time.After(time.Now()) {
+			delete(queries.Sessions, key)
+		}
+	}
+	return nil
 }

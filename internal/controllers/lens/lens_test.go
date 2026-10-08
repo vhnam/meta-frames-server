@@ -29,15 +29,16 @@ func (stub *queries) ListLenses(_ context.Context, arg gen.ListLensesParams) ([]
 	return result, nil
 }
 
-func (stub *queries) GetLens(_ context.Context, id uuid.UUID) (gen.Lens, error) {
+func (stub *queries) GetLens(_ context.Context, arg gen.GetLensParams) (gen.Lens, error) {
+	id := arg.ID
 	if lens, found := stub.lenses[id]; found {
 		return lens, nil
 	}
 	return gen.Lens{}, pgx.ErrNoRows
 }
 
-func (stub *queries) GetLensForUpdate(ctx context.Context, id uuid.UUID) (gen.Lens, error) {
-	return stub.GetLens(ctx, id)
+func (stub *queries) GetLensForUpdate(ctx context.Context, arg gen.GetLensForUpdateParams) (gen.Lens, error) {
+	return stub.GetLens(ctx, gen.GetLensParams(arg))
 }
 
 func (stub *queries) InsertLens(_ context.Context, arg gen.InsertLensParams) (gen.Lens, error) {
@@ -139,7 +140,8 @@ func TestSetLensActive(test *testing.T) {
 
 func (stub *queries) LensIsOnRolls(context.Context, uuid.UUID) (bool, error) { return false, nil }
 
-func (stub *queries) SoftDeleteLens(_ context.Context, id uuid.UUID) (int64, error) {
+func (stub *queries) SoftDeleteLens(_ context.Context, arg gen.SoftDeleteLensParams) (int64, error) {
+	id := arg.ID
 	delete(stub.lenses, id)
 	return 1, nil
 }

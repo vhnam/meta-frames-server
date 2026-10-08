@@ -1,14 +1,18 @@
 .PHONY: gen run dev test test-unit cover lint docker-build db-up db-down db-reset
 
+# Exports the settings in .env (if present) to the server. The shell reads the file, so
+# "KEY=value   # comment" lines work; values in .env win over the current environment.
+LOAD_ENV = set -a; [ ! -f .env ] || . ./.env; set +a;
+
 gen:
 	go tool oapi-codegen -config oapi-codegen.yaml api/openapi.yaml
 	go tool sqlc generate
 
 run:
-	go run ./cmd/api
+	$(LOAD_ENV) go run ./cmd/api
 
 dev:
-	go tool air -c configs/air.toml 2>/dev/null || air -c configs/air.toml
+	$(LOAD_ENV) go tool air -c configs/air.toml 2>/dev/null || air -c configs/air.toml
 
 test:
 	go test ./...

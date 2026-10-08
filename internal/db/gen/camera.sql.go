@@ -13,22 +13,32 @@ import (
 )
 
 const cameraIsLoaded = `-- name: CameraIsLoaded :one
-SELECT EXISTS (SELECT 1 FROM roll WHERE camera_id = $1 AND status = 'in_camera')
+SELECT EXISTS (SELECT 1 FROM roll WHERE camera_id = $1 AND owner_id = $2 AND status = 'in_camera')
 `
 
-func (q *Queries) CameraIsLoaded(ctx context.Context, cameraID *uuid.UUID) (bool, error) {
-	row := q.db.QueryRow(ctx, cameraIsLoaded, cameraID)
+type CameraIsLoadedParams struct {
+	CameraID *uuid.UUID
+	OwnerID  uuid.UUID
+}
+
+func (q *Queries) CameraIsLoaded(ctx context.Context, arg CameraIsLoadedParams) (bool, error) {
+	row := q.db.QueryRow(ctx, cameraIsLoaded, arg.CameraID, arg.OwnerID)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
 }
 
 const countCameraRolls = `-- name: CountCameraRolls :one
-SELECT count(*) FROM roll WHERE camera_id = $1
+SELECT count(*) FROM roll WHERE camera_id = $1 AND owner_id = $2
 `
 
-func (q *Queries) CountCameraRolls(ctx context.Context, cameraID *uuid.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countCameraRolls, cameraID)
+type CountCameraRollsParams struct {
+	CameraID *uuid.UUID
+	OwnerID  uuid.UUID
+}
+
+func (q *Queries) CountCameraRolls(ctx context.Context, arg CountCameraRollsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countCameraRolls, arg.CameraID, arg.OwnerID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -49,11 +59,18 @@ func (q *Queries) DeleteCameraLensesExcept(ctx context.Context, arg DeleteCamera
 }
 
 const getCamera = `-- name: GetCamera :one
-SELECT id, brand, model, mount, description, has_fixed_lens, is_active, created_at, updated_at, deleted_at FROM camera WHERE id = $1 AND deleted_at IS NULL
+
+SELECT id, brand, model, mount, description, has_fixed_lens, is_active, created_at, updated_at, deleted_at, owner_id FROM camera WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
 `
 
-func (q *Queries) GetCamera(ctx context.Context, id uuid.UUID) (Camera, error) {
-	row := q.db.QueryRow(ctx, getCamera, id)
+type GetCameraParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+// Every query is limited to one account's records (owner_id); see migrations/00010_ownership.sql.
+func (q *Queries) GetCamera(ctx context.Context, arg GetCameraParams) (Camera, error) {
+	row := q.db.QueryRow(ctx, getCamera, arg.ID, arg.OwnerID)
 	var i Camera
 	err := row.Scan(
 		&i.ID,
@@ -66,16 +83,22 @@ func (q *Queries) GetCamera(ctx context.Context, id uuid.UUID) (Camera, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const getCameraForUpdate = `-- name: GetCameraForUpdate :one
-SELECT id, brand, model, mount, description, has_fixed_lens, is_active, created_at, updated_at, deleted_at FROM camera WHERE id = $1 AND deleted_at IS NULL FOR UPDATE
+SELECT id, brand, model, mount, description, has_fixed_lens, is_active, created_at, updated_at, deleted_at, owner_id FROM camera WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL FOR UPDATE
 `
 
-func (q *Queries) GetCameraForUpdate(ctx context.Context, id uuid.UUID) (Camera, error) {
-	row := q.db.QueryRow(ctx, getCameraForUpdate, id)
+type GetCameraForUpdateParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) GetCameraForUpdate(ctx context.Context, arg GetCameraForUpdateParams) (Camera, error) {
+	row := q.db.QueryRow(ctx, getCameraForUpdate, arg.ID, arg.OwnerID)
 	var i Camera
 	err := row.Scan(
 		&i.ID,
@@ -88,14 +111,15 @@ func (q *Queries) GetCameraForUpdate(ctx context.Context, id uuid.UUID) (Camera,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const insertCamera = `-- name: InsertCamera :one
-INSERT INTO camera (id, brand, model, mount, description, has_fixed_lens)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, brand, model, mount, description, has_fixed_lens, is_active, created_at, updated_at, deleted_at
+INSERT INTO camera (id, brand, model, mount, description, has_fixed_lens, owner_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, brand, model, mount, description, has_fixed_lens, is_active, created_at, updated_at, deleted_at, owner_id
 `
 
 type InsertCameraParams struct {
@@ -105,6 +129,7 @@ type InsertCameraParams struct {
 	Mount        *string
 	Description  *string
 	HasFixedLens bool
+	OwnerID      uuid.UUID
 }
 
 func (q *Queries) InsertCamera(ctx context.Context, arg InsertCameraParams) (Camera, error) {
@@ -115,6 +140,7 @@ func (q *Queries) InsertCamera(ctx context.Context, arg InsertCameraParams) (Cam
 		arg.Mount,
 		arg.Description,
 		arg.HasFixedLens,
+		arg.OwnerID,
 	)
 	var i Camera
 	err := row.Scan(
@@ -128,11 +154,13 @@ func (q *Queries) InsertCamera(ctx context.Context, arg InsertCameraParams) (Cam
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const insertCameraLens = `-- name: InsertCameraLens :exec
+
 INSERT INTO camera_lens (camera_id, lens_id) VALUES ($1, $2) ON CONFLICT DO NOTHING
 `
 
@@ -141,6 +169,7 @@ type InsertCameraLensParams struct {
 	LensID   uuid.UUID
 }
 
+// The camera and lenses are checked to belong to the account before these run.
 func (q *Queries) InsertCameraLens(ctx context.Context, arg InsertCameraLensParams) error {
 	_, err := q.db.Exec(ctx, insertCameraLens, arg.CameraID, arg.LensID)
 	return err
@@ -149,11 +178,11 @@ func (q *Queries) InsertCameraLens(ctx context.Context, arg InsertCameraLensPara
 const listBuiltInLensLinks = `-- name: ListBuiltInLensLinks :many
 SELECT cl.camera_id, cl.lens_id
 FROM camera_lens cl JOIN lens l ON l.id = cl.lens_id
-WHERE l.is_built_in AND l.deleted_at IS NULL
+WHERE l.owner_id = $1 AND l.is_built_in AND l.deleted_at IS NULL
 `
 
-func (q *Queries) ListBuiltInLensLinks(ctx context.Context) ([]CameraLens, error) {
-	rows, err := q.db.Query(ctx, listBuiltInLensLinks)
+func (q *Queries) ListBuiltInLensLinks(ctx context.Context, ownerID uuid.UUID) ([]CameraLens, error) {
+	rows, err := q.db.Query(ctx, listBuiltInLensLinks, ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -173,13 +202,18 @@ func (q *Queries) ListBuiltInLensLinks(ctx context.Context) ([]CameraLens, error
 }
 
 const listCameraLenses = `-- name: ListCameraLenses :many
-SELECT l.id, l.brand, l.model, l.mount, l.description, l.focal_length, l.max_aperture, l.is_built_in, l.is_active, l.created_at, l.updated_at, l.deleted_at FROM lens l JOIN camera_lens cl ON cl.lens_id = l.id
-WHERE cl.camera_id = $1 AND l.deleted_at IS NULL
+SELECT l.id, l.brand, l.model, l.mount, l.description, l.focal_length, l.max_aperture, l.is_built_in, l.is_active, l.created_at, l.updated_at, l.deleted_at, l.owner_id FROM lens l JOIN camera_lens cl ON cl.lens_id = l.id
+WHERE cl.camera_id = $1 AND l.owner_id = $2 AND l.deleted_at IS NULL
 ORDER BY l.focal_length, l.brand, l.model
 `
 
-func (q *Queries) ListCameraLenses(ctx context.Context, cameraID uuid.UUID) ([]Lens, error) {
-	rows, err := q.db.Query(ctx, listCameraLenses, cameraID)
+type ListCameraLensesParams struct {
+	CameraID uuid.UUID
+	OwnerID  uuid.UUID
+}
+
+func (q *Queries) ListCameraLenses(ctx context.Context, arg ListCameraLensesParams) ([]Lens, error) {
+	rows, err := q.db.Query(ctx, listCameraLenses, arg.CameraID, arg.OwnerID)
 	if err != nil {
 		return nil, err
 	}
@@ -200,6 +234,7 @@ func (q *Queries) ListCameraLenses(ctx context.Context, cameraID uuid.UUID) ([]L
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.OwnerID,
 		); err != nil {
 			return nil, err
 		}
@@ -212,11 +247,11 @@ func (q *Queries) ListCameraLenses(ctx context.Context, cameraID uuid.UUID) ([]L
 }
 
 const listCameras = `-- name: ListCameras :many
-SELECT id, brand, model, mount, description, has_fixed_lens, is_active, created_at, updated_at, deleted_at FROM camera WHERE deleted_at IS NULL ORDER BY is_active DESC, brand, model
+SELECT id, brand, model, mount, description, has_fixed_lens, is_active, created_at, updated_at, deleted_at, owner_id FROM camera WHERE owner_id = $1 AND deleted_at IS NULL ORDER BY is_active DESC, brand, model
 `
 
-func (q *Queries) ListCameras(ctx context.Context) ([]Camera, error) {
-	rows, err := q.db.Query(ctx, listCameras)
+func (q *Queries) ListCameras(ctx context.Context, ownerID uuid.UUID) ([]Camera, error) {
+	rows, err := q.db.Query(ctx, listCameras, ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -235,6 +270,7 @@ func (q *Queries) ListCameras(ctx context.Context) ([]Camera, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.OwnerID,
 		); err != nil {
 			return nil, err
 		}
@@ -252,7 +288,7 @@ SELECT r.camera_id, r.id AS roll_id, r.shot_iso, r.started_at,
        COALESCE(CURRENT_DATE - r.started_at, 0)::int AS days_loaded
 FROM roll r
 JOIN film_stock fs ON fs.id = r.film_stock_id
-WHERE r.status = 'in_camera' AND r.camera_id IS NOT NULL
+WHERE r.owner_id = $1 AND r.status = 'in_camera' AND r.camera_id IS NOT NULL
 `
 
 type ListLoadedRollsRow struct {
@@ -267,8 +303,8 @@ type ListLoadedRollsRow struct {
 	DaysLoaded int32
 }
 
-func (q *Queries) ListLoadedRolls(ctx context.Context) ([]ListLoadedRollsRow, error) {
-	rows, err := q.db.Query(ctx, listLoadedRolls)
+func (q *Queries) ListLoadedRolls(ctx context.Context, ownerID uuid.UUID) ([]ListLoadedRollsRow, error) {
+	rows, err := q.db.Query(ctx, listLoadedRolls, ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -299,30 +335,32 @@ func (q *Queries) ListLoadedRolls(ctx context.Context) ([]ListLoadedRollsRow, er
 
 const setBuiltInLensActive = `-- name: SetBuiltInLensActive :exec
 UPDATE lens SET is_active = $2
-WHERE is_built_in AND id IN (SELECT lens_id FROM camera_lens WHERE camera_id = $1)
+WHERE is_built_in AND owner_id = $3 AND id IN (SELECT lens_id FROM camera_lens WHERE camera_id = $1)
 `
 
 type SetBuiltInLensActiveParams struct {
 	CameraID uuid.UUID
 	IsActive bool
+	OwnerID  uuid.UUID
 }
 
 func (q *Queries) SetBuiltInLensActive(ctx context.Context, arg SetBuiltInLensActiveParams) error {
-	_, err := q.db.Exec(ctx, setBuiltInLensActive, arg.CameraID, arg.IsActive)
+	_, err := q.db.Exec(ctx, setBuiltInLensActive, arg.CameraID, arg.IsActive, arg.OwnerID)
 	return err
 }
 
 const setCameraActive = `-- name: SetCameraActive :one
-UPDATE camera SET is_active = $2 WHERE id = $1 AND deleted_at IS NULL RETURNING id, brand, model, mount, description, has_fixed_lens, is_active, created_at, updated_at, deleted_at
+UPDATE camera SET is_active = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL RETURNING id, brand, model, mount, description, has_fixed_lens, is_active, created_at, updated_at, deleted_at, owner_id
 `
 
 type SetCameraActiveParams struct {
 	ID       uuid.UUID
 	IsActive bool
+	OwnerID  uuid.UUID
 }
 
 func (q *Queries) SetCameraActive(ctx context.Context, arg SetCameraActiveParams) (Camera, error) {
-	row := q.db.QueryRow(ctx, setCameraActive, arg.ID, arg.IsActive)
+	row := q.db.QueryRow(ctx, setCameraActive, arg.ID, arg.IsActive, arg.OwnerID)
 	var i Camera
 	err := row.Scan(
 		&i.ID,
@@ -335,27 +373,38 @@ func (q *Queries) SetCameraActive(ctx context.Context, arg SetCameraActiveParams
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
 
 const softDeleteBuiltInLenses = `-- name: SoftDeleteBuiltInLenses :exec
 UPDATE lens SET deleted_at = now()
-WHERE is_built_in AND deleted_at IS NULL
+WHERE is_built_in AND owner_id = $2 AND deleted_at IS NULL
   AND id IN (SELECT lens_id FROM camera_lens WHERE camera_id = $1)
 `
 
-func (q *Queries) SoftDeleteBuiltInLenses(ctx context.Context, cameraID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, softDeleteBuiltInLenses, cameraID)
+type SoftDeleteBuiltInLensesParams struct {
+	CameraID uuid.UUID
+	OwnerID  uuid.UUID
+}
+
+func (q *Queries) SoftDeleteBuiltInLenses(ctx context.Context, arg SoftDeleteBuiltInLensesParams) error {
+	_, err := q.db.Exec(ctx, softDeleteBuiltInLenses, arg.CameraID, arg.OwnerID)
 	return err
 }
 
 const softDeleteCamera = `-- name: SoftDeleteCamera :execrows
-UPDATE camera SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL
+UPDATE camera SET deleted_at = now() WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
 `
 
-func (q *Queries) SoftDeleteCamera(ctx context.Context, id uuid.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, softDeleteCamera, id)
+type SoftDeleteCameraParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) SoftDeleteCamera(ctx context.Context, arg SoftDeleteCameraParams) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteCamera, arg.ID, arg.OwnerID)
 	if err != nil {
 		return 0, err
 	}
@@ -364,8 +413,8 @@ func (q *Queries) SoftDeleteCamera(ctx context.Context, id uuid.UUID) (int64, er
 
 const updateCamera = `-- name: UpdateCamera :one
 UPDATE camera SET brand = $2, model = $3, mount = $4, description = $5
-WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, brand, model, mount, description, has_fixed_lens, is_active, created_at, updated_at, deleted_at
+WHERE id = $1 AND owner_id = $6 AND deleted_at IS NULL
+RETURNING id, brand, model, mount, description, has_fixed_lens, is_active, created_at, updated_at, deleted_at, owner_id
 `
 
 type UpdateCameraParams struct {
@@ -374,6 +423,7 @@ type UpdateCameraParams struct {
 	Model       string
 	Mount       *string
 	Description *string
+	OwnerID     uuid.UUID
 }
 
 func (q *Queries) UpdateCamera(ctx context.Context, arg UpdateCameraParams) (Camera, error) {
@@ -383,6 +433,7 @@ func (q *Queries) UpdateCamera(ctx context.Context, arg UpdateCameraParams) (Cam
 		arg.Model,
 		arg.Mount,
 		arg.Description,
+		arg.OwnerID,
 	)
 	var i Camera
 	err := row.Scan(
@@ -396,6 +447,7 @@ func (q *Queries) UpdateCamera(ctx context.Context, arg UpdateCameraParams) (Cam
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }

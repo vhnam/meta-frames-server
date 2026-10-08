@@ -49,7 +49,8 @@ func TestListPassesFiltersThrough(test *testing.T) {
 	}
 }
 
-func (stub *queries) GetAuditLog(_ context.Context, id int64) (gen.AuditLog, error) {
+func (stub *queries) GetAuditLog(_ context.Context, arg gen.GetAuditLogParams) (gen.AuditLog, error) {
+	id := arg.ID
 	if id != 1 {
 		return gen.AuditLog{}, pgx.ErrNoRows
 	}

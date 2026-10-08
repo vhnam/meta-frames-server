@@ -5,21 +5,15 @@ package api
 
 import (
 	"bytes"
-	"compress/flate"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
-	"net/url"
-	"path"
-	"strings"
 	"time"
 
-	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/gin-gonic/gin"
 	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -276,11 +270,11 @@ type AuditAction string
 // AuditEntityType defines model for AuditEntityType.
 type AuditEntityType string
 
-// AuditLog Example: {"action":"update","actor":"nam","after":{"brand":"Nikon","id":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","isActive":true,"model":"FM3A"},"before":{"brand":"Nikon","id":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","isActive":true,"model":"FM2"},"createdAt":"2026-10-02T09:15:00Z","entityId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","entityType":"camera","id":42,"requestId":"3f6c1a1e-9d0b-4b5e-8f6a-0c2d7e1b5a90"}
+// AuditLog Example: {"action":"update","actor":"nam@example.com","after":{"brand":"Nikon","id":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","isActive":true,"model":"FM3A"},"before":{"brand":"Nikon","id":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","isActive":true,"model":"FM2"},"createdAt":"2026-10-02T09:15:00Z","entityId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","entityType":"camera","id":42,"requestId":"3f6c1a1e-9d0b-4b5e-8f6a-0c2d7e1b5a90"}
 type AuditLog struct {
 	Action AuditAction `json:"action"`
 
-	// Actor Value of the X-Actor request header
+	// Actor Email of the signed-in user who made the change
 	Actor *string `json:"actor,omitempty"`
 
 	// After Row after the change, keyed by database column name; absent for a hard delete
@@ -297,6 +291,14 @@ type AuditLog struct {
 
 	// RequestId X-Request-ID of the request that made the change
 	RequestId *string `json:"requestId,omitempty"`
+}
+
+// AuthResult Example: {"message":"Logged in"}
+type AuthResult struct {
+	Message string `json:"message"`
+
+	// User Example: {"createdAt":"2026-10-07T09:00:00Z","email":"ansel@example.com","id":"5a0c2f6e-8d31-4b7a-9e15-3c7f1d2b4a60","name":"Ansel"}
+	User *User `json:"user,omitempty"`
 }
 
 // BulkRollsInput Example: {"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"price":150000,"quantity":5}
@@ -584,6 +586,12 @@ type LoadedRoll struct {
 	StockName  string              `json:"stockName"`
 }
 
+// LoginInput Example: {"email":"ansel@example.com","password":"Zone-System5"}
+type LoginInput struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
 // MonthSpending defines model for MonthSpending.
 type MonthSpending struct {
 	FilmCost int `json:"filmCost"`
@@ -666,6 +674,24 @@ type RankedItem struct {
 	Id    openapi_types.UUID `json:"id"`
 	Label string             `json:"label"`
 	Rolls int                `json:"rolls"`
+}
+
+// RecoverStartInput Example: {"email":"ansel@example.com"}
+type RecoverStartInput struct {
+	Email string `json:"email"`
+}
+
+// RegisterInput Example: {"email":"ansel@example.com","name":"Ansel","password":"Zone-System5"}
+type RegisterInput struct {
+	Email    openapi_types.Email `json:"email"`
+	Name     *string             `json:"name,omitempty"`
+	Password string              `json:"password"`
+}
+
+// ResetPasswordInput Example: {"password":"Fresh-Neg4tive","token":"q3Jv0b5i8W1Xw9yQ5lD0p6c8R2nS7tU4vA1bC3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5zA7bC9dE1fG3hI5jK7lM9nO1pQ3rS5tU7vW9xY1zA3bC5dE7fA=="}
+type ResetPasswordInput struct {
+	Password string `json:"password"`
+	Token    string `json:"token"`
 }
 
 // RollDetail Example: {"frames":[],"lenses":[{"brand":"Nikon","createdAt":"2026-09-01T08:30:00Z","focalLength":50,"id":"a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03","isActive":true,"isBuiltIn":false,"maxAperture":1.4,"model":"Nikkor 50mm f/1.4 AI-S","mount":"F","updatedAt":"2026-09-20T10:00:00Z"}],"processing":[],"roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400"},"stock":{"boxIso":400,"brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"},"totals":{"incomplete":false,"processingPrice":90000,"rollPrice":150000,"total":240000},"warnings":[]}
@@ -793,6 +819,14 @@ type SpendBucket struct {
 // StockType defines model for StockType.
 type StockType string
 
+// User Example: {"createdAt":"2026-10-07T09:00:00Z","email":"ansel@example.com","id":"5a0c2f6e-8d31-4b7a-9e15-3c7f1d2b4a60","name":"Ansel"}
+type User struct {
+	CreatedAt time.Time           `json:"createdAt"`
+	Email     openapi_types.Email `json:"email"`
+	Id        openapi_types.UUID  `json:"id"`
+	Name      *string             `json:"name,omitempty"`
+}
+
 // YearSpending defines model for YearSpending.
 type YearSpending struct {
 	FilmCost int `json:"filmCost"`
@@ -814,6 +848,9 @@ type YearTimeline struct {
 // Id defines model for Id.
 type Id = openapi_types.UUID
 
+// AuthBadRequest Example: {"code":"not_found","message":"camera not found"}
+type AuthBadRequest = Problem
+
 // BadRequest Example: {"code":"not_found","message":"camera not found"}
 type BadRequest = Problem
 
@@ -822,6 +859,9 @@ type Conflict = Problem
 
 // NotFound Example: {"code":"not_found","message":"camera not found"}
 type NotFound = Problem
+
+// Unauthorized Example: {"code":"not_found","message":"camera not found"}
+type Unauthorized = Problem
 
 // Unprocessable Example: {"code":"not_found","message":"camera not found"}
 type Unprocessable = Problem
@@ -982,6 +1022,9 @@ type ServerInterface interface {
 	// GetAuditLog One audit entry
 	// (GET /audit-logs/{id})
 	GetAuditLog(c *gin.Context, id int64)
+	// GetCurrentUser The user of the current session
+	// (GET /auth/me)
+	GetCurrentUser(c *gin.Context)
 	// ListCameras List cameras with their loaded roll (UC-09)
 	// (GET /cameras)
 	ListCameras(c *gin.Context, params ListCamerasParams)
@@ -1247,6 +1290,19 @@ func (siw *ServerInterfaceWrapper) GetAuditLog(c *gin.Context) {
 	}
 
 	siw.Handler.GetAuditLog(c, id)
+}
+
+// GetCurrentUser operation middleware
+func (siw *ServerInterfaceWrapper) GetCurrentUser(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCurrentUser(c)
 }
 
 // ListCameras operation middleware
@@ -2732,6 +2788,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	}
 
 	router.GET(options.BaseURL+"/health", wrapper.GetHealth)
+	router.GET(options.BaseURL+"/auth/me", wrapper.GetCurrentUser)
 	router.GET(options.BaseURL+"/cameras", wrapper.ListCameras)
 	router.POST(options.BaseURL+"/cameras", wrapper.CreateCamera)
 	router.DELETE(options.BaseURL+"/cameras/:id", wrapper.DeleteCamera)
@@ -2792,11 +2849,15 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/stats/spending", wrapper.GetSpendingStats)
 }
 
+type AuthBadRequestJSONResponse Problem
+
 type BadRequestJSONResponse Problem
 
 type ConflictJSONResponse Problem
 
 type NotFoundJSONResponse Problem
+
+type UnauthorizedJSONResponse Problem
 
 type UnprocessableJSONResponse Problem
 
@@ -2832,6 +2893,20 @@ func (response ListAuditLogs400JSONResponse) VisitListAuditLogsResponse(w http.R
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAuditLogs401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListAuditLogs401JSONResponse) VisitListAuditLogsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -2872,6 +2947,20 @@ func (response GetAuditLog400JSONResponse) VisitGetAuditLogResponse(w http.Respo
 	return err
 }
 
+type GetAuditLog401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetAuditLog401JSONResponse) VisitGetAuditLogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetAuditLog404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response GetAuditLog404JSONResponse) VisitGetAuditLogResponse(w http.ResponseWriter) error {
@@ -2882,6 +2971,41 @@ func (response GetAuditLog404JSONResponse) VisitGetAuditLogResponse(w http.Respo
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCurrentUserRequestObject struct {
+}
+
+type GetCurrentUserResponseObject interface {
+	VisitGetCurrentUserResponse(w http.ResponseWriter) error
+}
+
+type GetCurrentUser200JSONResponse User
+
+func (response GetCurrentUser200JSONResponse) VisitGetCurrentUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCurrentUser401JSONResponse Problem
+
+func (response GetCurrentUser401JSONResponse) VisitGetCurrentUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -2922,6 +3046,20 @@ func (response ListCameras400JSONResponse) VisitListCamerasResponse(w http.Respo
 	return err
 }
 
+type ListCameras401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListCameras401JSONResponse) VisitListCamerasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateCameraRequestObject struct {
 	Body *CreateCameraJSONRequestBody
 }
@@ -2954,6 +3092,20 @@ func (response CreateCamera400JSONResponse) VisitCreateCameraResponse(w http.Res
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateCamera401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateCamera401JSONResponse) VisitCreateCameraResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -2998,6 +3150,20 @@ func (response DeleteCamera400JSONResponse) VisitDeleteCameraResponse(w http.Res
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteCamera401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteCamera401JSONResponse) VisitDeleteCameraResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3062,6 +3228,20 @@ func (response GetCamera400JSONResponse) VisitGetCameraResponse(w http.ResponseW
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCamera401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetCamera401JSONResponse) VisitGetCameraResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3131,6 +3311,20 @@ func (response PutCamera400JSONResponse) VisitPutCameraResponse(w http.ResponseW
 	return err
 }
 
+type PutCamera401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response PutCamera401JSONResponse) VisitPutCameraResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type PutCamera409JSONResponse struct{ ConflictJSONResponse }
 
 func (response PutCamera409JSONResponse) VisitPutCameraResponse(w http.ResponseWriter) error {
@@ -3192,6 +3386,20 @@ func (response SetCameraActive400JSONResponse) VisitSetCameraActiveResponse(w ht
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetCameraActive401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response SetCameraActive401JSONResponse) VisitSetCameraActiveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3260,6 +3468,20 @@ func (response ListCameraLenses400JSONResponse) VisitListCameraLensesResponse(w 
 	return err
 }
 
+type ListCameraLenses401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListCameraLenses401JSONResponse) VisitListCameraLensesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListCameraLenses404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response ListCameraLenses404JSONResponse) VisitListCameraLensesResponse(w http.ResponseWriter) error {
@@ -3307,6 +3529,20 @@ func (response SetCameraLenses400JSONResponse) VisitSetCameraLensesResponse(w ht
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetCameraLenses401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response SetCameraLenses401JSONResponse) VisitSetCameraLensesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3374,6 +3610,20 @@ func (response GetExpiry200JSONResponse) VisitGetExpiryResponse(w http.ResponseW
 	return err
 }
 
+type GetExpiry401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetExpiry401JSONResponse) VisitGetExpiryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListFilmStocksRequestObject struct {
 	Params ListFilmStocksParams
 }
@@ -3410,6 +3660,20 @@ func (response ListFilmStocks400JSONResponse) VisitListFilmStocksResponse(w http
 	return err
 }
 
+type ListFilmStocks401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListFilmStocks401JSONResponse) VisitListFilmStocksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateFilmStockRequestObject struct {
 	Body *CreateFilmStockJSONRequestBody
 }
@@ -3442,6 +3706,20 @@ func (response CreateFilmStock400JSONResponse) VisitCreateFilmStockResponse(w ht
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateFilmStock401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateFilmStock401JSONResponse) VisitCreateFilmStockResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3486,6 +3764,20 @@ func (response DeleteFilmStock400JSONResponse) VisitDeleteFilmStockResponse(w ht
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteFilmStock401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteFilmStock401JSONResponse) VisitDeleteFilmStockResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3554,6 +3846,20 @@ func (response GetFilmStock400JSONResponse) VisitGetFilmStockResponse(w http.Res
 	return err
 }
 
+type GetFilmStock401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetFilmStock401JSONResponse) VisitGetFilmStockResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetFilmStock404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response GetFilmStock404JSONResponse) VisitGetFilmStockResponse(w http.ResponseWriter) error {
@@ -3615,6 +3921,20 @@ func (response PutFilmStock400JSONResponse) VisitPutFilmStockResponse(w http.Res
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutFilmStock401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response PutFilmStock401JSONResponse) VisitPutFilmStockResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3690,6 +4010,20 @@ func (response GetInventory400JSONResponse) VisitGetInventoryResponse(w http.Res
 	return err
 }
 
+type GetInventory401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetInventory401JSONResponse) VisitGetInventoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListLabsRequestObject struct {
 }
 
@@ -3707,6 +4041,20 @@ func (response ListLabs200JSONResponse) VisitListLabsResponse(w http.ResponseWri
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLabs401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListLabs401JSONResponse) VisitListLabsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3743,6 +4091,20 @@ func (response CreateLab400JSONResponse) VisitCreateLabResponse(w http.ResponseW
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateLab401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateLab401JSONResponse) VisitCreateLabResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3787,6 +4149,20 @@ func (response DeleteLab400JSONResponse) VisitDeleteLabResponse(w http.ResponseW
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteLab401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteLab401JSONResponse) VisitDeleteLabResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3851,6 +4227,20 @@ func (response GetLab400JSONResponse) VisitGetLabResponse(w http.ResponseWriter)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLab401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetLab401JSONResponse) VisitGetLabResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3920,6 +4310,20 @@ func (response PutLab400JSONResponse) VisitPutLabResponse(w http.ResponseWriter)
 	return err
 }
 
+type PutLab401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response PutLab401JSONResponse) VisitPutLabResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type PutLab422JSONResponse struct{ UnprocessableJSONResponse }
 
 func (response PutLab422JSONResponse) VisitPutLabResponse(w http.ResponseWriter) error {
@@ -3970,6 +4374,20 @@ func (response ListLenses400JSONResponse) VisitListLensesResponse(w http.Respons
 	return err
 }
 
+type ListLenses401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListLenses401JSONResponse) VisitListLensesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateLensRequestObject struct {
 	Body *CreateLensJSONRequestBody
 }
@@ -4002,6 +4420,20 @@ func (response CreateLens400JSONResponse) VisitCreateLensResponse(w http.Respons
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateLens401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateLens401JSONResponse) VisitCreateLensResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4046,6 +4478,20 @@ func (response DeleteLens400JSONResponse) VisitDeleteLensResponse(w http.Respons
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteLens401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteLens401JSONResponse) VisitDeleteLensResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4110,6 +4556,20 @@ func (response GetLens400JSONResponse) VisitGetLensResponse(w http.ResponseWrite
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLens401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetLens401JSONResponse) VisitGetLensResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4179,6 +4639,20 @@ func (response PutLens400JSONResponse) VisitPutLensResponse(w http.ResponseWrite
 	return err
 }
 
+type PutLens401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response PutLens401JSONResponse) VisitPutLensResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type PutLens422JSONResponse struct{ UnprocessableJSONResponse }
 
 func (response PutLens422JSONResponse) VisitPutLensResponse(w http.ResponseWriter) error {
@@ -4226,6 +4700,20 @@ func (response SetLensActive400JSONResponse) VisitSetLensActiveResponse(w http.R
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetLensActive401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response SetLensActive401JSONResponse) VisitSetLensActiveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4279,6 +4767,20 @@ func (response ListNegativesAtLab200JSONResponse) VisitListNegativesAtLabRespons
 	return err
 }
 
+type ListNegativesAtLab401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListNegativesAtLab401JSONResponse) VisitListNegativesAtLabResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DeleteProcessingRequestObject struct {
 	Id Id `json:"id"`
 }
@@ -4305,6 +4807,20 @@ func (response DeleteProcessing400JSONResponse) VisitDeleteProcessingResponse(w 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteProcessing401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteProcessing401JSONResponse) VisitDeleteProcessingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4373,6 +4889,20 @@ func (response GetProcessing400JSONResponse) VisitGetProcessingResponse(w http.R
 	return err
 }
 
+type GetProcessing401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetProcessing401JSONResponse) VisitGetProcessingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetProcessing404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response GetProcessing404JSONResponse) VisitGetProcessingResponse(w http.ResponseWriter) error {
@@ -4424,6 +4954,20 @@ func (response CompareFrame400JSONResponse) VisitCompareFrameResponse(w http.Res
 	return err
 }
 
+type CompareFrame401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CompareFrame401JSONResponse) VisitCompareFrameResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CompareFrame404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response CompareFrame404JSONResponse) VisitCompareFrameResponse(w http.ResponseWriter) error {
@@ -4471,6 +5015,20 @@ func (response RecordNegativesReturned400JSONResponse) VisitRecordNegativesRetur
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RecordNegativesReturned401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RecordNegativesReturned401JSONResponse) VisitRecordNegativesReturnedResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4540,6 +5098,20 @@ func (response ListProcessingScans400JSONResponse) VisitListProcessingScansRespo
 	return err
 }
 
+type ListProcessingScans401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListProcessingScans401JSONResponse) VisitListProcessingScansResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListProcessingScans404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response ListProcessingScans404JSONResponse) VisitListProcessingScansResponse(w http.ResponseWriter) error {
@@ -4587,6 +5159,20 @@ func (response ImportScans400JSONResponse) VisitImportScansResponse(w http.Respo
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ImportScans401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ImportScans401JSONResponse) VisitImportScansResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4670,6 +5256,20 @@ func (response RecordScansReceived400JSONResponse) VisitRecordScansReceivedRespo
 	return err
 }
 
+type RecordScansReceived401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RecordScansReceived401JSONResponse) VisitRecordScansReceivedResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type RecordScansReceived404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response RecordScansReceived404JSONResponse) VisitRecordScansReceivedResponse(w http.ResponseWriter) error {
@@ -4735,6 +5335,20 @@ func (response PreviewScanImport400JSONResponse) VisitPreviewScanImportResponse(
 	return err
 }
 
+type PreviewScanImport401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response PreviewScanImport401JSONResponse) VisitPreviewScanImportResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type PreviewScanImport404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response PreviewScanImport404JSONResponse) VisitPreviewScanImportResponse(w http.ResponseWriter) error {
@@ -4785,6 +5399,20 @@ func (response ListRolls400JSONResponse) VisitListRollsResponse(w http.ResponseW
 	return err
 }
 
+type ListRolls401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListRolls401JSONResponse) VisitListRollsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type AddRollsRequestObject struct {
 	Params AddRollsParams
 	Body   *AddRollsJSONRequestBody
@@ -4818,6 +5446,20 @@ func (response AddRolls400JSONResponse) VisitAddRollsResponse(w http.ResponseWri
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddRolls401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response AddRolls401JSONResponse) VisitAddRollsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4876,6 +5518,20 @@ func (response DeleteRoll400JSONResponse) VisitDeleteRollResponse(w http.Respons
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteRoll401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteRoll401JSONResponse) VisitDeleteRollResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4944,6 +5600,20 @@ func (response GetRoll400JSONResponse) VisitGetRollResponse(w http.ResponseWrite
 	return err
 }
 
+type GetRoll401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetRoll401JSONResponse) VisitGetRollResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetRoll404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response GetRoll404JSONResponse) VisitGetRollResponse(w http.ResponseWriter) error {
@@ -4991,6 +5661,20 @@ func (response PutRoll400JSONResponse) VisitPutRollResponse(w http.ResponseWrite
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutRoll401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response PutRoll401JSONResponse) VisitPutRollResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -5074,6 +5758,20 @@ func (response FinishRoll400JSONResponse) VisitFinishRollResponse(w http.Respons
 	return err
 }
 
+type FinishRoll401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response FinishRoll401JSONResponse) VisitFinishRollResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type FinishRoll404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response FinishRoll404JSONResponse) VisitFinishRollResponse(w http.ResponseWriter) error {
@@ -5138,6 +5836,20 @@ func (response ListRollFrames400JSONResponse) VisitListRollFramesResponse(w http
 	return err
 }
 
+type ListRollFrames401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListRollFrames401JSONResponse) VisitListRollFramesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListRollFrames404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response ListRollFrames404JSONResponse) VisitListRollFramesResponse(w http.ResponseWriter) error {
@@ -5185,6 +5897,20 @@ func (response GetFrame400JSONResponse) VisitGetFrameResponse(w http.ResponseWri
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetFrame401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetFrame401JSONResponse) VisitGetFrameResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -5241,6 +5967,20 @@ func (response PutFrame400JSONResponse) VisitPutFrameResponse(w http.ResponseWri
 	return err
 }
 
+type PutFrame401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response PutFrame401JSONResponse) VisitPutFrameResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type PutFrame404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response PutFrame404JSONResponse) VisitPutFrameResponse(w http.ResponseWriter) error {
@@ -5288,6 +6028,20 @@ func (response SetRollLenses400JSONResponse) VisitSetRollLensesResponse(w http.R
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetRollLenses401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response SetRollLenses401JSONResponse) VisitSetRollLensesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -5371,6 +6125,20 @@ func (response LoadRoll400JSONResponse) VisitLoadRollResponse(w http.ResponseWri
 	return err
 }
 
+type LoadRoll401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response LoadRoll401JSONResponse) VisitLoadRollResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type LoadRoll404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response LoadRoll404JSONResponse) VisitLoadRollResponse(w http.ResponseWriter) error {
@@ -5449,6 +6217,20 @@ func (response ListRollProcessing400JSONResponse) VisitListRollProcessingRespons
 	return err
 }
 
+type ListRollProcessing401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListRollProcessing401JSONResponse) VisitListRollProcessingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListRollProcessing404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response ListRollProcessing404JSONResponse) VisitListRollProcessingResponse(w http.ResponseWriter) error {
@@ -5511,6 +6293,20 @@ func (response PutProcessing400JSONResponse) VisitPutProcessingResponse(w http.R
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutProcessing401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response PutProcessing401JSONResponse) VisitPutProcessingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -5587,6 +6383,20 @@ func (response DeleteScan400JSONResponse) VisitDeleteScanResponse(w http.Respons
 	return err
 }
 
+type DeleteScan401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteScan401JSONResponse) VisitDeleteScanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DeleteScan404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response DeleteScan404JSONResponse) VisitDeleteScanResponse(w http.ResponseWriter) error {
@@ -5633,6 +6443,20 @@ func (response GetScan400JSONResponse) VisitGetScanResponse(w http.ResponseWrite
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScan401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetScan401JSONResponse) VisitGetScanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -5693,6 +6517,20 @@ func (response GetScanFile400JSONResponse) VisitGetScanFileResponse(w http.Respo
 	return err
 }
 
+type GetScanFile401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetScanFile401JSONResponse) VisitGetScanFileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetScanFile404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response GetScanFile404JSONResponse) VisitGetScanFileResponse(w http.ResponseWriter) error {
@@ -5743,6 +6581,20 @@ func (response SearchRolls400JSONResponse) VisitSearchRollsResponse(w http.Respo
 	return err
 }
 
+type SearchRolls401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response SearchRolls401JSONResponse) VisitSearchRollsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetFilmStatsRequestObject struct {
 	Params GetFilmStatsParams
 }
@@ -5775,6 +6627,20 @@ func (response GetFilmStats400JSONResponse) VisitGetFilmStatsResponse(w http.Res
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetFilmStats401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetFilmStats401JSONResponse) VisitGetFilmStatsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -5815,6 +6681,20 @@ func (response GetGearStats400JSONResponse) VisitGetGearStatsResponse(w http.Res
 	return err
 }
 
+type GetGearStats401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetGearStats401JSONResponse) VisitGetGearStatsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetSpendingStatsRequestObject struct {
 }
 
@@ -5832,6 +6712,20 @@ func (response GetSpendingStats200JSONResponse) VisitGetSpendingStatsResponse(w 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSpendingStats401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetSpendingStats401JSONResponse) VisitGetSpendingStatsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -5857,6 +6751,20 @@ func (response GetTimelineStats200JSONResponse) VisitGetTimelineStatsResponse(w 
 	return err
 }
 
+type GetTimelineStats401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetTimelineStats401JSONResponse) VisitGetTimelineStatsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// ListAuditLogs Audit trail of changes, newest first. Filter by entity to see one record's history.
@@ -5865,6 +6773,9 @@ type StrictServerInterface interface {
 	// GetAuditLog One audit entry
 	// (GET /audit-logs/{id})
 	GetAuditLog(ctx context.Context, request GetAuditLogRequestObject) (GetAuditLogResponseObject, error)
+	// GetCurrentUser The user of the current session
+	// (GET /auth/me)
+	GetCurrentUser(ctx context.Context, request GetCurrentUserRequestObject) (GetCurrentUserResponseObject, error)
 	// ListCameras List cameras with their loaded roll (UC-09)
 	// (GET /cameras)
 	ListCameras(ctx context.Context, request ListCamerasRequestObject) (ListCamerasResponseObject, error)
@@ -6141,6 +7052,30 @@ func (sh *strictHandler) GetAuditLog(ctx *gin.Context, id int64) {
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(GetAuditLogResponseObject); ok {
 		if err := validResponse.VisitGetAuditLogResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetCurrentUser operation middleware
+func (sh *strictHandler) GetCurrentUser(ctx *gin.Context) {
+	var request GetCurrentUserRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetCurrentUser(ctx, request.(GetCurrentUserRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetCurrentUser")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetCurrentUserResponseObject); ok {
+		if err := validResponse.VisitGetCurrentUserResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {
@@ -7776,327 +8711,4 @@ func (sh *strictHandler) GetTimelineStats(ctx *gin.Context) {
 	} else if response != nil {
 		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
 	}
-}
-
-// Base64 encoded, compressed with deflate, json marshaled OpenAPI spec.
-// Stored as a slice of fixed-width chunks rather than one concatenated
-// const string: with thousands of chunks the chained `+` fold is several
-// times slower for the Go compiler than parsing a slice literal.
-var swaggerSpec = []string{
-	"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",
-}
-
-// decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,
-// after base64-decoding and flate-decompressing the embedded blob.
-func decodeSpec() ([]byte, error) {
-	encoded := strings.Join(swaggerSpec, "")
-	compressed, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
-		return nil, fmt.Errorf("error base64 decoding spec: %w", err)
-	}
-	zr := flate.NewReader(bytes.NewReader(compressed))
-	var buf bytes.Buffer
-	if _, err := buf.ReadFrom(zr); err != nil {
-		return nil, fmt.Errorf("read flate: %w", err)
-	}
-	if err := zr.Close(); err != nil {
-		return nil, fmt.Errorf("close flate reader: %w", err)
-	}
-
-	return buf.Bytes(), nil
-}
-
-var rawSpec = decodeSpecCached()
-
-// a naive cache of the decoded OpenAPI spec
-func decodeSpecCached() func() ([]byte, error) {
-	data, err := decodeSpec()
-	return func() ([]byte, error) {
-		return data, err
-	}
-}
-
-// Constructs a synthetic filesystem for resolving external references when loading openapi specifications.
-func PathToRawSpec(pathToFile string) map[string]func() ([]byte, error) {
-	res := make(map[string]func() ([]byte, error))
-	if len(pathToFile) > 0 {
-		res[pathToFile] = rawSpec
-	}
-
-	return res
-}
-
-// GetSpec returns the OpenAPI specification corresponding to the generated
-// code in this file. External references in the spec are resolved through
-// PathToRawSpec; externally-referenced files must be embedded in their
-// corresponding Go packages (via the import-mapping feature). URL-based
-// external refs are not supported.
-func GetSpec() (swagger *openapi3.T, err error) {
-	resolvePath := PathToRawSpec("")
-
-	loader := openapi3.NewLoader()
-	loader.IsExternalRefsAllowed = true
-	loader.ReadFromURIFunc = func(loader *openapi3.Loader, url *url.URL) ([]byte, error) {
-		pathToFile := url.String()
-		pathToFile = path.Clean(pathToFile)
-		getSpec, ok := resolvePath[pathToFile]
-		if !ok {
-			err1 := fmt.Errorf("path not found: %s", pathToFile)
-			return nil, err1
-		}
-		return getSpec()
-	}
-	var specData []byte
-	specData, err = rawSpec()
-	if err != nil {
-		return
-	}
-	swagger, err = loader.LoadFromData(specData)
-	if err != nil {
-		return
-	}
-	return
-}
-
-// GetSpecJSON returns the raw JSON bytes of the embedded OpenAPI
-// specification: decompressed but not unmarshaled. External references
-// are not resolved here; the bytes are the spec exactly as embedded by
-// codegen. The result is cached at package init time, so repeated calls
-// are cheap.
-func GetSpecJSON() ([]byte, error) {
-	return rawSpec()
-}
-
-// GetSwagger returns the OpenAPI specification corresponding to the
-// generated code in this file.
-//
-// Deprecated: GetSwagger predates kin-openapi renaming openapi3.Swagger
-// to openapi3.T. Use [GetSpec] instead. This wrapper is retained for
-// backwards compatibility.
-func GetSwagger() (*openapi3.T, error) {
-	return GetSpec()
 }

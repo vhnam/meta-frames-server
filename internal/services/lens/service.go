@@ -8,6 +8,7 @@ import (
 
 	"meta-frames-server/internal/common/apperror"
 	"meta-frames-server/internal/common/pointers"
+	"meta-frames-server/internal/common/requestctx"
 	"meta-frames-server/internal/db"
 	"meta-frames-server/internal/db/gen"
 	"meta-frames-server/internal/services/shared"
@@ -31,11 +32,12 @@ func ValidateAperture(aperture float64) error {
 func (service *Service) List(ctx context.Context, activeOnly bool, preferMount *string) ([]gen.Lens, error) {
 	return service.store.Queries().ListLenses(ctx, gen.ListLensesParams{
 		ActiveOnly: activeOnly, PreferMount: pointers.TrimmedOrNil(preferMount),
+		OwnerID: requestctx.Owner(ctx),
 	})
 }
 
 func (service *Service) Get(ctx context.Context, lensID uuid.UUID) (gen.Lens, error) {
-	lens, err := service.store.Queries().GetLens(ctx, lensID)
+	lens, err := service.store.Queries().GetLens(ctx, gen.GetLensParams{ID: lensID, OwnerID: requestctx.Owner(ctx)})
 	return lens, shared.NotFoundOr(err, "lens")
 }
 
@@ -54,6 +56,7 @@ func (service *Service) Create(ctx context.Context, lensID uuid.UUID, input Inpu
 		lens, err = queries.InsertLens(ctx, gen.InsertLensParams{
 			ID: lensID, Brand: brand, Model: model, Mount: mount, Description: pointers.TrimmedOrNil(input.Description),
 			FocalLength: int32(input.FocalLength), MaxAperture: input.MaxAperture,
+			OwnerID: requestctx.Owner(ctx),
 		})
 		return err
 	})
@@ -72,7 +75,7 @@ func (service *Service) Update(ctx context.Context, lensID uuid.UUID, input Inpu
 
 	var saved gen.Lens
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		existing, err := queries.GetLensForUpdate(ctx, lensID)
+		existing, err := queries.GetLensForUpdate(ctx, gen.GetLensForUpdateParams{ID: lensID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return shared.NotFoundOr(err, "lens")
 		}
@@ -82,6 +85,7 @@ func (service *Service) Update(ctx context.Context, lensID uuid.UUID, input Inpu
 		saved, err = queries.UpdateLens(ctx, gen.UpdateLensParams{
 			ID: lensID, Brand: brand, Model: model, Mount: mount, Description: pointers.TrimmedOrNil(input.Description),
 			FocalLength: int32(input.FocalLength), MaxAperture: input.MaxAperture,
+			OwnerID: requestctx.Owner(ctx),
 		})
 		return err
 	})
@@ -106,14 +110,14 @@ func validateLensIdentity(isBuiltIn bool, brand, model, mount *string) error {
 func (service *Service) SetActive(ctx context.Context, lensID uuid.UUID, active bool) (gen.Lens, error) {
 	var saved gen.Lens
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		lens, err := queries.GetLensForUpdate(ctx, lensID)
+		lens, err := queries.GetLensForUpdate(ctx, gen.GetLensForUpdateParams{ID: lensID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return shared.NotFoundOr(err, "lens")
 		}
 		if lens.IsBuiltIn {
 			return apperror.Conflict("built_in_lens", "a built-in lens follows its camera; deactivate the camera instead")
 		}
-		saved, err = queries.SetLensActive(ctx, gen.SetLensActiveParams{ID: lensID, IsActive: active})
+		saved, err = queries.SetLensActive(ctx, gen.SetLensActiveParams{ID: lensID, IsActive: active, OwnerID: requestctx.Owner(ctx)})
 		return err
 	})
 	return saved, err
@@ -122,7 +126,7 @@ func (service *Service) SetActive(ctx context.Context, lensID uuid.UUID, active 
 // Delete soft-deletes a lens that was never used on a roll. A built-in lens goes with its camera.
 func (service *Service) Delete(ctx context.Context, lensID uuid.UUID) error {
 	return service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		lens, err := queries.GetLensForUpdate(ctx, lensID)
+		lens, err := queries.GetLensForUpdate(ctx, gen.GetLensForUpdateParams{ID: lensID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return shared.NotFoundOr(err, "lens")
 		}
@@ -136,7 +140,7 @@ func (service *Service) Delete(ctx context.Context, lensID uuid.UUID) error {
 		if used {
 			return apperror.Conflict("lens_in_use", "a lens used on rolls cannot be deleted; deactivate it instead")
 		}
-		_, err = queries.SoftDeleteLens(ctx, lensID)
+		_, err = queries.SoftDeleteLens(ctx, gen.SoftDeleteLensParams{ID: lensID, OwnerID: requestctx.Owner(ctx)})
 		return err
 	})
 }

@@ -32,35 +32,35 @@ func (stub *queries) ListRollSummaries(context.Context, gen.ListRollSummariesPar
 	return []gen.ListRollSummariesRow{{ID: uuid.New(), Status: domain.RollStatusScanned}}, stub.err()
 }
 
-func (stub *queries) ListRollScans(context.Context, uuid.UUID) ([]gen.ListRollScansRow, error) {
+func (stub *queries) ListRollScans(_ context.Context, arg gen.ListRollScansParams) ([]gen.ListRollScansRow, error) {
 	return []gen.ListRollScansRow{{ID: uuid.New(), FrameNumber: 7, Scanner: domain.ScannerNoritsu}}, stub.err()
 }
 
-func (stub *queries) StatsCameras(context.Context, *int32) ([]gen.StatsCamerasRow, error) {
+func (stub *queries) StatsCameras(_ context.Context, arg gen.StatsCamerasParams) ([]gen.StatsCamerasRow, error) {
 	return []gen.StatsCamerasRow{{Label: "Nikon FM2", Rolls: 3}}, stub.err()
 }
 
-func (stub *queries) StatsLenses(context.Context, *int32) ([]gen.StatsLensesRow, error) {
+func (stub *queries) StatsLenses(_ context.Context, arg gen.StatsLensesParams) ([]gen.StatsLensesRow, error) {
 	return []gen.StatsLensesRow{{Label: "50mm", Rolls: 2}}, stub.err()
 }
 
-func (stub *queries) StatsFilm(context.Context) ([]gen.StatsFilmRow, error) {
+func (stub *queries) StatsFilm(_ context.Context, _ uuid.UUID) ([]gen.StatsFilmRow, error) {
 	return []gen.StatsFilmRow{{Label: "Kodak Gold", Rolls: 4}}, stub.err()
 }
 
-func (stub *queries) StatsFilmByBase(context.Context) ([]gen.StatsFilmByBaseRow, error) {
+func (stub *queries) StatsFilmByBase(_ context.Context, _ uuid.UUID) ([]gen.StatsFilmByBaseRow, error) {
 	return []gen.StatsFilmByBaseRow{{Label: "Kodak", Rolls: 6}}, stub.err()
 }
 
-func (stub *queries) StatsTimeline(context.Context) ([]gen.StatsTimelineRow, error) {
+func (stub *queries) StatsTimeline(_ context.Context, _ uuid.UUID) ([]gen.StatsTimelineRow, error) {
 	return []gen.StatsTimelineRow{{Year: 2026, Month: 2, Rolls: 5}}, stub.err()
 }
 
-func (stub *queries) StatsFilmSpend(context.Context) ([]gen.StatsFilmSpendRow, error) {
+func (stub *queries) StatsFilmSpend(_ context.Context, _ uuid.UUID) ([]gen.StatsFilmSpendRow, error) {
 	return []gen.StatsFilmSpendRow{{Year: 2026, Month: 2, Cost: 100, Missing: 1}}, stub.err()
 }
 
-func (stub *queries) StatsProcessingSpend(context.Context) ([]gen.StatsProcessingSpendRow, error) {
+func (stub *queries) StatsProcessingSpend(_ context.Context, _ uuid.UUID) ([]gen.StatsProcessingSpendRow, error) {
 	return []gen.StatsProcessingSpendRow{{Year: 2026, Month: 2, Cost: 40}}, stub.err()
 }
 
