@@ -4,3 +4,13 @@
 /data
 coverage*.out
 .DS_Store
+.env.*
+
+
+# Agent skills
+.agents/
+.claude/skills/
+skills-lock.json
+
+# GitNexus code index (rebuilt by `gitnexus analyze`)
+.gitnexus/
