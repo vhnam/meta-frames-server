@@ -255,9 +255,14 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 			if err := validateScanOrders(input.Type, input.ScanOrders); err != nil {
 				return err
 			}
+			// the process can be corrected later; without one the job keeps its own
+			process := existing.Process
+			if input.Process != nil {
+				process = *input.Process
+			}
 			if _, err := queries.UpdateProcessing(ctx, gen.UpdateProcessingParams{
 				ID: jobID, LabID: input.LabID, SentAt: sentAt, ScansExpectedAt: input.ScansExpectedAt, NegativesExpectedAt: input.NegativesExpectedAt, Price: pointers.Int32(input.Price), Notes: pointers.TrimmedOrNil(input.Notes),
-				OwnerID: requestctx.Owner(ctx),
+				Process: process, OwnerID: requestctx.Owner(ctx),
 			}); err != nil {
 				return err
 			}
@@ -342,9 +347,6 @@ func (service *Service) RecordNegativesReturned(ctx context.Context, jobID uuid.
 		job, err := queries.GetProcessingForUpdate(ctx, gen.GetProcessingForUpdateParams{ID: jobID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return shared.NotFoundOr(err, "processing job")
-		}
-		if job.LabID == nil {
-			return apperror.Conflict("home_processing", "negatives of home-processed rolls do not need to be returned")
 		}
 		if _, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: job.RollID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return err

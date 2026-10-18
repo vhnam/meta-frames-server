@@ -1078,7 +1078,7 @@ paths:
                   process: C-41
                   packaging: factory
                   stockOrigin: USA
-                  description: Fine-grain portrait film
+                  description: "**Fine-grain** portrait film"
               respooled:
                 summary: Respooled stock that points at its base stock
                 value:
@@ -1225,7 +1225,7 @@ paths:
                   process: C-41
                   packaging: factory
                   stockOrigin: USA
-                  description: Fine-grain portrait film
+                  description: "**Fine-grain** portrait film"
               respooled:
                 summary: Respooled stock that points at its base stock
                 value:
@@ -2608,6 +2608,9 @@ paths:
       tags: [Processing]
       operationId: recordNegativesReturned
       summary: Record that negatives came back from the lab (UC-26)
+      description: >-
+        For a job processed at home (no lab), the date the negatives were developed. Either way it
+        closes a develop or print job.
       requestBody:
         content:
           application/json:
@@ -3520,7 +3523,7 @@ components:
         packaging: { $ref: "#/components/schemas/Packaging" }
         stockOrigin: { type: string }
         packOrigin: { type: string }
-        description: { type: string }
+        description: { type: string, format: markdown, description: Markdown text }
         baseStockId: { type: string, format: uuid }
       example:
         brand: Kodak
@@ -3530,7 +3533,7 @@ components:
         process: C-41
         packaging: factory
         stockOrigin: USA
-        description: Fine-grain portrait film
+        description: "**Fine-grain** portrait film"
 
     FilmStock:
       type: object
@@ -3545,7 +3548,7 @@ components:
         packaging: { $ref: "#/components/schemas/Packaging" }
         stockOrigin: { type: string }
         packOrigin: { type: string }
-        description: { type: string }
+        description: { type: string, format: markdown, description: Markdown text }
         baseStockId: { type: string, format: uuid }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -3965,7 +3968,11 @@ components:
       properties:
         labId: { type: string, format: uuid, description: Absent means processed at home }
         type: { $ref: "#/components/schemas/ProcessingType" }
-        process: { $ref: "#/components/schemas/Process" }
+        process:
+          allOf: [{ $ref: "#/components/schemas/Process" }]
+          description: >-
+            Defaults to the film stock's process for a new job. On an existing job it replaces the
+            process; absent keeps the current one.
         sentAt: { type: string, format: date, description: Defaults to today }
         scansExpectedAt:
           type: string

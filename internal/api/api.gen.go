@@ -386,15 +386,17 @@ type FilmStock struct {
 	BoxIso      int                 `json:"boxIso"`
 	Brand       string              `json:"brand"`
 	CreatedAt   time.Time           `json:"createdAt"`
-	Description *string             `json:"description,omitempty"`
-	Id          openapi_types.UUID  `json:"id"`
-	Name        string              `json:"name"`
-	PackOrigin  *string             `json:"packOrigin,omitempty"`
-	Packaging   Packaging           `json:"packaging"`
-	Process     Process             `json:"process"`
-	StockOrigin *string             `json:"stockOrigin,omitempty"`
-	Type        StockType           `json:"type"`
-	UpdatedAt   time.Time           `json:"updatedAt"`
+
+	// Description Markdown text
+	Description *string            `json:"description,omitempty"`
+	Id          openapi_types.UUID `json:"id"`
+	Name        string             `json:"name"`
+	PackOrigin  *string            `json:"packOrigin,omitempty"`
+	Packaging   Packaging          `json:"packaging"`
+	Process     Process            `json:"process"`
+	StockOrigin *string            `json:"stockOrigin,omitempty"`
+	Type        StockType          `json:"type"`
+	UpdatedAt   time.Time          `json:"updatedAt"`
 }
 
 // FilmStockDetail Example: {"baseStock":{"boxIso":400,"brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"},"derived":[],"siblings":[],"stock":{"baseStockId":"f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06","boxIso":400,"brand":"Respool Co.","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400 (respooled)","packaging":"respooled","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"},"warnings":[]}
@@ -413,18 +415,20 @@ type FilmStockDetail struct {
 	Warnings []string  `json:"warnings"`
 }
 
-// FilmStockInput Example: {"boxIso":400,"brand":"Kodak","description":"Fine-grain portrait film","name":"Portra 400","packaging":"factory","process":"C-41","stockOrigin":"USA","type":"color"}
+// FilmStockInput Example: {"boxIso":400,"brand":"Kodak","description":"**Fine-grain** portrait film","name":"Portra 400","packaging":"factory","process":"C-41","stockOrigin":"USA","type":"color"}
 type FilmStockInput struct {
 	BaseStockId *openapi_types.UUID `json:"baseStockId,omitempty"`
 	BoxIso      int                 `json:"boxIso"`
 	Brand       string              `json:"brand"`
-	Description *string             `json:"description,omitempty"`
-	Name        string              `json:"name"`
-	PackOrigin  *string             `json:"packOrigin,omitempty"`
-	Packaging   Packaging           `json:"packaging"`
-	Process     Process             `json:"process"`
-	StockOrigin *string             `json:"stockOrigin,omitempty"`
-	Type        StockType           `json:"type"`
+
+	// Description Markdown text
+	Description *string   `json:"description,omitempty"`
+	Name        string    `json:"name"`
+	PackOrigin  *string   `json:"packOrigin,omitempty"`
+	Packaging   Packaging `json:"packaging"`
+	Process     Process   `json:"process"`
+	StockOrigin *string   `json:"stockOrigin,omitempty"`
+	Type        StockType `json:"type"`
 }
 
 // FixedLensInput Example: {"brand":"Canon","focalLength":40,"maxAperture":1.7,"model":"40mm f/1.7"}
@@ -653,7 +657,9 @@ type ProcessingInput struct {
 	NegativesExpectedAt *openapi_types.Date `json:"negativesExpectedAt,omitempty"`
 	Notes               *string             `json:"notes,omitempty"`
 	Price               *int                `json:"price,omitempty"`
-	Process             *Process            `json:"process,omitempty"`
+
+	// Process Defaults to the film stock's process for a new job. On an existing job it replaces the process; absent keeps the current one.
+	Process *Process `json:"process,omitempty"`
 
 	// ScanOrders Replaces the current set. Required (at least one) for type scan and develop_scan; must be empty for develop and print.
 	ScanOrders *[]ScanOrderInput `json:"scanOrders,omitempty"`
