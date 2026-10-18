@@ -156,7 +156,7 @@ func TestProcessingMovesARollThroughTheLifecycle(test *testing.T) {
 	}
 }
 
-func TestHomeProcessingNeedsNoReturnedNegatives(test *testing.T) {
+func TestHomeProcessingRecordsTheDayNegativesWereDeveloped(test *testing.T) {
 	harness := newHarness(test)
 	seeded := seedGear(harness)
 	rollID := harness.finishedRoll(seeded)
@@ -164,11 +164,12 @@ func TestHomeProcessingNeedsNoReturnedNegatives(test *testing.T) {
 	homeJobID := newID()
 	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+homeJobID, map[string]any{"type": "develop"}), http.StatusCreated)
 	harness.expect(harness.call("PUT", "/processing/"+homeJobID+"/scans-received", nil), http.StatusConflict)
-	harness.expect(harness.call("PUT", "/processing/"+homeJobID+"/negatives-returned", nil), http.StatusConflict)
+	developed := harness.expect(harness.call("PUT", "/processing/"+homeJobID+"/negatives-returned", map[string]any{"date": "2026-10-01"}), http.StatusOK)
+	if developed.Body["isOpen"] != false || developed.Body["negativesReturnedAt"] != "2026-10-01" {
+		test.Fatalf("job = %s", developed.Raw)
+	}
 
 	// Closing a develop-only job leaves the roll developed (never scanned).
-	harness.execSQL(`UPDATE processing SET negatives_returned_at = CURRENT_DATE WHERE id = $1`, homeJobID)
-	harness.execSQL(`UPDATE roll SET status = 'developed' WHERE id = $1`, rollID)
 	if status := harness.rollStatus(rollID); status != "developed" {
 		test.Fatalf("status = %s", status)
 	}

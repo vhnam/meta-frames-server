@@ -657,7 +657,9 @@ type ProcessingInput struct {
 	NegativesExpectedAt *openapi_types.Date `json:"negativesExpectedAt,omitempty"`
 	Notes               *string             `json:"notes,omitempty"`
 	Price               *int                `json:"price,omitempty"`
-	Process             *Process            `json:"process,omitempty"`
+
+	// Process Defaults to the film stock's process for a new job. On an existing job it replaces the process; absent keeps the current one.
+	Process *Process `json:"process,omitempty"`
 
 	// ScanOrders Replaces the current set. Required (at least one) for type scan and develop_scan; must be empty for develop and print.
 	ScanOrders *[]ScanOrderInput `json:"scanOrders,omitempty"`

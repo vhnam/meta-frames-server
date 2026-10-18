@@ -2608,6 +2608,9 @@ paths:
       tags: [Processing]
       operationId: recordNegativesReturned
       summary: Record that negatives came back from the lab (UC-26)
+      description: >-
+        For a job processed at home (no lab), the date the negatives were developed. Either way it
+        closes a develop or print job.
       requestBody:
         content:
           application/json:
@@ -3965,7 +3968,11 @@ components:
       properties:
         labId: { type: string, format: uuid, description: Absent means processed at home }
         type: { $ref: "#/components/schemas/ProcessingType" }
-        process: { $ref: "#/components/schemas/Process" }
+        process:
+          allOf: [{ $ref: "#/components/schemas/Process" }]
+          description: >-
+            Defaults to the film stock's process for a new job. On an existing job it replaces the
+            process; absent keeps the current one.
         sentAt: { type: string, format: date, description: Defaults to today }
         scansExpectedAt:
           type: string

@@ -914,7 +914,7 @@ func (q *Queries) UpdateLab(ctx context.Context, arg UpdateLabParams) (Lab, erro
 }
 
 const updateProcessing = `-- name: UpdateProcessing :one
-UPDATE processing SET lab_id = $2, sent_at = $3, scans_expected_at = $4, negatives_expected_at = $5, price = $6, notes = $7
+UPDATE processing SET lab_id = $2, sent_at = $3, scans_expected_at = $4, negatives_expected_at = $5, price = $6, notes = $7, process = $9
 WHERE id = $1 AND owner_id = $8 AND deleted_at IS NULL RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at, owner_id
 `
 
@@ -927,6 +927,7 @@ type UpdateProcessingParams struct {
 	Price               *int32
 	Notes               *string
 	OwnerID             uuid.UUID
+	Process             string
 }
 
 func (q *Queries) UpdateProcessing(ctx context.Context, arg UpdateProcessingParams) (Processing, error) {
@@ -939,6 +940,7 @@ func (q *Queries) UpdateProcessing(ctx context.Context, arg UpdateProcessingPara
 		arg.Price,
 		arg.Notes,
 		arg.OwnerID,
+		arg.Process,
 	)
 	var i Processing
 	err := row.Scan(
