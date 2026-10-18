@@ -52,6 +52,24 @@ func TestProcessingSaveSendsTheRollAndUpdatesTheJob(test *testing.T) {
 	assertAppError(test, err, apperror.KindConflict, "job_immutable")
 }
 
+func TestProcessingSaveUpdatesTheProcessAndKeepsItWhenOmitted(test *testing.T) {
+	fixture := newProcessingFixture()
+	ctx := context.Background()
+	jobID := uuid.New()
+	if _, _, err := fixture.service.Save(ctx, fixture.rollID, jobID, Input{Type: domain.JobTypeDevelopScan, ScanOrders: noritsuOrder}); err != nil {
+		test.Fatal(err)
+	}
+
+	view, created, err := fixture.service.Save(ctx, fixture.rollID, jobID, Input{Type: domain.JobTypeDevelopScan, Process: pointers.To("ECN-2"), ScanOrders: noritsuOrder})
+	if err != nil || created || view.Job.Process != "ECN-2" {
+		test.Fatalf("update: view=%+v created=%v err=%v", view, created, err)
+	}
+	view, _, err = fixture.service.Save(ctx, fixture.rollID, jobID, Input{Type: domain.JobTypeDevelopScan, ScanOrders: noritsuOrder})
+	if err != nil || view.Job.Process != "ECN-2" {
+		test.Fatalf("omitted process: view=%+v err=%v", view, err)
+	}
+}
+
 func TestProcessingSaveUsesTheGivenProcessAndRejectsUnknownLabsAndRolls(test *testing.T) {
 	fixture := newProcessingFixture()
 	ctx := context.Background()
@@ -130,13 +148,16 @@ func jobFixture(queries *memoryQueries, jobType string, labID *uuid.UUID) (rollI
 	return rollID, jobID
 }
 
-func TestRecordNegativesReturnedIsNotNeededForHomeProcessing(test *testing.T) {
+func TestRecordNegativesReturnedClosesHomeDevelopJobs(test *testing.T) {
 	queries := newMemoryQueries()
 	service := New(testutil.Store{Querier: queries}, fixedClock())
 	_, jobID := jobFixture(queries, domain.JobTypeDevelop, nil)
+	developedOn := day(2026, time.October, 1)
 
-	_, err := service.RecordNegativesReturned(context.Background(), jobID, nil)
-	assertAppError(test, err, apperror.KindConflict, "home_processing")
+	view, err := service.RecordNegativesReturned(context.Background(), jobID, &developedOn)
+	if err != nil || view.IsOpen || view.Job.NegativesReturnedAt == nil || !view.Job.NegativesReturnedAt.Equal(developedOn) {
+		test.Fatalf("view=%+v err=%v", view, err)
+	}
 }
 
 func TestRecordNegativesReturnedDefaultsToTodayAndClosesDevelopOnlyJobs(test *testing.T) {

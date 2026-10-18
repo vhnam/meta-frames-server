@@ -621,6 +621,7 @@ func (queries *Memory) InsertProcessing(_ context.Context, arg gen.InsertProcess
 func (queries *Memory) UpdateProcessing(_ context.Context, arg gen.UpdateProcessingParams) (gen.Processing, error) {
 	job := queries.Jobs[arg.ID]
 	job.LabID, job.SentAt, job.ScansExpectedAt, job.NegativesExpectedAt, job.Price, job.Notes = arg.LabID, arg.SentAt, arg.ScansExpectedAt, arg.NegativesExpectedAt, arg.Price, arg.Notes
+	job.Process = arg.Process
 	queries.Jobs[arg.ID] = job
 	return job, nil
 }

@@ -33,7 +33,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING *;
 
 -- name: UpdateProcessing :one
-UPDATE processing SET lab_id = $2, sent_at = $3, scans_expected_at = $4, negatives_expected_at = $5, price = $6, notes = $7
+UPDATE processing SET lab_id = $2, sent_at = $3, scans_expected_at = $4, negatives_expected_at = $5, price = $6, notes = $7, process = $9
 WHERE id = $1 AND owner_id = $8 AND deleted_at IS NULL RETURNING *;
 
 -- name: SetScansReceived :one
