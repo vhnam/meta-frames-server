@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `make run-prod` runs the local server with `DATABASE_URL` from `.env.prod`. Other settings still come from `.env`.
+- Film stock `description` is documented as Markdown text in the API spec (`format: markdown`). The server stores it unchanged.
+
+### Fixed
+
+- `PUT /rolls/{id}/processing/{jobId}` on an existing job saves a changed `process`. It was ignored before; leaving `process` out keeps the job's current one.
+- `PUT /processing/{id}/negatives-returned` accepts a job processed at home and records the day its negatives were developed, which closes a home develop job. It returned `409 home_processing` before, so home develop jobs stayed open.
+
 ## [2.0.0] - 2026-10-08
 
 ### Added
