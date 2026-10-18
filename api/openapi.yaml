@@ -1078,7 +1078,7 @@ paths:
                   process: C-41
                   packaging: factory
                   stockOrigin: USA
-                  description: Fine-grain portrait film
+                  description: "**Fine-grain** portrait film"
               respooled:
                 summary: Respooled stock that points at its base stock
                 value:
@@ -1225,7 +1225,7 @@ paths:
                   process: C-41
                   packaging: factory
                   stockOrigin: USA
-                  description: Fine-grain portrait film
+                  description: "**Fine-grain** portrait film"
               respooled:
                 summary: Respooled stock that points at its base stock
                 value:
@@ -3520,7 +3520,7 @@ components:
         packaging: { $ref: "#/components/schemas/Packaging" }
         stockOrigin: { type: string }
         packOrigin: { type: string }
-        description: { type: string }
+        description: { type: string, format: markdown, description: Markdown text }
         baseStockId: { type: string, format: uuid }
       example:
         brand: Kodak
@@ -3530,7 +3530,7 @@ components:
         process: C-41
         packaging: factory
         stockOrigin: USA
-        description: Fine-grain portrait film
+        description: "**Fine-grain** portrait film"
 
     FilmStock:
       type: object
@@ -3545,7 +3545,7 @@ components:
         packaging: { $ref: "#/components/schemas/Packaging" }
         stockOrigin: { type: string }
         packOrigin: { type: string }
-        description: { type: string }
+        description: { type: string, format: markdown, description: Markdown text }
         baseStockId: { type: string, format: uuid }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
