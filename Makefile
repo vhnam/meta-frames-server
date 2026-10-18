@@ -1,4 +1,4 @@
-.PHONY: gen run dev test test-unit cover lint docker-build db-up db-down db-reset
+.PHONY: gen run run-prod dev test test-unit cover lint docker-build db-up db-down db-reset
 
 # Exports the settings in .env (if present) to the server. The shell reads the file, so
 # "KEY=value   # comment" lines work; values in .env win over the current environment.
@@ -10,6 +10,17 @@ gen:
 
 run:
 	$(LOAD_ENV) go run ./cmd/api
+
+# Local server against the production database. Other settings still come from .env;
+# only DATABASE_URL is taken from .env.prod, so ENV=production there does not apply.
+# The value is read literally: sourcing the file would expand $ in the password.
+run-prod:
+	test -f .env.prod || { echo ".env.prod is missing" >&2; exit 1; }
+	$(LOAD_ENV) \
+	DATABASE_URL="$$(awk -F= '/^DATABASE_URL=/{sub(/^[^=]*=/,""); sub(/[[:space:]]+#.*/,"",$$0); print; exit}' .env.prod)"; \
+	test -n "$$DATABASE_URL" || { echo "DATABASE_URL is empty in .env.prod" >&2; exit 1; }; \
+	export DATABASE_URL; \
+	go run ./cmd/api
 
 dev:
 	$(LOAD_ENV) go tool air -c configs/air.toml 2>/dev/null || air -c configs/air.toml
