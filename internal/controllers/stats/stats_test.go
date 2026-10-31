@@ -3,6 +3,7 @@ package stats
 import (
 	"context"
 	"errors"
+	"meta-frames-server/internal/common/pointers"
 	"testing"
 
 	"github.com/google/uuid"
@@ -33,7 +34,7 @@ func (stub *queries) ListRollSummaries(context.Context, gen.ListRollSummariesPar
 }
 
 func (stub *queries) ListRollScans(_ context.Context, arg gen.ListRollScansParams) ([]gen.ListRollScansRow, error) {
-	return []gen.ListRollScansRow{{ID: uuid.New(), FrameNumber: 7, Scanner: domain.ScannerNoritsu}}, stub.err()
+	return []gen.ListRollScansRow{{ID: uuid.New(), FrameNumber: 7, ScannerID: domain.ScannerNoritsuHS1800, ScannerBrand: "Noritsu", ScannerModel: pointers.To("HS-1800")}}, stub.err()
 }
 
 func (stub *queries) StatsCameras(_ context.Context, arg gen.StatsCamerasParams) ([]gen.StatsCamerasRow, error) {

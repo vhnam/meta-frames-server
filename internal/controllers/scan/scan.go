@@ -13,24 +13,35 @@ import (
 	"meta-frames-server/internal/common/apperror"
 	"meta-frames-server/internal/common/convert"
 	"meta-frames-server/internal/common/pointers"
+	"meta-frames-server/internal/db/gen"
 	"meta-frames-server/internal/domain"
 	scansvc "meta-frames-server/internal/services/scan"
+	scannersvc "meta-frames-server/internal/services/scanner"
+
+	"github.com/google/uuid"
 )
 
 // Controller serves the scan endpoints.
 type Controller struct {
-	scans *scansvc.Service
+	scans    *scansvc.Service
+	scanners *scannersvc.Service
 }
 
-// New builds the controller around its service.
-func New(scans *scansvc.Service) *Controller { return &Controller{scans: scans} }
+// New builds the controller around its services; scanners resolves the scanner a request names.
+func New(scans *scansvc.Service, scanners *scannersvc.Service) *Controller {
+	return &Controller{scans: scans, scanners: scanners}
+}
+
+func toAPIScannerCode(scannerID uuid.UUID) api.ScannerCode {
+	return api.ScannerCode(domain.ScannerCode(scannerID))
+}
 
 func toAPIScan(view scansvc.View) api.Scan {
 	scan := view.Scan
 	return api.Scan{
 		Id: scan.ID, ProcessingId: scan.ProcessingID, FrameId: scan.FrameID, FrameNumber: int(view.FrameNumber),
-		Scanner: api.Scanner(scan.Scanner), FileName: scan.FileName, SizeBytes: scan.SizeBytes,
-		FileUrl: "/scans/" + scan.ID.String() + "/file",
+		Scanner: toAPIScannerCode(scan.ScannerID), ScannerId: scan.ScannerID, ScannerName: view.ScannerName,
+		FileName: scan.FileName, SizeBytes: scan.SizeBytes, FileUrl: "/scans/" + scan.ID.String() + "/file",
 	}
 }
 
@@ -38,7 +49,10 @@ func ToAPIScanRefs(refs []scansvc.RefView) []api.ScanRef {
 	mapped := make([]api.ScanRef, len(refs))
 	for index, ref := range refs {
 		processingID := ref.ProcessingID
-		mapped[index] = api.ScanRef{Id: ref.ID, FrameNumber: int(ref.FrameNumber), Scanner: api.Scanner(ref.Scanner), ProcessingId: &processingID}
+		mapped[index] = api.ScanRef{
+			Id: ref.ID, FrameNumber: int(ref.FrameNumber), ProcessingId: &processingID,
+			Scanner: toAPIScannerCode(ref.ScannerID), ScannerId: ref.ScannerID, ScannerName: ref.ScannerName,
+		}
 	}
 	return mapped
 }
@@ -56,11 +70,19 @@ func (controller *Controller) PutFrame(ctx context.Context, request api.PutFrame
 }
 
 func (controller *Controller) ListProcessingScans(ctx context.Context, request api.ListProcessingScansRequestObject) (api.ListProcessingScansResponseObject, error) {
-	var scanner *string
-	if request.Params.Scanner != nil {
-		scanner = pointers.To(string(*request.Params.Scanner))
+	var scannerID *uuid.UUID
+	if request.Params.ScannerId != nil || request.Params.Scanner != nil {
+		var code *string
+		if request.Params.Scanner != nil {
+			code = pointers.To(string(*request.Params.Scanner))
+		}
+		picked, err := controller.scanners.Pick(ctx, request.Params.ScannerId, code)
+		if err != nil {
+			return nil, err
+		}
+		scannerID = &picked
 	}
-	views, err := controller.scans.ListScans(ctx, request.Id, scanner)
+	views, err := controller.scans.ListScans(ctx, request.Id, scannerID)
 	if err != nil {
 		return nil, err
 	}
@@ -95,11 +117,14 @@ func (controller *Controller) CompareFrame(ctx context.Context, request api.Comp
 		return nil, err
 	}
 	mapped := api.FrameComparison{
-		FrameNumber: comparison.FrameNumber, Missing: make([]api.Scanner, len(comparison.Missing)),
+		FrameNumber: comparison.FrameNumber, Scans: make([]api.Scan, len(comparison.Scans)), Missing: make([]api.ScannerCode, len(comparison.Missing)),
 		PreviousFrameNumber: comparison.PreviousFrameNumber, NextFrameNumber: comparison.NextFrameNumber,
 	}
-	for index, scanner := range comparison.Missing {
-		mapped.Missing[index] = api.Scanner(scanner)
+	for index, scan := range comparison.Scans {
+		mapped.Scans[index] = toAPIScan(scan)
+	}
+	for index, code := range comparison.Missing {
+		mapped.Missing[index] = api.ScannerCode(code)
 	}
 	if comparison.Noritsu != nil {
 		mapped.Noritsu = pointers.To(toAPIScan(*comparison.Noritsu))
@@ -112,20 +137,31 @@ func (controller *Controller) CompareFrame(ctx context.Context, request api.Comp
 
 // ---- import ----
 
-// importForm collects the plain fields of the multipart import request.
+// importForm collects the plain fields of the multipart import request. The scanner is named by
+// scannerId or by the old scanner code; scannerChanged marks a scanner field read since the last file.
 type importForm struct {
-	scanner         string
+	scannerID       *uuid.UUID
+	scannerCode     *string
+	scannerChanged  bool
 	replaceExisting bool
 	pendingFrame    *int
 }
 
+func (form *importForm) hasScanner() bool { return form.scannerID != nil || form.scannerCode != nil }
+
 // readFormField applies one non-file multipart field, returning an error for invalid values.
 func (form *importForm) readFormField(name, value string) error {
 	switch name {
+	case "scannerId":
+		scannerID, err := uuid.Parse(value)
+		if err != nil {
+			return apperror.Unprocessable("invalid_scanner", "scannerId must be a uuid")
+		}
+		form.scannerID, form.scannerChanged = &scannerID, true
 	case "scanner":
 		switch value {
-		case domain.ScannerNoritsu, domain.ScannerFrontier, domain.ScannerOther:
-			form.scanner = value
+		case domain.ScannerCodeNoritsu, domain.ScannerCodeFrontier, domain.ScannerCodeOther:
+			form.scannerCode, form.scannerChanged = &value, true
 		default:
 			return apperror.Unprocessable("invalid_scanner", "scanner must be noritsu, frontier or other")
 		}
@@ -165,8 +201,8 @@ func readFieldValue(reader io.Reader) string {
 }
 
 // ImportScans attaches uploaded files to frames of the job's roll (UC-30).
-// Multipart order matters: scanner (and onConflict) first, then an optional frameNumber field
-// directly before each file part.
+// Multipart order matters: scannerId or scanner (and onConflict) first, then an optional frameNumber
+// field directly before each file part.
 func (controller *Controller) ImportScans(ctx context.Context, request api.ImportScansRequestObject) (api.ImportScansResponseObject, error) {
 	job, err := controller.scans.PrepareImport(ctx, request.Id)
 	if err != nil {
@@ -181,7 +217,7 @@ func (controller *Controller) ImportScans(ctx context.Context, request api.Impor
 		result = api.ImportResult{Imported: []api.Scan{}, Skipped: []api.ImportFailure{}, Failed: []api.ImportFailure{}}
 		files  int
 
-		checkedScanner string
+		scanner gen.Scanner
 	)
 	for {
 		part, err := request.Body.NextPart()
@@ -198,14 +234,18 @@ func (controller *Controller) ImportScans(ctx context.Context, request api.Impor
 			continue
 		}
 
-		if form.scanner == "" {
+		if !form.hasScanner() {
 			return nil, apperror.Unprocessable("scanner_first", "the scanner field must come before the files")
 		}
-		if checkedScanner != form.scanner {
-			if err := controller.scans.CheckScannerOrdered(ctx, job.ID, form.scanner); err != nil {
+		if form.scannerChanged {
+			scannerID, err := controller.scanners.Pick(ctx, form.scannerID, form.scannerCode)
+			if err != nil {
 				return nil, err
 			}
-			checkedScanner = form.scanner
+			if scanner, err = controller.scans.OrderedScanner(ctx, job.ID, scannerID); err != nil {
+				return nil, err
+			}
+			form.scannerChanged = false
 		}
 		files++
 		fileName := part.FileName()
@@ -214,7 +254,7 @@ func (controller *Controller) ImportScans(ctx context.Context, request api.Impor
 			result.Failed = append(result.Failed, api.ImportFailure{FileName: fileName, Reason: "no frame number; send a frameNumber field"})
 			continue
 		}
-		outcome, err := controller.scans.ImportFile(ctx, job, scansvc.ImportOptions{Scanner: form.scanner, ReplaceExisting: form.replaceExisting}, frameNumber, fileName, part)
+		outcome, err := controller.scans.ImportFile(ctx, job, scansvc.ImportOptions{Scanner: scanner, ReplaceExisting: form.replaceExisting}, frameNumber, fileName, part)
 		var rejected *scansvc.FileRejectedError
 		switch {
 		case errors.As(err, &rejected):
@@ -227,8 +267,8 @@ func (controller *Controller) ImportScans(ctx context.Context, request api.Impor
 			result.Imported = append(result.Imported, toAPIScan(*outcome.Scan))
 		}
 	}
-	if form.scanner == "" {
-		return nil, apperror.Unprocessable("invalid_scanner", "scanner is required")
+	if !form.hasScanner() {
+		return nil, apperror.Unprocessable("invalid_scanner", "scannerId or scanner is required")
 	}
 	if files == 0 {
 		return nil, apperror.Unprocessable("no_files", "no files uploaded")

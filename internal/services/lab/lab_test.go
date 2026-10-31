@@ -16,7 +16,7 @@ func TestLabGet(test *testing.T) {
 	service, queries := newLabService()
 	id := uuid.New()
 	queries.labs[id] = gen.Lab{ID: id, Name: "Lab A"}
-	if lab, err := service.Get(context.Background(), id); err != nil || lab.Name != "Lab A" {
+	if lab, err := service.Get(context.Background(), id); err != nil || lab.Lab.Name != "Lab A" {
 		test.Fatalf("lab=%+v err=%v", lab, err)
 	}
 	assertAppError(test, func() error { _, err := service.Get(context.Background(), uuid.New()); return err }(), apperror.KindNotFound, "not_found")
@@ -75,6 +75,11 @@ func (queries *labQueries) LabHasProcessing(_ context.Context, arg gen.LabHasPro
 	return queries.inUse, nil
 }
 
+// The stub labs run no scanners.
+func (queries *labQueries) ListLabScanners(context.Context, uuid.UUID) ([]gen.ListLabScannersRow, error) {
+	return nil, nil
+}
+
 func (queries *labQueries) SoftDeleteLab(_ context.Context, arg gen.SoftDeleteLabParams) (int64, error) {
 	id := arg.ID
 	queries.deleted = append(queries.deleted, id)
@@ -91,34 +96,34 @@ func TestLabCreateTrimsAndUpdateEditsInPlace(test *testing.T) {
 	service, queries := newLabService()
 	id := uuid.New()
 	address := "  1 Main St "
-	lab, err := service.Create(context.Background(), id, "  Lab A ", &address)
-	if err != nil || lab.Name != "Lab A" || *lab.Address != "1 Main St" {
+	lab, err := service.Create(context.Background(), id, Input{Name: "  Lab A ", Address: &address})
+	if err != nil || lab.Lab.Name != "Lab A" || *lab.Lab.Address != "1 Main St" {
 		test.Fatalf("lab=%+v err=%v", lab, err)
 	}
-	updated, err := service.Update(context.Background(), id, "Lab B", nil)
-	if err != nil || updated.Name != "Lab B" || updated.Address != nil || len(queries.labs) != 1 {
+	updated, err := service.Update(context.Background(), id, Input{Name: "Lab B"})
+	if err != nil || updated.Lab.Name != "Lab B" || updated.Lab.Address != nil || len(queries.labs) != 1 {
 		test.Fatalf("updated=%+v err=%v", updated, err)
 	}
 }
 
 func TestLabUpdateRequiresAnExistingLab(test *testing.T) {
 	service, _ := newLabService()
-	_, err := service.Update(context.Background(), uuid.New(), "Lab", nil)
+	_, err := service.Update(context.Background(), uuid.New(), Input{Name: "Lab"})
 	assertAppError(test, err, apperror.KindNotFound, "not_found")
 }
 
 func TestLabCreateAndUpdateRejectBlankNames(test *testing.T) {
 	service, _ := newLabService()
-	_, err := service.Create(context.Background(), uuid.New(), "   ", nil)
+	_, err := service.Create(context.Background(), uuid.New(), Input{Name: "   "})
 	assertAppError(test, err, apperror.KindUnprocessable, "missing_fields")
-	_, err = service.Update(context.Background(), uuid.New(), "   ", nil)
+	_, err = service.Update(context.Background(), uuid.New(), Input{Name: "   "})
 	assertAppError(test, err, apperror.KindUnprocessable, "missing_fields")
 }
 
 func TestLabCreateReportsDuplicateIDsAndStoreErrors(test *testing.T) {
 	service, queries := newLabService()
 	queries.failOn = "upsert"
-	if _, err := service.Create(context.Background(), uuid.New(), "x", nil); !errors.Is(err, errBoom) {
+	if _, err := service.Create(context.Background(), uuid.New(), Input{Name: "x"}); !errors.Is(err, errBoom) {
 		test.Fatalf("create err = %v", err)
 	}
 	queries.failOn = "list"

@@ -42,6 +42,14 @@ type ScanFile struct {
 
 // ---- shared queries ----
 
+// ToRefView is the short form of a scan listed with its roll.
+func ToRefView(row gen.ListRollScansRow) RefView {
+	return RefView{
+		ID: row.ID, ProcessingID: row.ProcessingID, FrameNumber: row.FrameNumber,
+		ScannerID: row.ScannerID, ScannerName: domain.ScannerName(row.ScannerBrand, row.ScannerModel),
+	}
+}
+
 func BuildFrameViews(ctx context.Context, queries gen.Querier, rollID uuid.UUID) ([]FrameView, error) {
 	frames, err := queries.ListFrames(ctx, gen.ListFramesParams{RollID: rollID, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
@@ -53,9 +61,7 @@ func BuildFrameViews(ctx context.Context, queries gen.Querier, rollID uuid.UUID)
 	}
 	scansByFrame := map[uuid.UUID][]RefView{}
 	for _, scan := range scans {
-		scansByFrame[scan.FrameID] = append(scansByFrame[scan.FrameID], RefView{
-			ID: scan.ID, ProcessingID: scan.ProcessingID, FrameNumber: scan.FrameNumber, Scanner: scan.Scanner,
-		})
+		scansByFrame[scan.FrameID] = append(scansByFrame[scan.FrameID], ToRefView(scan))
 	}
 	views := make([]FrameView, len(frames))
 	for index, frame := range frames {
@@ -103,20 +109,21 @@ func (service *Service) SaveFrameNotes(ctx context.Context, rollID uuid.UUID, nu
 func toScanView(row gen.ListProcessingScansRow) View {
 	return View{
 		Scan: gen.Scan{
-			ID: row.ID, ProcessingID: row.ProcessingID, FrameID: row.FrameID, Scanner: row.Scanner, FileKey: row.FileKey,
+			ID: row.ID, ProcessingID: row.ProcessingID, FrameID: row.FrameID, ScannerID: row.ScannerID, FileKey: row.FileKey,
 			FileName: row.FileName, ContentType: row.ContentType, SizeBytes: row.SizeBytes, CreatedAt: row.CreatedAt,
 		},
 		FrameNumber: row.FrameNumber,
+		ScannerName: domain.ScannerName(row.ScannerBrand, row.ScannerModel),
 	}
 }
 
-// ListScans returns the scan grid of a job ordered by frame number (UC-32).
-func (service *Service) ListScans(ctx context.Context, jobID uuid.UUID, scanner *string) ([]View, error) {
+// ListScans returns the scan grid of a job ordered by frame number (UC-32), optionally for one scanner.
+func (service *Service) ListScans(ctx context.Context, jobID uuid.UUID, scannerID *uuid.UUID) ([]View, error) {
 	queries := service.store.Queries()
 	if _, err := queries.GetProcessing(ctx, gen.GetProcessingParams{ID: jobID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 		return nil, shared.NotFoundOr(err, "processing job")
 	}
-	rows, err := queries.ListProcessingScans(ctx, gen.ListProcessingScansParams{ProcessingID: jobID, Scanner: scanner, OwnerID: requestctx.Owner(ctx)})
+	rows, err := queries.ListProcessingScans(ctx, gen.ListProcessingScansParams{ProcessingID: jobID, ScannerID: scannerID, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return nil, err
 	}
@@ -127,35 +134,34 @@ func (service *Service) ListScans(ctx context.Context, jobID uuid.UUID, scanner 
 	return views, nil
 }
 
-// Compare returns both scanners' scans for one frame of a job, with its neighbours (UC-33).
+// Compare returns every scanner's scan of one frame of a job, with its neighbours (UC-33).
 func (service *Service) Compare(ctx context.Context, jobID uuid.UUID, frameNumber int) (FrameComparison, error) {
 	scans, err := service.ListScans(ctx, jobID, nil)
 	if err != nil {
 		return FrameComparison{}, err
 	}
-	comparison := FrameComparison{FrameNumber: frameNumber, Missing: []string{}}
-	found := false
+	comparison := FrameComparison{FrameNumber: frameNumber, Scans: []View{}, Missing: []string{}}
 	for index := range scans {
 		scan := scans[index]
 		if int(scan.FrameNumber) != frameNumber {
 			continue
 		}
-		found = true
-		switch scan.Scan.Scanner {
-		case domain.ScannerNoritsu:
+		comparison.Scans = append(comparison.Scans, scan)
+		switch scan.Scan.ScannerID {
+		case domain.ScannerNoritsuHS1800:
 			comparison.Noritsu = &scan
-		case domain.ScannerFrontier:
+		case domain.ScannerFrontierSP3000:
 			comparison.Frontier = &scan
 		}
 	}
-	if !found {
+	if len(comparison.Scans) == 0 {
 		return FrameComparison{}, apperror.NotFound("frame")
 	}
 	if comparison.Noritsu == nil {
-		comparison.Missing = append(comparison.Missing, domain.ScannerNoritsu)
+		comparison.Missing = append(comparison.Missing, domain.ScannerCodeNoritsu)
 	}
 	if comparison.Frontier == nil {
-		comparison.Missing = append(comparison.Missing, domain.ScannerFrontier)
+		comparison.Missing = append(comparison.Missing, domain.ScannerCodeFrontier)
 	}
 
 	numbers, err := service.store.Queries().ListJobFrameNumbers(ctx, gen.ListJobFrameNumbersParams{ProcessingID: jobID, OwnerID: requestctx.Owner(ctx)})
@@ -217,16 +223,18 @@ func (service *Service) PrepareImport(ctx context.Context, jobID uuid.UUID) (gen
 	return job, nil
 }
 
-// CheckScannerOrdered rejects an import for a scanner that was not ordered on the job.
-func (service *Service) CheckScannerOrdered(ctx context.Context, jobID uuid.UUID, scanner string) error {
-	ordered, err := service.store.Queries().ScanOrderExists(ctx, gen.ScanOrderExistsParams{ProcessingID: jobID, Scanner: scanner})
+// OrderedScanner returns the scanner to import for, rejecting one that was not ordered on the job.
+func (service *Service) OrderedScanner(ctx context.Context, jobID, scannerID uuid.UUID) (gen.Scanner, error) {
+	queries := service.store.Queries()
+	ordered, err := queries.ScanOrderExists(ctx, gen.ScanOrderExistsParams{ProcessingID: jobID, ScannerID: scannerID})
 	if err != nil {
-		return err
+		return gen.Scanner{}, err
 	}
 	if !ordered {
-		return apperror.Unprocessable("scanner_not_ordered", "this scanner was not ordered for the job")
+		return gen.Scanner{}, apperror.Unprocessable("scanner_not_ordered", "this scanner was not ordered for the job")
 	}
-	return nil
+	scanner, err := queries.GetScanner(ctx, gen.GetScannerParams{ID: scannerID, OwnerID: requestctx.Owner(ctx)})
+	return scanner, shared.NotFoundOr(err, "scanner")
 }
 
 // ImportFile stores one file and records its scan. Each file commits on its own so earlier
@@ -251,8 +259,9 @@ func (service *Service) ImportFile(ctx context.Context, job gen.Processing, opti
 	}
 
 	var (
-		outcome    ImportOutcome
-		replacedID string
+		outcome     ImportOutcome
+		replacedID  string
+		scannerName = domain.ScannerName(options.Scanner.Brand, options.Scanner.Model)
 	)
 	err = service.store.InTransaction(ctx, func(queries gen.Querier) error {
 		if _, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: job.RollID, OwnerID: requestctx.Owner(ctx)}); err != nil {
@@ -262,7 +271,7 @@ func (service *Service) ImportFile(ctx context.Context, job gen.Processing, opti
 		if err != nil {
 			return err
 		}
-		existing, lookupErr := queries.GetScanSlot(ctx, gen.GetScanSlotParams{ProcessingID: job.ID, FrameID: frame.ID, Scanner: options.Scanner, OwnerID: requestctx.Owner(ctx)})
+		existing, lookupErr := queries.GetScanSlot(ctx, gen.GetScanSlotParams{ProcessingID: job.ID, FrameID: frame.ID, ScannerID: options.Scanner.ID, OwnerID: requestctx.Owner(ctx)})
 		switch {
 		case lookupErr == nil && !options.ReplaceExisting:
 			outcome.Skipped = true
@@ -273,15 +282,15 @@ func (service *Service) ImportFile(ctx context.Context, job gen.Processing, opti
 				ID: existing.ID, FileKey: fileKey, FileName: fileName, ContentType: contentType, SizeBytes: size,
 				OwnerID: requestctx.Owner(ctx),
 			})
-			outcome.Scan = &View{Scan: scan, FrameNumber: frame.Number}
+			outcome.Scan = &View{Scan: scan, FrameNumber: frame.Number, ScannerName: scannerName}
 			return err
 		case db.IsNoRows(lookupErr):
 			scan, err := queries.InsertScan(ctx, gen.InsertScanParams{
-				ID: scanID, ProcessingID: job.ID, FrameID: frame.ID, Scanner: options.Scanner,
+				ID: scanID, ProcessingID: job.ID, FrameID: frame.ID, ScannerID: options.Scanner.ID,
 				FileKey: fileKey, FileName: fileName, ContentType: contentType, SizeBytes: size,
 				OwnerID: requestctx.Owner(ctx),
 			})
-			outcome.Scan = &View{Scan: scan, FrameNumber: frame.Number}
+			outcome.Scan = &View{Scan: scan, FrameNumber: frame.Number, ScannerName: scannerName}
 			return err
 		default:
 			return lookupErr
@@ -338,7 +347,11 @@ func (service *Service) Get(ctx context.Context, scanID uuid.UUID) (View, error)
 	if err != nil {
 		return View{}, err
 	}
-	return View{Scan: scan, FrameNumber: frame.Number}, nil
+	scanner, err := queries.GetScanner(ctx, gen.GetScannerParams{ID: scan.ScannerID, OwnerID: requestctx.Owner(ctx)})
+	if err != nil {
+		return View{}, err
+	}
+	return View{Scan: scan, FrameNumber: frame.Number, ScannerName: domain.ScannerName(scanner.Brand, scanner.Model)}, nil
 }
 
 // Delete soft-deletes a scan. The image stays in storage so the delete can be undone.

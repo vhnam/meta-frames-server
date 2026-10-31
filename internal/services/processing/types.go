@@ -2,6 +2,7 @@ package processing
 
 import (
 	"meta-frames-server/internal/db/gen"
+	"meta-frames-server/internal/domain"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,15 +23,18 @@ type Input struct {
 	ScanOrders []ScanOrderInput
 }
 
+// ScanOrderInput orders a scanner. Nil Settings keep the order's current settings, or start a
+// new order from the scanner's default settings.
 type ScanOrderInput struct {
-	Scanner string
-	HiRes   bool
+	ScannerID uuid.UUID
+	Settings  domain.ScanSettings
 }
 
 type ScanOrder struct {
-	Scanner   string
-	HiRes     bool
-	ScanCount int
+	ScannerID   uuid.UUID
+	ScannerName string
+	Settings    domain.ScanSettings
+	ScanCount   int
 }
 
 type View struct {

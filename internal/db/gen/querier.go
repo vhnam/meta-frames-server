@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	BuiltInScannerNamed(ctx context.Context, arg BuiltInScannerNamedParams) (bool, error)
 	CameraIsLoaded(ctx context.Context, arg CameraIsLoadedParams) (bool, error)
 	ClaimIdempotencyKey(ctx context.Context, arg ClaimIdempotencyKeyParams) (int64, error)
 	// Hands records created before accounts existed to a new account (see 00010_ownership.sql).
@@ -18,6 +19,7 @@ type Querier interface {
 	CountCameraRolls(ctx context.Context, arg CountCameraRollsParams) (int64, error)
 	DeleteCameraLensesExcept(ctx context.Context, arg DeleteCameraLensesExceptParams) error
 	DeleteExpiredSessions(ctx context.Context) error
+	DeleteLabScannersExcept(ctx context.Context, arg DeleteLabScannersExceptParams) error
 	DeleteRollLensesExcept(ctx context.Context, arg DeleteRollLensesExceptParams) error
 	DeleteScanOrder(ctx context.Context, arg DeleteScanOrderParams) (int64, error)
 	DeleteSession(ctx context.Context, tokenHash []byte) error
@@ -40,12 +42,14 @@ type Querier interface {
 	GetLens(ctx context.Context, arg GetLensParams) (Lens, error)
 	GetLensForUpdate(ctx context.Context, arg GetLensForUpdateParams) (Lens, error)
 	GetLensesByIDs(ctx context.Context, arg GetLensesByIDsParams) ([]Lens, error)
+	GetOwnScannerNamed(ctx context.Context, arg GetOwnScannerNamedParams) (Scanner, error)
 	GetProcessing(ctx context.Context, arg GetProcessingParams) (Processing, error)
 	GetProcessingForUpdate(ctx context.Context, arg GetProcessingForUpdateParams) (Processing, error)
 	GetRoll(ctx context.Context, arg GetRollParams) (Roll, error)
 	GetRollForUpdate(ctx context.Context, arg GetRollForUpdateParams) (Roll, error)
 	GetScan(ctx context.Context, arg GetScanParams) (Scan, error)
 	GetScanSlot(ctx context.Context, arg GetScanSlotParams) (Scan, error)
+	GetScanner(ctx context.Context, arg GetScannerParams) (Scanner, error)
 	GetSessionUser(ctx context.Context, tokenHash []byte) (AppUser, error)
 	GetUserByEmail(ctx context.Context, email string) (AppUser, error)
 	GetUserByOAuth2(ctx context.Context, arg GetUserByOAuth2Params) (AppUser, error)
@@ -61,6 +65,7 @@ type Querier interface {
 	// The roll and lenses are checked to belong to the account before these run.
 	InsertRollLens(ctx context.Context, arg InsertRollLensParams) error
 	InsertScan(ctx context.Context, arg InsertScanParams) (Scan, error)
+	InsertScanner(ctx context.Context, arg InsertScannerParams) (Scanner, error)
 	InsertSession(ctx context.Context, arg InsertSessionParams) error
 	InsertUser(ctx context.Context, arg InsertUserParams) (AppUser, error)
 	InventoryRows(ctx context.Context, arg InventoryRowsParams) ([]InventoryRowsRow, error)
@@ -73,9 +78,10 @@ type Querier interface {
 	ListCameras(ctx context.Context, ownerID uuid.UUID) ([]Camera, error)
 	ListDerivedStocks(ctx context.Context, arg ListDerivedStocksParams) ([]FilmStock, error)
 	ListFilmStocks(ctx context.Context, arg ListFilmStocksParams) ([]FilmStock, error)
-	ListFrameScans(ctx context.Context, arg ListFrameScansParams) ([]Scan, error)
 	ListFrames(ctx context.Context, arg ListFramesParams) ([]Frame, error)
 	ListJobFrameNumbers(ctx context.Context, arg ListJobFrameNumbersParams) ([]int32, error)
+	// Scanners of the account's labs, each lab's in the order they were given.
+	ListLabScanners(ctx context.Context, ownerID uuid.UUID) ([]ListLabScannersRow, error)
 	ListLabs(ctx context.Context, ownerID uuid.UUID) ([]Lab, error)
 	ListLenses(ctx context.Context, arg ListLensesParams) ([]Lens, error)
 	ListLoadedRolls(ctx context.Context, ownerID uuid.UUID) ([]ListLoadedRollsRow, error)
@@ -86,16 +92,21 @@ type Querier interface {
 	ListRollSummaries(ctx context.Context, arg ListRollSummariesParams) ([]ListRollSummariesRow, error)
 	// Scan orders hang off a job; the job is checked to belong to the account before these run.
 	ListScanOrders(ctx context.Context, arg ListScanOrdersParams) ([]ListScanOrdersRow, error)
+	// Built-in scanners have no owner: every account sees them next to its own and cannot change them.
+	ListScanners(ctx context.Context, ownerID uuid.UUID) ([]Scanner, error)
 	ListSiblingStocks(ctx context.Context, arg ListSiblingStocksParams) ([]FilmStock, error)
 	LoadRoll(ctx context.Context, arg LoadRollParams) (Roll, error)
 	NegativesAtLab(ctx context.Context, ownerID uuid.UUID) ([]NegativesAtLabRow, error)
 	ProcessingHasScans(ctx context.Context, arg ProcessingHasScansParams) (bool, error)
+	// A deleted scanner leaves the labs that ran it.
+	RemoveScannerFromLabs(ctx context.Context, scannerID uuid.UUID) error
 	ReplaceScan(ctx context.Context, arg ReplaceScanParams) (Scan, error)
 	RollHasOpenJob(ctx context.Context, arg RollHasOpenJobParams) (bool, error)
 	RollHasScansReceived(ctx context.Context, arg RollHasScansReceivedParams) (bool, error)
 	RollSpend(ctx context.Context, arg RollSpendParams) (RollSpendRow, error)
 	ScanOrderExists(ctx context.Context, arg ScanOrderExistsParams) (bool, error)
-	ScannerHasScans(ctx context.Context, arg ScannerHasScansParams) (bool, error)
+	// Deleted scans count too: they can be restored and still name their scanner.
+	ScannerInUse(ctx context.Context, scannerID uuid.UUID) (bool, error)
 	SetBuiltInLensActive(ctx context.Context, arg SetBuiltInLensActiveParams) error
 	SetCameraActive(ctx context.Context, arg SetCameraActiveParams) (Camera, error)
 	SetFrameNotes(ctx context.Context, arg SetFrameNotesParams) (Frame, error)
@@ -111,6 +122,7 @@ type Querier interface {
 	SoftDeleteProcessing(ctx context.Context, arg SoftDeleteProcessingParams) (int64, error)
 	SoftDeleteRoll(ctx context.Context, arg SoftDeleteRollParams) (int64, error)
 	SoftDeleteScan(ctx context.Context, arg SoftDeleteScanParams) (int64, error)
+	SoftDeleteScanner(ctx context.Context, arg SoftDeleteScannerParams) (int64, error)
 	// Soonest expiry per in-stock stock; an unknown month sorts as December but is returned as NULL.
 	SoonestExpiries(ctx context.Context, arg SoonestExpiriesParams) ([]SoonestExpiriesRow, error)
 	StatsCameras(ctx context.Context, arg StatsCamerasParams) ([]StatsCamerasRow, error)
@@ -128,10 +140,12 @@ type Querier interface {
 	UpdateLens(ctx context.Context, arg UpdateLensParams) (Lens, error)
 	UpdateProcessing(ctx context.Context, arg UpdateProcessingParams) (Processing, error)
 	UpdateRoll(ctx context.Context, arg UpdateRollParams) (Roll, error)
+	UpdateScanner(ctx context.Context, arg UpdateScannerParams) (Scanner, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (AppUser, error)
 	// The roll is checked to belong to the account first; the composite foreign key refuses a frame
 	// whose owner differs from its roll's.
 	UpsertFrame(ctx context.Context, arg UpsertFrameParams) (Frame, error)
+	UpsertLabScanner(ctx context.Context, arg UpsertLabScannerParams) error
 	UpsertScanOrder(ctx context.Context, arg UpsertScanOrderParams) error
 }
 

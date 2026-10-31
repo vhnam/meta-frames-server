@@ -20,6 +20,11 @@ var (
 
 var errBoom = errors.New("boom")
 
+var (
+	noritsu  = testutil.NoritsuHS1800
+	frontier = testutil.FrontierSP3000
+)
+
 func newMemoryQueries() *memoryQueries { return testutil.NewMemory() }
 
 func newMemoryFiles() *memoryFiles { return testutil.NewMemoryFiles() }

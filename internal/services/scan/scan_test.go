@@ -18,7 +18,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func importScans(test *testing.T, fixture scanFixture, scanner string, frames ...int) {
+func importScans(test *testing.T, fixture scanFixture, scanner gen.Scanner, frames ...int) {
 	test.Helper()
 	for _, frame := range frames {
 		if _, err := fixture.importFile(ImportOptions{Scanner: scanner}, frame, "x.jpg", testJPEG); err != nil {
@@ -43,14 +43,14 @@ func TestSaveFrameNotesCreatesTheFrameAndTrimsNotes(test *testing.T) {
 func TestListScansAndCompareFrames(test *testing.T) {
 	fixture := newScanFixture(domain.JobTypeDevelopScan)
 	ctx := context.Background()
-	importScans(test, fixture, domain.ScannerNoritsu, 1, 2, 3)
-	importScans(test, fixture, domain.ScannerFrontier, 2)
+	importScans(test, fixture, noritsu, 1, 2, 3)
+	importScans(test, fixture, frontier, 2)
 
 	scans, err := fixture.service.ListScans(ctx, fixture.job.ID, nil)
 	if err != nil || len(scans) != 4 {
 		test.Fatalf("scans=%v err=%v", scans, err)
 	}
-	if only, err := fixture.service.ListScans(ctx, fixture.job.ID, pointers.To(domain.ScannerFrontier)); err != nil || len(only) != 1 {
+	if only, err := fixture.service.ListScans(ctx, fixture.job.ID, pointers.To(domain.ScannerFrontierSP3000)); err != nil || len(only) != 1 {
 		test.Fatalf("frontier scans=%v err=%v", only, err)
 	}
 	if _, err := fixture.service.ListScans(ctx, uuid.New(), nil); err == nil {
@@ -58,14 +58,14 @@ func TestListScansAndCompareFrames(test *testing.T) {
 	}
 
 	both, err := fixture.service.Compare(ctx, fixture.job.ID, 2)
-	if err != nil || both.Noritsu == nil || both.Frontier == nil || len(both.Missing) != 0 {
+	if err != nil || both.Noritsu == nil || both.Frontier == nil || len(both.Missing) != 0 || len(both.Scans) != 2 {
 		test.Fatalf("both=%+v err=%v", both, err)
 	}
 	if both.PreviousFrameNumber == nil || *both.PreviousFrameNumber != 1 || both.NextFrameNumber == nil || *both.NextFrameNumber != 3 {
 		test.Fatalf("neighbours = %v / %v", both.PreviousFrameNumber, both.NextFrameNumber)
 	}
 	partial, err := fixture.service.Compare(ctx, fixture.job.ID, 1)
-	if err != nil || partial.Frontier != nil || len(partial.Missing) != 1 || partial.Missing[0] != domain.ScannerFrontier {
+	if err != nil || partial.Frontier != nil || len(partial.Missing) != 1 || partial.Missing[0] != domain.ScannerCodeFrontier || len(partial.Scans) != 1 || partial.Scans[0].ScannerName != "Noritsu HS-1800" {
 		test.Fatalf("partial=%+v err=%v", partial, err)
 	}
 	if _, err := fixture.service.Compare(ctx, fixture.job.ID, 9); err == nil {
@@ -86,7 +86,7 @@ func (files failingFiles) Open(string) (io.ReadCloser, int64, error) { return ni
 func TestOpenFileStreamsTheStoredImage(test *testing.T) {
 	fixture := newScanFixture(domain.JobTypeDevelopScan)
 	ctx := context.Background()
-	outcome, err := fixture.importFile(ImportOptions{Scanner: domain.ScannerNoritsu}, 1, "000001.jpg", testJPEG)
+	outcome, err := fixture.importFile(ImportOptions{Scanner: noritsu}, 1, "000001.jpg", testJPEG)
 	if err != nil {
 		test.Fatal(err)
 	}
@@ -269,7 +269,7 @@ func newScanFixture(jobType string) scanFixture {
 	queries.Rolls[rollID] = gen.Roll{ID: rollID, Status: domain.RollStatusAtLab}
 	job := gen.Processing{ID: jobID, RollID: rollID, Type: jobType, SentAt: day(2026, time.September, 1)}
 	queries.Jobs[jobID] = job
-	queries.ScanOrders = []gen.ProcessingScanOrder{{ProcessingID: jobID, Scanner: domain.ScannerNoritsu}}
+	queries.ScanOrders = []gen.ProcessingScanOrder{{ProcessingID: jobID, ScannerID: domain.ScannerNoritsuHS1800}}
 	return scanFixture{queries: queries, files: files, service: service, job: job}
 }
 
@@ -280,7 +280,7 @@ func (fixture scanFixture) importFile(options ImportOptions, frameNumber int, fi
 func TestImportFileStoresTheImageAndCreatesFrameAndScan(test *testing.T) {
 	fixture := newScanFixture(domain.JobTypeDevelopScan)
 
-	outcome, err := fixture.importFile(ImportOptions{Scanner: domain.ScannerNoritsu}, 7, "000007.jpg", testJPEG)
+	outcome, err := fixture.importFile(ImportOptions{Scanner: noritsu}, 7, "000007.jpg", testJPEG)
 	if err != nil || outcome.Skipped || outcome.Scan == nil {
 		test.Fatalf("outcome=%+v err=%v", outcome, err)
 	}
@@ -298,7 +298,7 @@ func TestImportFileStoresTheImageAndCreatesFrameAndScan(test *testing.T) {
 func TestImportFileRejectsNonImagesWithoutStoringAnything(test *testing.T) {
 	fixture := newScanFixture(domain.JobTypeScan)
 
-	_, err := fixture.importFile(ImportOptions{Scanner: domain.ScannerNoritsu}, 1, "notes.jpg", []byte("plain text"))
+	_, err := fixture.importFile(ImportOptions{Scanner: noritsu}, 1, "notes.jpg", []byte("plain text"))
 	var rejected *FileRejectedError
 	if !errors.As(err, &rejected) {
 		test.Fatalf("err = %v, want a FileRejectedError", err)
@@ -310,7 +310,7 @@ func TestImportFileRejectsNonImagesWithoutStoringAnything(test *testing.T) {
 
 func TestImportFileSkipsDuplicatesAndCleansUpTheUpload(test *testing.T) {
 	fixture := newScanFixture(domain.JobTypeScan)
-	options := ImportOptions{Scanner: domain.ScannerNoritsu}
+	options := ImportOptions{Scanner: noritsu}
 	first, err := fixture.importFile(options, 1, "000001.jpg", testJPEG)
 	if err != nil {
 		test.Fatal(err)
@@ -330,12 +330,12 @@ func TestImportFileSkipsDuplicatesAndCleansUpTheUpload(test *testing.T) {
 
 func TestImportFileReplacesExistingScansOnRequest(test *testing.T) {
 	fixture := newScanFixture(domain.JobTypeScan)
-	first, err := fixture.importFile(ImportOptions{Scanner: domain.ScannerNoritsu}, 1, "000001.jpg", testJPEG)
+	first, err := fixture.importFile(ImportOptions{Scanner: noritsu}, 1, "000001.jpg", testJPEG)
 	if err != nil {
 		test.Fatal(err)
 	}
 
-	replaced, err := fixture.importFile(ImportOptions{Scanner: domain.ScannerNoritsu, ReplaceExisting: true}, 1, "000001.png", testPNG)
+	replaced, err := fixture.importFile(ImportOptions{Scanner: noritsu, ReplaceExisting: true}, 1, "000001.png", testPNG)
 	if err != nil || replaced.Scan == nil || replaced.Skipped {
 		test.Fatalf("replace = %+v err=%v", replaced, err)
 	}
@@ -352,7 +352,7 @@ func TestImportFileReplacesExistingScansOnRequest(test *testing.T) {
 
 func TestImportFileKeepsScannersApartAndReusesTheFrame(test *testing.T) {
 	fixture := newScanFixture(domain.JobTypeScan)
-	for _, scanner := range []string{domain.ScannerNoritsu, domain.ScannerFrontier} {
+	for _, scanner := range []gen.Scanner{noritsu, frontier} {
 		if _, err := fixture.importFile(ImportOptions{Scanner: scanner}, 4, "000004.jpg", testJPEG); err != nil {
 			test.Fatal(err)
 		}
@@ -411,7 +411,7 @@ func TestCompleteImportKeepsAnExistingReceivedDate(test *testing.T) {
 func TestGetAndDeleteAScan(test *testing.T) {
 	fixture := newScanFixture(domain.JobTypeDevelopScan)
 	ctx := context.Background()
-	outcome, err := fixture.importFile(ImportOptions{Scanner: domain.ScannerNoritsu}, 4, "000004.jpg", testJPEG)
+	outcome, err := fixture.importFile(ImportOptions{Scanner: noritsu}, 4, "000004.jpg", testJPEG)
 	if err != nil {
 		test.Fatal(err)
 	}
@@ -435,7 +435,7 @@ func TestGetAndDeleteAScan(test *testing.T) {
 		test.Fatalf("a deleted scan must leave the grid, got %v", grid)
 	}
 	// The slot is free again for a fresh import.
-	if again, err := fixture.importFile(ImportOptions{Scanner: domain.ScannerNoritsu}, 4, "000004.jpg", testJPEG); err != nil || again.Skipped {
+	if again, err := fixture.importFile(ImportOptions{Scanner: noritsu}, 4, "000004.jpg", testJPEG); err != nil || again.Skipped {
 		test.Fatalf("again=%+v err=%v", again, err)
 	}
 }
@@ -464,13 +464,13 @@ func TestListFramesAndGetFrame(test *testing.T) {
 	}
 }
 
-func TestCheckScannerOrdered(test *testing.T) {
+func TestOrderedScanner(test *testing.T) {
 	fixture := newScanFixture(domain.JobTypeDevelopScan)
 	ctx := context.Background()
 
-	if err := fixture.service.CheckScannerOrdered(ctx, fixture.job.ID, domain.ScannerNoritsu); err != nil {
-		test.Fatal(err)
+	if scanner, err := fixture.service.OrderedScanner(ctx, fixture.job.ID, domain.ScannerNoritsuHS1800); err != nil || *scanner.Model != "HS-1800" {
+		test.Fatalf("scanner=%+v err=%v", scanner, err)
 	}
-	err := fixture.service.CheckScannerOrdered(ctx, fixture.job.ID, domain.ScannerFrontier)
+	_, err := fixture.service.OrderedScanner(ctx, fixture.job.ID, domain.ScannerFrontierSP3000)
 	assertAppError(test, err, apperror.KindUnprocessable, "scanner_not_ordered")
 }

@@ -5,7 +5,6 @@ import (
 	"io"
 	"meta-frames-server/internal/api"
 	"meta-frames-server/internal/db/gen"
-	"meta-frames-server/internal/domain"
 	scansvc "meta-frames-server/internal/services/scan"
 	"net/http/httptest"
 	"testing"
@@ -15,8 +14,8 @@ import (
 
 func TestToAPIScanBuildsTheFileURL(test *testing.T) {
 	scanID := uuid.New()
-	mapped := toAPIScan(scansvc.View{Scan: gen.Scan{ID: scanID, Scanner: domain.ScannerNoritsu, FileName: "000001.jpg", SizeBytes: 12}, FrameNumber: 1})
-	if mapped.FileUrl != "/scans/"+scanID.String()+"/file" || mapped.FrameNumber != 1 || mapped.Scanner != api.Noritsu {
+	mapped := toAPIScan(scansvc.View{Scan: gen.Scan{ID: scanID, ScannerID: uuid.New(), FileName: "000001.jpg", SizeBytes: 12}, FrameNumber: 1, ScannerName: "Epson V850"})
+	if mapped.FileUrl != "/scans/"+scanID.String()+"/file" || mapped.FrameNumber != 1 || mapped.Scanner != api.Other || mapped.ScannerName != "Epson V850" {
 		test.Fatalf("mapped = %+v", mapped)
 	}
 }
@@ -29,13 +28,17 @@ func TestToAPIFrameKeepsScansNonNil(test *testing.T) {
 
 func TestImportFormReadsScannerAndConflictPolicy(test *testing.T) {
 	var form importForm
-	if err := form.readFormField("scanner", "frontier"); err != nil || form.scanner != "frontier" {
-		test.Fatalf("scanner=%q err=%v", form.scanner, err)
+	if err := form.readFormField("scanner", "frontier"); err != nil || form.scannerCode == nil || *form.scannerCode != "frontier" || !form.scannerChanged {
+		test.Fatalf("scanner=%v err=%v", form.scannerCode, err)
+	}
+	scannerID := uuid.New()
+	if err := form.readFormField("scannerId", scannerID.String()); err != nil || form.scannerID == nil || *form.scannerID != scannerID {
+		test.Fatalf("scannerId=%v err=%v", form.scannerID, err)
 	}
 	if err := form.readFormField("onConflict", "replace"); err != nil || !form.replaceExisting {
 		test.Fatalf("replace=%v err=%v", form.replaceExisting, err)
 	}
-	for _, bad := range [][2]string{{"scanner", "epson"}, {"onConflict", "overwrite"}, {"frameNumber", "x"}, {"frameNumber", "-2"}} {
+	for _, bad := range [][2]string{{"scanner", "epson"}, {"scannerId", "epson"}, {"onConflict", "overwrite"}, {"frameNumber", "x"}, {"frameNumber", "-2"}} {
 		if err := (&importForm{}).readFormField(bad[0], bad[1]); err == nil {
 			test.Errorf("%s=%q should be rejected", bad[0], bad[1])
 		}

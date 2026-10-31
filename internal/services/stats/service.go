@@ -34,7 +34,7 @@ func (service *Service) SearchByFocalLength(ctx context.Context, focalLength int
 		}
 		refs := make([]scan.RefView, len(scans))
 		for scanIndex, row := range scans {
-			refs[scanIndex] = scan.RefView{ID: row.ID, ProcessingID: row.ProcessingID, FrameNumber: row.FrameNumber, Scanner: row.Scanner}
+			refs[scanIndex] = scan.ToRefView(row)
 		}
 		hits[index] = SearchHit{Roll: summary, Scans: refs}
 	}
