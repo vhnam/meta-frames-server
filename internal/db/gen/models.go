@@ -108,6 +108,13 @@ type Lab struct {
 	OwnerID   uuid.UUID
 }
 
+type LabScanner struct {
+	LabID     uuid.UUID
+	ScannerID uuid.UUID
+	Position  int32
+	CreatedAt pgtype.Timestamptz
+}
+
 type Lens struct {
 	ID          uuid.UUID
 	Brand       *string
@@ -145,10 +152,10 @@ type Processing struct {
 
 type ProcessingScanOrder struct {
 	ProcessingID uuid.UUID
-	Scanner      string
-	HiRes        bool
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
+	ScannerID    uuid.UUID
+	Settings     json.RawMessage
 }
 
 type Roll struct {
@@ -180,7 +187,6 @@ type Scan struct {
 	ID           uuid.UUID
 	ProcessingID uuid.UUID
 	FrameID      uuid.UUID
-	Scanner      string
 	FileKey      string
 	FileName     string
 	ContentType  string
@@ -189,6 +195,20 @@ type Scan struct {
 	UpdatedAt    pgtype.Timestamptz
 	DeletedAt    pgtype.Timestamptz
 	OwnerID      uuid.UUID
+	ScannerID    uuid.UUID
+}
+
+type Scanner struct {
+	ID              uuid.UUID
+	OwnerID         uuid.UUID
+	Brand           string
+	Model           *string
+	Kind            *string
+	Notes           *string
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	DeletedAt       pgtype.Timestamptz
+	DefaultSettings json.RawMessage
 }
 
 type UserSession struct {

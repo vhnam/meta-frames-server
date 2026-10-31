@@ -61,6 +61,11 @@ func (stub *queries) LabHasProcessing(_ context.Context, arg gen.LabHasProcessin
 	return stub.used, nil
 }
 
+// The stub labs run no scanners.
+func (stub *queries) ListLabScanners(context.Context, uuid.UUID) ([]gen.ListLabScannersRow, error) {
+	return nil, nil
+}
+
 func (stub *queries) SoftDeleteLab(_ context.Context, arg gen.SoftDeleteLabParams) (int64, error) {
 	id := arg.ID
 	delete(stub.labs, id)

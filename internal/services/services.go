@@ -1,5 +1,5 @@
 // Package services wires the business-rule packages together. Each area (camera, lens,
-// filmstock, lab, roll, processing, scan, stats) lives in its own subpackage and works with
+// filmstock, lab, scanner, roll, processing, scan, stats) lives in its own subpackage and works with
 // plain inputs and views; it knows nothing about HTTP.
 package services
 
@@ -14,6 +14,7 @@ import (
 	"meta-frames-server/internal/services/processing"
 	"meta-frames-server/internal/services/roll"
 	"meta-frames-server/internal/services/scan"
+	"meta-frames-server/internal/services/scanner"
 	"meta-frames-server/internal/services/stats"
 	"meta-frames-server/internal/storage"
 )
@@ -25,6 +26,7 @@ type Services struct {
 	FilmStocks *filmstock.Service
 	Rolls      *roll.Service
 	Labs       *lab.Service
+	Scanners   *scanner.Service
 	Processing *processing.Service
 	Scans      *scan.Service
 	Stats      *stats.Service
@@ -38,6 +40,7 @@ func New(store db.Store, files storage.Store, appClock clock.Clock) *Services {
 		FilmStocks: filmstock.New(store),
 		Rolls:      roll.New(store, appClock),
 		Labs:       lab.New(store),
+		Scanners:   scanner.New(store),
 		Processing: processing.New(store, appClock),
 		Scans:      scan.New(store, files, appClock),
 		Stats:      stats.New(store),

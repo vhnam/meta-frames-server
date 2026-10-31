@@ -60,19 +60,20 @@ WHERE p.owner_id = $1 AND p.negatives_returned_at IS NULL AND p.deleted_at IS NU
 ORDER BY p.sent_at;
 
 -- name: ListProcessingScans :many
-SELECT s.*, f.number AS frame_number FROM scan s JOIN frame f ON f.id = s.frame_id
+SELECT s.*, f.number AS frame_number, sc.brand AS scanner_brand, sc.model AS scanner_model
+FROM scan s JOIN frame f ON f.id = s.frame_id JOIN scanner sc ON sc.id = s.scanner_id
 WHERE s.processing_id = @processing_id AND s.owner_id = @owner_id AND s.deleted_at IS NULL
-  AND (sqlc.narg(scanner)::text IS NULL OR s.scanner = sqlc.narg(scanner))
-ORDER BY f.number, s.scanner;
+  AND (sqlc.narg(scanner_id)::uuid IS NULL OR s.scanner_id = sqlc.narg(scanner_id))
+ORDER BY f.number, lower(sc.brand), lower(sc.model);
 
 -- name: GetScan :one
 SELECT * FROM scan WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL;
 
 -- name: GetScanSlot :one
-SELECT * FROM scan WHERE processing_id = $1 AND frame_id = $2 AND scanner = $3 AND owner_id = $4 AND deleted_at IS NULL;
+SELECT * FROM scan WHERE processing_id = $1 AND frame_id = $2 AND scanner_id = $3 AND owner_id = $4 AND deleted_at IS NULL;
 
 -- name: InsertScan :one
-INSERT INTO scan (id, processing_id, frame_id, scanner, file_key, file_name, content_type, size_bytes, owner_id)
+INSERT INTO scan (id, processing_id, frame_id, scanner_id, file_key, file_name, content_type, size_bytes, owner_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING *;
 
@@ -83,9 +84,6 @@ WHERE id = $1 AND owner_id = $6 AND deleted_at IS NULL RETURNING *;
 -- name: SoftDeleteScan :execrows
 UPDATE scan SET deleted_at = now() WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL;
 
--- name: ListFrameScans :many
-SELECT * FROM scan WHERE frame_id = $1 AND owner_id = $2 AND deleted_at IS NULL ORDER BY scanner;
-
 -- name: ListJobFrameNumbers :many
 SELECT DISTINCT f.number FROM scan s JOIN frame f ON f.id = s.frame_id
 WHERE s.processing_id = $1 AND s.owner_id = $2 AND s.deleted_at IS NULL ORDER BY f.number;
@@ -93,22 +91,21 @@ WHERE s.processing_id = $1 AND s.owner_id = $2 AND s.deleted_at IS NULL ORDER BY
 -- Scan orders hang off a job; the job is checked to belong to the account before these run.
 
 -- name: ListScanOrders :many
-SELECT o.processing_id, o.scanner, o.hi_res,
-       (SELECT count(*) FROM scan s WHERE s.processing_id = o.processing_id AND s.scanner = o.scanner AND s.deleted_at IS NULL)::int AS scan_count
+SELECT o.processing_id, o.scanner_id, o.settings, sc.brand AS scanner_brand, sc.model AS scanner_model, sc.kind AS scanner_kind,
+       (SELECT count(*) FROM scan s WHERE s.processing_id = o.processing_id AND s.scanner_id = o.scanner_id AND s.deleted_at IS NULL)::int AS scan_count
 FROM processing_scan_order o
 JOIN processing p ON p.id = o.processing_id
+JOIN scanner sc ON sc.id = o.scanner_id
 WHERE o.processing_id = ANY(sqlc.arg(processing_ids)::uuid[]) AND p.owner_id = sqlc.arg(owner_id)
-ORDER BY o.processing_id, o.scanner;
+ORDER BY o.processing_id, lower(sc.brand), lower(sc.model);
 
 -- name: UpsertScanOrder :exec
-INSERT INTO processing_scan_order (processing_id, scanner, hi_res) VALUES ($1, $2, $3)
-ON CONFLICT (processing_id, scanner) DO UPDATE SET hi_res = EXCLUDED.hi_res;
+INSERT INTO processing_scan_order (processing_id, scanner_id, settings) VALUES ($1, $2, $3)
+ON CONFLICT (processing_id, scanner_id) DO UPDATE SET settings = EXCLUDED.settings;
 
 -- name: DeleteScanOrder :execrows
-DELETE FROM processing_scan_order WHERE processing_id = $1 AND scanner = $2;
+DELETE FROM processing_scan_order WHERE processing_id = $1 AND scanner_id = $2;
 
 -- name: ScanOrderExists :one
-SELECT EXISTS (SELECT 1 FROM processing_scan_order WHERE processing_id = $1 AND scanner = $2);
+SELECT EXISTS (SELECT 1 FROM processing_scan_order WHERE processing_id = $1 AND scanner_id = $2);
 
--- name: ScannerHasScans :one
-SELECT EXISTS (SELECT 1 FROM scan WHERE processing_id = $1 AND scanner = $2 AND deleted_at IS NULL);

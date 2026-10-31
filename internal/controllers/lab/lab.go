@@ -8,7 +8,6 @@ import (
 	"meta-frames-server/internal/api"
 	"meta-frames-server/internal/common/apperror"
 	"meta-frames-server/internal/common/convert"
-	"meta-frames-server/internal/db/gen"
 	labsvc "meta-frames-server/internal/services/lab"
 )
 
@@ -20,8 +19,16 @@ type Controller struct {
 // New builds the controller around its service.
 func New(labs *labsvc.Service) *Controller { return &Controller{labs: labs} }
 
-func toAPILab(lab gen.Lab) api.Lab {
-	return api.Lab{Id: lab.ID, Name: lab.Name, Address: lab.Address, CreatedAt: convert.Timestamp(lab.CreatedAt), UpdatedAt: convert.Timestamp(lab.UpdatedAt)}
+func toAPILab(view labsvc.View) api.Lab {
+	lab := view.Lab
+	return api.Lab{
+		Id: lab.ID, Name: lab.Name, Address: lab.Address, ScannerIds: view.ScannerIDs,
+		CreatedAt: convert.Timestamp(lab.CreatedAt), UpdatedAt: convert.Timestamp(lab.UpdatedAt),
+	}
+}
+
+func toInput(body *api.LabInput) labsvc.Input {
+	return labsvc.Input{Name: body.Name, Address: body.Address, ScannerIDs: body.ScannerIds}
 }
 
 func (controller *Controller) ListLabs(ctx context.Context, _ api.ListLabsRequestObject) (api.ListLabsResponseObject, error) {
@@ -45,7 +52,7 @@ func (controller *Controller) GetLab(ctx context.Context, request api.GetLabRequ
 }
 
 func (controller *Controller) CreateLab(ctx context.Context, request api.CreateLabRequestObject) (api.CreateLabResponseObject, error) {
-	lab, err := controller.labs.Create(ctx, uuid.New(), request.Body.Name, request.Body.Address)
+	lab, err := controller.labs.Create(ctx, uuid.New(), toInput(request.Body))
 	if err != nil {
 		return nil, err
 	}
@@ -53,9 +60,9 @@ func (controller *Controller) CreateLab(ctx context.Context, request api.CreateL
 }
 
 func (controller *Controller) PutLab(ctx context.Context, request api.PutLabRequestObject) (api.PutLabResponseObject, error) {
-	lab, err := controller.labs.Update(ctx, request.Id, request.Body.Name, request.Body.Address)
+	lab, err := controller.labs.Update(ctx, request.Id, toInput(request.Body))
 	if apperror.IsNotFound(err) {
-		if lab, err = controller.labs.Create(ctx, request.Id, request.Body.Name, request.Body.Address); err != nil {
+		if lab, err = controller.labs.Create(ctx, request.Id, toInput(request.Body)); err != nil {
 			return nil, err
 		}
 		return api.PutLab201JSONResponse(toAPILab(lab)), nil

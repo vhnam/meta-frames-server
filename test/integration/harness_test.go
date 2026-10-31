@@ -174,11 +174,16 @@ type upload struct {
 	content     []byte
 }
 
+// uploadScans imports files for a scanner given by id or by old code.
 func (harness *harness) uploadScans(jobID, scanner, onConflict string, uploads []upload) response {
 	harness.test.Helper()
 	var buffer bytes.Buffer
 	writer := multipart.NewWriter(&buffer)
-	_ = writer.WriteField("scanner", scanner)
+	field := "scanner"
+	if _, err := uuid.Parse(scanner); err == nil {
+		field = "scannerId"
+	}
+	_ = writer.WriteField(field, scanner)
 	if onConflict != "" {
 		_ = writer.WriteField("onConflict", onConflict)
 	}

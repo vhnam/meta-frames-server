@@ -8,8 +8,11 @@ import (
 	"github.com/google/uuid"
 
 	"meta-frames-server/internal/api"
+	"meta-frames-server/internal/common/apperror"
 	"meta-frames-server/internal/common/clock"
 	"meta-frames-server/internal/common/convert"
+	"meta-frames-server/internal/common/pointers"
+	"meta-frames-server/internal/common/requestctx"
 	"meta-frames-server/internal/db/gen"
 	"meta-frames-server/internal/domain"
 	"meta-frames-server/internal/services"
@@ -30,13 +33,13 @@ func newFixture() fixture {
 	memory.Stocks[stockID] = gen.FilmStock{ID: stockID, Process: "C-41"}
 	memory.Rolls[rollID] = gen.Roll{ID: rollID, FilmStockID: stockID, Status: domain.RollStatusDoneShooting}
 	memory.Labs[labID] = gen.Lab{ID: labID, Name: "Lab A"}
-	return fixture{controller: New(all.Processing), memory: memory, rollID: rollID, labID: labID}
+	return fixture{controller: New(all.Processing, all.Scanners), memory: memory, rollID: rollID, labID: labID}
 }
 
 func (f fixture) send(test *testing.T, jobID uuid.UUID) {
 	test.Helper()
 	_, err := f.controller.PutProcessing(context.Background(), api.PutProcessingRequestObject{
-		Id: f.rollID, JobId: jobID, Body: &api.ProcessingInput{Type: "develop_scan", LabId: &f.labID, ScanOrders: &[]api.ScanOrderInput{{Scanner: api.Noritsu}}},
+		Id: f.rollID, JobId: jobID, Body: &api.ProcessingInput{Type: "develop_scan", LabId: &f.labID, ScanOrders: &[]api.ScanOrderInput{{ScannerId: &domain.ScannerNoritsuHS1800}}},
 	})
 	if err != nil {
 		test.Fatal(err)
@@ -48,7 +51,7 @@ func TestPutProcessingCreatesThenUpdates(test *testing.T) {
 	ctx := context.Background()
 	jobID := uuid.New()
 	process := api.Process("E-6")
-	request := api.PutProcessingRequestObject{Id: f.rollID, JobId: jobID, Body: &api.ProcessingInput{Type: "develop_scan", Process: &process, LabId: &f.labID, ScanOrders: &[]api.ScanOrderInput{{Scanner: api.Noritsu}}}}
+	request := api.PutProcessingRequestObject{Id: f.rollID, JobId: jobID, Body: &api.ProcessingInput{Type: "develop_scan", Process: &process, LabId: &f.labID, ScanOrders: &[]api.ScanOrderInput{{ScannerId: &domain.ScannerNoritsuHS1800}}}}
 
 	first, err := f.controller.PutProcessing(ctx, request)
 	if created, ok := first.(api.PutProcessing201JSONResponse); err != nil || !ok || created.Process != "E-6" {
@@ -140,4 +143,30 @@ func TestDeleteProcessing(test *testing.T) {
 	if _, err := f.controller.DeleteProcessing(ctx, api.DeleteProcessingRequestObject{Id: jobID}); err == nil {
 		test.Fatal("deleting a missing job must fail")
 	}
+}
+
+func TestPutProcessingNamesScannersByIDOrOldCode(test *testing.T) {
+	f := newFixture()
+	ctx := requestctx.With(context.Background(), requestctx.Meta{OwnerID: uuid.New()})
+	other, frontier := api.Other, api.Frontier
+	jobID := uuid.New()
+	put := func(orders ...api.ScanOrderInput) (api.PutProcessingResponseObject, error) {
+		return f.controller.PutProcessing(ctx, api.PutProcessingRequestObject{
+			Id: f.rollID, JobId: jobID, Body: &api.ProcessingInput{Type: "develop_scan", LabId: &f.labID, ScanOrders: &orders},
+		})
+	}
+
+	sent, err := put(api.ScanOrderInput{Scanner: &other}, api.ScanOrderInput{Scanner: &frontier})
+	if err != nil {
+		test.Fatal(err)
+	}
+	orders := sent.(api.PutProcessing201JSONResponse).ScanOrders
+	if len(orders) != 2 || orders[0].ScannerName != "Frontier SP-3000" || orders[1].ScannerName != "Unknown scanner" || orders[1].Scanner != api.Other {
+		test.Fatalf("orders = %+v", orders)
+	}
+
+	_, err = put(api.ScanOrderInput{ScannerId: pointers.To(uuid.New())})
+	testutil.AssertAppError(test, err, apperror.KindUnprocessable, "unknown_scanner")
+	_, err = put(api.ScanOrderInput{Scanner: &frontier, ScannerId: &domain.ScannerFrontierSP3000})
+	testutil.AssertAppError(test, err, apperror.KindUnprocessable, "invalid_scanner")
 }
