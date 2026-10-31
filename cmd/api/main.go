@@ -28,7 +28,11 @@ import (
 )
 
 func main() {
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	logger := newLogger(cfg.Production)
 	slog.SetDefault(logger)
 
