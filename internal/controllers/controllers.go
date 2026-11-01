@@ -15,6 +15,7 @@ import (
 	"meta-frames-server/internal/controllers/processing"
 	"meta-frames-server/internal/controllers/roll"
 	"meta-frames-server/internal/controllers/scan"
+	"meta-frames-server/internal/controllers/scanner"
 	"meta-frames-server/internal/controllers/stats"
 	"meta-frames-server/internal/services"
 )
@@ -30,6 +31,7 @@ type (
 	processingController = processing.Controller
 	rollController       = roll.Controller
 	scanController       = scan.Controller
+	scannerController    = scanner.Controller
 	statsController      = stats.Controller
 )
 
@@ -43,6 +45,7 @@ type Controllers struct {
 	*filmStockController
 	*rollController
 	*labController
+	*scannerController
 	*processingController
 	*scanController
 	*statsController
@@ -60,8 +63,9 @@ func New(appServices *services.Services) *Controllers {
 		filmStockController:  filmstock.New(appServices.FilmStocks),
 		rollController:       roll.New(appServices.Rolls),
 		labController:        lab.New(appServices.Labs),
-		processingController: processing.New(appServices.Processing),
-		scanController:       scan.New(appServices.Scans),
+		scannerController:    scanner.New(appServices.Scanners),
+		processingController: processing.New(appServices.Processing, appServices.Scanners),
+		scanController:       scan.New(appServices.Scans, appServices.Scanners),
 		statsController:      stats.New(appServices.Stats),
 	}
 }

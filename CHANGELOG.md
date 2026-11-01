@@ -11,6 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `make run-prod` runs the local server with `DATABASE_URL` from `.env.prod`. Other settings still come from `.env`.
 - Film stock `description` is documented as Markdown text in the API spec (`format: markdown`). The server stores it unchanged.
+- Scanners have their own table and endpoints: `GET /scanners`, `POST /scanners`, `GET|PUT|DELETE /scanners/{id}`. Two built-in scanners, Noritsu HS-1800 and Frontier SP-3000, are visible to every account and read-only (`409 built_in_scanner`). Each account adds its own (another lab's machine, a flatbed, a camera rig) with `brand`, `model`, an optional `kind` and `notes`. A scanner used by a job or a scan cannot be deleted (`409 scanner_in_use`).
+- Scan options depend on the scanner's kind: `GET /scanner-kinds` lists each kind's options (a minilab's resolution and format; a flatbed's dpi, bit depth, dust removal and multi-exposure; a camera rig's file format, pixel shift and stitched shots; and on every kind the framing: cropped, with the film border, or with border and sprockets), with a set for scanners of unknown kind. A scan order keeps its choices in `settings`, and a scanner keeps `defaultSettings` that a new order starts from. The server checks settings against the scanner's kind (`422 invalid_scan_settings`); an order's settings are only checked again when they change. Migration `00012` moves `hi_res` into `settings.resolution`.
+- Labs name the scanners they run: `LabInput.scannerIds` sets them in order, the first being the default for a job sent there, and `Lab.scannerIds` returns them. Leaving `scannerIds` out keeps the lab's scanners; an empty list clears them. Each must be a built-in scanner or one of the account's own (`422 unknown_scanner`). Deleting a scanner removes it from the labs that ran it. Migration `00013` adds the `lab_scanner` table.
+- Scan orders, scans, scan refs and frame comparisons carry `scannerId` and `scannerName`. Requests name a scanner by `scannerId`: in `scanOrders`, in the `scannerId` multipart field of a scan import, and in the `scannerId` filter of `GET /processing/{id}/scans`. `GET /processing/{id}/frames/{number}/compare` returns every scan of the frame in `scans`.
+
+### Changed
+
+- The server checks its settings at startup and exits with one message listing every invalid value. A bad `PORT`, `DB_MAX_CONNS`, URL, `MAIL_FROM`, `SMTP_ADDR` or `SESSION_SAMESITE`, or only one of `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, used to be ignored or fail later. Passwords in a URL are hidden in the message.
+- A scanner's `model` is optional; `brand` stays required. A lab may run a Noritsu whose model nobody knows: such a scanner is named by its brand alone, and an account has at most one per brand. Migration `00013` drops the `NOT NULL` on `scanner.model`.
+- The fixed scanner list (`noritsu`, `frontier`, `other`) is gone from the database. Migration `00011` moves existing data to the scanner table: `other` becomes an "Unknown scanner" owned by each account that used it, to rename to the real machine.
+
+### Deprecated
+
+- `hiRes` on scan orders: it reads and writes `settings.resolution` (`hi_res` or `standard`), and is ignored when `settings` is sent.
+- The `scanner` code (`ScannerCode`: `noritsu`, `frontier`, `other`) in requests and responses, and the `noritsu`, `frontier` and `missing` fields of a frame comparison. They still work until clients move to `scannerId`: as input, `other` means the account's "Unknown scanner" (created on first use in a scan order); in responses, every scanner other than the two built-in ones reads as `other`.
 
 ### Fixed
 

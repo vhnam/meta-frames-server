@@ -392,8 +392,9 @@ func (q *Queries) ListRollLenses(ctx context.Context, arg ListRollLensesParams) 
 }
 
 const listRollScans = `-- name: ListRollScans :many
-SELECT s.id, s.processing_id, s.frame_id, s.scanner, s.file_key, s.file_name, s.content_type, s.size_bytes, s.created_at, s.updated_at, s.deleted_at, s.owner_id, f.number AS frame_number FROM scan s JOIN frame f ON f.id = s.frame_id
-WHERE f.roll_id = $1 AND s.owner_id = $2 AND s.deleted_at IS NULL ORDER BY f.number, s.scanner
+SELECT s.id, s.processing_id, s.frame_id, s.file_key, s.file_name, s.content_type, s.size_bytes, s.created_at, s.updated_at, s.deleted_at, s.owner_id, s.scanner_id, f.number AS frame_number, sc.brand AS scanner_brand, sc.model AS scanner_model
+FROM scan s JOIN frame f ON f.id = s.frame_id JOIN scanner sc ON sc.id = s.scanner_id
+WHERE f.roll_id = $1 AND s.owner_id = $2 AND s.deleted_at IS NULL ORDER BY f.number, lower(sc.brand), lower(sc.model)
 `
 
 type ListRollScansParams struct {
@@ -405,7 +406,6 @@ type ListRollScansRow struct {
 	ID           uuid.UUID
 	ProcessingID uuid.UUID
 	FrameID      uuid.UUID
-	Scanner      string
 	FileKey      string
 	FileName     string
 	ContentType  string
@@ -414,7 +414,10 @@ type ListRollScansRow struct {
 	UpdatedAt    pgtype.Timestamptz
 	DeletedAt    pgtype.Timestamptz
 	OwnerID      uuid.UUID
+	ScannerID    uuid.UUID
 	FrameNumber  int32
+	ScannerBrand string
+	ScannerModel *string
 }
 
 func (q *Queries) ListRollScans(ctx context.Context, arg ListRollScansParams) ([]ListRollScansRow, error) {
@@ -430,7 +433,6 @@ func (q *Queries) ListRollScans(ctx context.Context, arg ListRollScansParams) ([
 			&i.ID,
 			&i.ProcessingID,
 			&i.FrameID,
-			&i.Scanner,
 			&i.FileKey,
 			&i.FileName,
 			&i.ContentType,
@@ -439,7 +441,10 @@ func (q *Queries) ListRollScans(ctx context.Context, arg ListRollScansParams) ([
 			&i.UpdatedAt,
 			&i.DeletedAt,
 			&i.OwnerID,
+			&i.ScannerID,
 			&i.FrameNumber,
+			&i.ScannerBrand,
+			&i.ScannerModel,
 		); err != nil {
 			return nil, err
 		}

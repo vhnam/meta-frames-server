@@ -6,17 +6,20 @@ import (
 	"meta-frames-server/internal/api"
 	"meta-frames-server/internal/common/convert"
 	"meta-frames-server/internal/common/pointers"
+	"meta-frames-server/internal/domain"
 	processingsvc "meta-frames-server/internal/services/processing"
+	scannersvc "meta-frames-server/internal/services/scanner"
 )
 
 // Controller serves the processing endpoints.
 type Controller struct {
 	processing *processingsvc.Service
+	scanners   *scannersvc.Service
 }
 
-// New builds the controller around its service.
-func New(processing *processingsvc.Service) *Controller {
-	return &Controller{processing: processing}
+// New builds the controller around its services; scanners resolves the scanners a job orders.
+func New(processing *processingsvc.Service, scanners *scannersvc.Service) *Controller {
+	return &Controller{processing: processing, scanners: scanners}
 }
 
 func ToAPIProcessing(view processingsvc.View) api.Processing {
@@ -33,9 +36,27 @@ func ToAPIProcessing(view processingsvc.View) api.Processing {
 		mapped.LabName = pointers.To(view.LabName)
 	}
 	for index, order := range view.ScanOrders {
-		mapped.ScanOrders[index] = api.ScanOrder{Scanner: api.Scanner(order.Scanner), HiRes: order.HiRes, ScanCount: order.ScanCount}
+		mapped.ScanOrders[index] = api.ScanOrder{
+			Scanner: api.ScannerCode(domain.ScannerCode(order.ScannerID)), ScannerId: order.ScannerID, ScannerName: order.ScannerName,
+			Settings: api.ScanSettings(order.Settings), HiRes: domain.IsHiRes(order.Settings), ScanCount: order.ScanCount,
+		}
 	}
 	return mapped
+}
+
+// orderSettings reads the settings of an ordered scanner; the old hiRes flag stands for a resolution.
+// Nil leaves them to the service: kept on an order already on the job, the scanner's defaults on a new one.
+func orderSettings(order api.ScanOrderInput) domain.ScanSettings {
+	switch {
+	case order.Settings != nil:
+		return domain.ScanSettings(*order.Settings)
+	case order.HiRes == nil:
+		return nil
+	case *order.HiRes:
+		return domain.ScanSettings{"resolution": domain.ResolutionHiRes}
+	default:
+		return domain.ScanSettings{"resolution": domain.ResolutionStandard}
+	}
 }
 
 func (controller *Controller) ListRollProcessing(ctx context.Context, request api.ListRollProcessingRequestObject) (api.ListRollProcessingResponseObject, error) {
@@ -69,9 +90,15 @@ func (controller *Controller) PutProcessing(ctx context.Context, request api.Put
 	}
 	if body.ScanOrders != nil {
 		for _, order := range *body.ScanOrders {
-			input.ScanOrders = append(input.ScanOrders, processingsvc.ScanOrderInput{
-				Scanner: string(order.Scanner), HiRes: order.HiRes != nil && *order.HiRes,
-			})
+			var code *string
+			if order.Scanner != nil {
+				code = pointers.To(string(*order.Scanner))
+			}
+			scannerID, err := controller.scanners.PickForOrder(ctx, order.ScannerId, code)
+			if err != nil {
+				return nil, err
+			}
+			input.ScanOrders = append(input.ScanOrders, processingsvc.ScanOrderInput{ScannerID: scannerID, Settings: orderSettings(order)})
 		}
 	}
 	view, created, err := controller.processing.Save(ctx, request.Id, request.JobId, input)

@@ -21,16 +21,23 @@ func TestToAPIProcessing(test *testing.T) {
 	labID := uuid.New()
 	received := date(2026, time.October, 1)
 	view := processingsvc.View{
-		Job:        gen.Processing{ID: uuid.New(), LabID: &labID, Type: domain.JobTypeDevelopScan, Process: "C-41", SentAt: date(2026, time.September, 1), ScansReceivedAt: &received, Price: number(90000)},
-		LabName:    "Lab A",
-		ScanOrders: []processingsvc.ScanOrder{{Scanner: domain.ScannerNoritsu, HiRes: true, ScanCount: 3}, {Scanner: domain.ScannerFrontier}},
+		Job:     gen.Processing{ID: uuid.New(), LabID: &labID, Type: domain.JobTypeDevelopScan, Process: "C-41", SentAt: date(2026, time.September, 1), ScansReceivedAt: &received, Price: number(90000)},
+		LabName: "Lab A",
+		ScanOrders: []processingsvc.ScanOrder{
+			{ScannerID: domain.ScannerNoritsuHS1800, ScannerName: "Noritsu HS-1800", Settings: domain.ScanSettings{"resolution": domain.ResolutionHiRes}, ScanCount: 3},
+			{ScannerID: uuid.New(), ScannerName: "Epson V850"},
+		},
 	}
 	mapped := ToAPIProcessing(view)
 
 	if mapped.LabName == nil || *mapped.LabName != "Lab A" || mapped.ScansReceivedAt == nil || mapped.NegativesReturnedAt != nil {
 		test.Fatalf("mapped = %+v", mapped)
 	}
-	if len(mapped.ScanOrders) != 2 || mapped.ScanOrders[1].Scanner != api.Frontier || !mapped.ScanOrders[0].HiRes || mapped.ScanOrders[0].ScanCount != 3 {
+	first, second := mapped.ScanOrders[0], mapped.ScanOrders[1]
+	if first.Scanner != api.Noritsu || first.ScannerName != "Noritsu HS-1800" || !first.HiRes || first.Settings["resolution"] != "hi_res" || first.ScanCount != 3 {
+		test.Fatalf("scan orders = %v", mapped.ScanOrders)
+	}
+	if second.Scanner != api.Other || second.ScannerName != "Epson V850" || second.ScannerId == domain.ScannerNoritsuHS1800 {
 		test.Fatalf("scan orders = %v", mapped.ScanOrders)
 	}
 	if home := ToAPIProcessing(processingsvc.View{}); home.LabName != nil || home.ScanOrders == nil {

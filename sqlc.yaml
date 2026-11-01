@@ -42,3 +42,11 @@ sql:
             go_type:
               import: encoding/json
               type: RawMessage
+          - column: processing_scan_order.settings
+            go_type:
+              import: encoding/json
+              type: RawMessage
+          - column: scanner.default_settings
+            go_type:
+              import: encoding/json
+              type: RawMessage

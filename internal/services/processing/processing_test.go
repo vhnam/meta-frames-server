@@ -2,8 +2,10 @@ package processing
 
 import (
 	"context"
+	"encoding/json"
 	"meta-frames-server/internal/common/apperror"
 	"meta-frames-server/internal/common/pointers"
+	"meta-frames-server/internal/common/requestctx"
 	"meta-frames-server/internal/db/gen"
 	"meta-frames-server/internal/domain"
 	"meta-frames-server/internal/testutil"
@@ -20,7 +22,7 @@ type processingFixture struct {
 	labID   uuid.UUID
 }
 
-var noritsuOrder = []ScanOrderInput{{Scanner: domain.ScannerNoritsu}}
+var noritsuOrder = []ScanOrderInput{{ScannerID: domain.ScannerNoritsuHS1800}}
 
 func newProcessingFixture() processingFixture {
 	queries := newMemoryQueries()
@@ -341,7 +343,7 @@ func TestProcessingSaveValidatesScanOrders(test *testing.T) {
 	}{
 		{"scan job needs orders", Input{Type: domain.JobTypeScan}, apperror.KindUnprocessable, "scan_orders_required"},
 		{"develop job takes none", Input{Type: domain.JobTypeDevelop, ScanOrders: noritsuOrder}, apperror.KindUnprocessable, "scan_not_applicable"},
-		{"duplicate scanner", Input{Type: domain.JobTypeDevelopScan, ScanOrders: []ScanOrderInput{{Scanner: domain.ScannerNoritsu}, {Scanner: domain.ScannerNoritsu, HiRes: true}}}, apperror.KindUnprocessable, "duplicate_scanner"},
+		{"duplicate scanner", Input{Type: domain.JobTypeDevelopScan, ScanOrders: []ScanOrderInput{{ScannerID: domain.ScannerNoritsuHS1800}, {ScannerID: domain.ScannerNoritsuHS1800, Settings: domain.ScanSettings{"resolution": domain.ResolutionHiRes}}}}, apperror.KindUnprocessable, "duplicate_scanner"},
 	}
 	for _, testCase := range tests {
 		test.Run(testCase.name, func(test *testing.T) {
@@ -356,15 +358,15 @@ func TestProcessingSaveReplacesScanOrders(test *testing.T) {
 	fixture := newProcessingFixture()
 	ctx := context.Background()
 	jobID := uuid.New()
-	both := []ScanOrderInput{{Scanner: domain.ScannerNoritsu, HiRes: true}, {Scanner: domain.ScannerFrontier}}
+	both := []ScanOrderInput{{ScannerID: domain.ScannerNoritsuHS1800, Settings: domain.ScanSettings{"resolution": domain.ResolutionHiRes}}, {ScannerID: domain.ScannerFrontierSP3000}}
 
 	view, _, err := fixture.service.Save(ctx, fixture.rollID, jobID, Input{Type: domain.JobTypeDevelopScan, ScanOrders: both})
-	if err != nil || len(view.ScanOrders) != 2 || view.ScanOrders[0].Scanner != domain.ScannerFrontier || !view.ScanOrders[1].HiRes {
+	if err != nil || len(view.ScanOrders) != 2 || view.ScanOrders[0].ScannerName != "Frontier SP-3000" || !domain.IsHiRes(view.ScanOrders[1].Settings) {
 		test.Fatalf("view = %+v err=%v", view.ScanOrders, err)
 	}
 
 	view, _, err = fixture.service.Save(ctx, fixture.rollID, jobID, Input{Type: domain.JobTypeDevelopScan, ScanOrders: noritsuOrder})
-	if err != nil || len(view.ScanOrders) != 1 || view.ScanOrders[0].HiRes {
+	if err != nil || len(view.ScanOrders) != 1 || !domain.IsHiRes(view.ScanOrders[0].Settings) {
 		test.Fatalf("after replace = %+v err=%v", view.ScanOrders, err)
 	}
 }
@@ -373,12 +375,12 @@ func TestProcessingSaveKeepsScannersThatHaveScans(test *testing.T) {
 	fixture := newProcessingFixture()
 	ctx := context.Background()
 	jobID := uuid.New()
-	both := []ScanOrderInput{{Scanner: domain.ScannerNoritsu}, {Scanner: domain.ScannerFrontier}}
+	both := []ScanOrderInput{{ScannerID: domain.ScannerNoritsuHS1800}, {ScannerID: domain.ScannerFrontierSP3000}}
 	if _, _, err := fixture.service.Save(ctx, fixture.rollID, jobID, Input{Type: domain.JobTypeDevelopScan, ScanOrders: both}); err != nil {
 		test.Fatal(err)
 	}
 	scanID := uuid.New()
-	fixture.queries.Scans[scanID] = gen.Scan{ID: scanID, ProcessingID: jobID, Scanner: domain.ScannerFrontier}
+	fixture.queries.Scans[scanID] = gen.Scan{ID: scanID, ProcessingID: jobID, ScannerID: domain.ScannerFrontierSP3000}
 
 	_, _, err := fixture.service.Save(ctx, fixture.rollID, jobID, Input{Type: domain.JobTypeDevelopScan, ScanOrders: noritsuOrder})
 	assertAppError(test, err, apperror.KindConflict, "scanner_has_scans")
@@ -435,5 +437,42 @@ func TestProcessingSaveAcceptsNegativesExpectedAtOnDevelopScan(test *testing.T) 
 	view, _, err := fixture.service.Save(context.Background(), fixture.rollID, uuid.New(), Input{Type: domain.JobTypeDevelopScan, ScanOrders: noritsuOrder, NegativesExpectedAt: &expected})
 	if err != nil || view.Job.NegativesExpectedAt == nil || !view.Job.NegativesExpectedAt.Equal(expected) {
 		test.Fatalf("view=%+v err=%v", view, err)
+	}
+}
+
+func TestProcessingSaveChecksSettingsAgainstTheScannersKind(test *testing.T) {
+	fixture := newProcessingFixture()
+	ctx := requestctx.With(context.Background(), requestctx.Meta{OwnerID: uuid.New()})
+	camera := domain.ScannerKindCamera
+	rig := gen.Scanner{
+		ID: uuid.New(), OwnerID: requestctx.Owner(ctx), Brand: "Sony", Model: pointers.To("A7R IV"), Kind: &camera,
+		DefaultSettings: json.RawMessage(`{"pixel_shift": true}`),
+	}
+	fixture.queries.Scanners[rig.ID] = rig
+	jobID := uuid.New()
+
+	view, _, err := fixture.service.Save(ctx, fixture.rollID, jobID, Input{Type: domain.JobTypeDevelopScan, ScanOrders: []ScanOrderInput{{ScannerID: rig.ID}}})
+	if err != nil || view.ScanOrders[0].Settings["pixel_shift"] != true {
+		test.Fatalf("a new order starts from the scanner's defaults: %+v err=%v", view.ScanOrders, err)
+	}
+	_, _, err = fixture.service.Save(ctx, fixture.rollID, jobID, Input{Type: domain.JobTypeDevelopScan, ScanOrders: []ScanOrderInput{
+		{ScannerID: rig.ID, Settings: domain.ScanSettings{"resolution": domain.ResolutionHiRes}},
+	}})
+	assertAppError(test, err, apperror.KindUnprocessable, "invalid_scan_settings")
+
+	// The rig becomes a flatbed: its order keeps the old settings until they are changed.
+	flatbed := domain.ScannerKindFlatbed
+	rig.Kind = &flatbed
+	fixture.queries.Scanners[rig.ID] = rig
+	if _, _, err := fixture.service.Save(ctx, fixture.rollID, jobID, Input{Type: domain.JobTypeDevelopScan, ScanOrders: []ScanOrderInput{
+		{ScannerID: rig.ID, Settings: domain.ScanSettings{"pixel_shift": true}},
+	}}); err != nil {
+		test.Fatalf("unchanged settings are not checked again, got %v", err)
+	}
+	view, _, err = fixture.service.Save(ctx, fixture.rollID, jobID, Input{Type: domain.JobTypeDevelopScan, ScanOrders: []ScanOrderInput{
+		{ScannerID: rig.ID, Settings: domain.ScanSettings{"dpi": 4800}},
+	}})
+	if err != nil || view.ScanOrders[0].Settings["dpi"] != float64(4800) {
+		test.Fatalf("settings=%+v err=%v", view.ScanOrders, err)
 	}
 }

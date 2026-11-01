@@ -7,6 +7,7 @@ package gen
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,16 +15,16 @@ import (
 )
 
 const deleteScanOrder = `-- name: DeleteScanOrder :execrows
-DELETE FROM processing_scan_order WHERE processing_id = $1 AND scanner = $2
+DELETE FROM processing_scan_order WHERE processing_id = $1 AND scanner_id = $2
 `
 
 type DeleteScanOrderParams struct {
 	ProcessingID uuid.UUID
-	Scanner      string
+	ScannerID    uuid.UUID
 }
 
 func (q *Queries) DeleteScanOrder(ctx context.Context, arg DeleteScanOrderParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteScanOrder, arg.ProcessingID, arg.Scanner)
+	result, err := q.db.Exec(ctx, deleteScanOrder, arg.ProcessingID, arg.ScannerID)
 	if err != nil {
 		return 0, err
 	}
@@ -121,7 +122,7 @@ func (q *Queries) GetProcessingForUpdate(ctx context.Context, arg GetProcessingF
 }
 
 const getScan = `-- name: GetScan :one
-SELECT id, processing_id, frame_id, scanner, file_key, file_name, content_type, size_bytes, created_at, updated_at, deleted_at, owner_id FROM scan WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
+SELECT id, processing_id, frame_id, file_key, file_name, content_type, size_bytes, created_at, updated_at, deleted_at, owner_id, scanner_id FROM scan WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
 `
 
 type GetScanParams struct {
@@ -136,7 +137,6 @@ func (q *Queries) GetScan(ctx context.Context, arg GetScanParams) (Scan, error) 
 		&i.ID,
 		&i.ProcessingID,
 		&i.FrameID,
-		&i.Scanner,
 		&i.FileKey,
 		&i.FileName,
 		&i.ContentType,
@@ -145,18 +145,19 @@ func (q *Queries) GetScan(ctx context.Context, arg GetScanParams) (Scan, error) 
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.OwnerID,
+		&i.ScannerID,
 	)
 	return i, err
 }
 
 const getScanSlot = `-- name: GetScanSlot :one
-SELECT id, processing_id, frame_id, scanner, file_key, file_name, content_type, size_bytes, created_at, updated_at, deleted_at, owner_id FROM scan WHERE processing_id = $1 AND frame_id = $2 AND scanner = $3 AND owner_id = $4 AND deleted_at IS NULL
+SELECT id, processing_id, frame_id, file_key, file_name, content_type, size_bytes, created_at, updated_at, deleted_at, owner_id, scanner_id FROM scan WHERE processing_id = $1 AND frame_id = $2 AND scanner_id = $3 AND owner_id = $4 AND deleted_at IS NULL
 `
 
 type GetScanSlotParams struct {
 	ProcessingID uuid.UUID
 	FrameID      uuid.UUID
-	Scanner      string
+	ScannerID    uuid.UUID
 	OwnerID      uuid.UUID
 }
 
@@ -164,7 +165,7 @@ func (q *Queries) GetScanSlot(ctx context.Context, arg GetScanSlotParams) (Scan,
 	row := q.db.QueryRow(ctx, getScanSlot,
 		arg.ProcessingID,
 		arg.FrameID,
-		arg.Scanner,
+		arg.ScannerID,
 		arg.OwnerID,
 	)
 	var i Scan
@@ -172,7 +173,6 @@ func (q *Queries) GetScanSlot(ctx context.Context, arg GetScanSlotParams) (Scan,
 		&i.ID,
 		&i.ProcessingID,
 		&i.FrameID,
-		&i.Scanner,
 		&i.FileKey,
 		&i.FileName,
 		&i.ContentType,
@@ -181,6 +181,7 @@ func (q *Queries) GetScanSlot(ctx context.Context, arg GetScanSlotParams) (Scan,
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.OwnerID,
+		&i.ScannerID,
 	)
 	return i, err
 }
@@ -273,16 +274,16 @@ func (q *Queries) InsertProcessing(ctx context.Context, arg InsertProcessingPara
 }
 
 const insertScan = `-- name: InsertScan :one
-INSERT INTO scan (id, processing_id, frame_id, scanner, file_key, file_name, content_type, size_bytes, owner_id)
+INSERT INTO scan (id, processing_id, frame_id, scanner_id, file_key, file_name, content_type, size_bytes, owner_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, processing_id, frame_id, scanner, file_key, file_name, content_type, size_bytes, created_at, updated_at, deleted_at, owner_id
+RETURNING id, processing_id, frame_id, file_key, file_name, content_type, size_bytes, created_at, updated_at, deleted_at, owner_id, scanner_id
 `
 
 type InsertScanParams struct {
 	ID           uuid.UUID
 	ProcessingID uuid.UUID
 	FrameID      uuid.UUID
-	Scanner      string
+	ScannerID    uuid.UUID
 	FileKey      string
 	FileName     string
 	ContentType  string
@@ -295,7 +296,7 @@ func (q *Queries) InsertScan(ctx context.Context, arg InsertScanParams) (Scan, e
 		arg.ID,
 		arg.ProcessingID,
 		arg.FrameID,
-		arg.Scanner,
+		arg.ScannerID,
 		arg.FileKey,
 		arg.FileName,
 		arg.ContentType,
@@ -307,7 +308,6 @@ func (q *Queries) InsertScan(ctx context.Context, arg InsertScanParams) (Scan, e
 		&i.ID,
 		&i.ProcessingID,
 		&i.FrameID,
-		&i.Scanner,
 		&i.FileKey,
 		&i.FileName,
 		&i.ContentType,
@@ -316,6 +316,7 @@ func (q *Queries) InsertScan(ctx context.Context, arg InsertScanParams) (Scan, e
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.OwnerID,
+		&i.ScannerID,
 	)
 	return i, err
 }
@@ -334,48 +335,6 @@ func (q *Queries) LabHasProcessing(ctx context.Context, arg LabHasProcessingPara
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
-}
-
-const listFrameScans = `-- name: ListFrameScans :many
-SELECT id, processing_id, frame_id, scanner, file_key, file_name, content_type, size_bytes, created_at, updated_at, deleted_at, owner_id FROM scan WHERE frame_id = $1 AND owner_id = $2 AND deleted_at IS NULL ORDER BY scanner
-`
-
-type ListFrameScansParams struct {
-	FrameID uuid.UUID
-	OwnerID uuid.UUID
-}
-
-func (q *Queries) ListFrameScans(ctx context.Context, arg ListFrameScansParams) ([]Scan, error) {
-	rows, err := q.db.Query(ctx, listFrameScans, arg.FrameID, arg.OwnerID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Scan
-	for rows.Next() {
-		var i Scan
-		if err := rows.Scan(
-			&i.ID,
-			&i.ProcessingID,
-			&i.FrameID,
-			&i.Scanner,
-			&i.FileKey,
-			&i.FileName,
-			&i.ContentType,
-			&i.SizeBytes,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.DeletedAt,
-			&i.OwnerID,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const listJobFrameNumbers = `-- name: ListJobFrameNumbers :many
@@ -441,23 +400,23 @@ func (q *Queries) ListLabs(ctx context.Context, ownerID uuid.UUID) ([]Lab, error
 }
 
 const listProcessingScans = `-- name: ListProcessingScans :many
-SELECT s.id, s.processing_id, s.frame_id, s.scanner, s.file_key, s.file_name, s.content_type, s.size_bytes, s.created_at, s.updated_at, s.deleted_at, s.owner_id, f.number AS frame_number FROM scan s JOIN frame f ON f.id = s.frame_id
+SELECT s.id, s.processing_id, s.frame_id, s.file_key, s.file_name, s.content_type, s.size_bytes, s.created_at, s.updated_at, s.deleted_at, s.owner_id, s.scanner_id, f.number AS frame_number, sc.brand AS scanner_brand, sc.model AS scanner_model
+FROM scan s JOIN frame f ON f.id = s.frame_id JOIN scanner sc ON sc.id = s.scanner_id
 WHERE s.processing_id = $1 AND s.owner_id = $2 AND s.deleted_at IS NULL
-  AND ($3::text IS NULL OR s.scanner = $3)
-ORDER BY f.number, s.scanner
+  AND ($3::uuid IS NULL OR s.scanner_id = $3)
+ORDER BY f.number, lower(sc.brand), lower(sc.model)
 `
 
 type ListProcessingScansParams struct {
 	ProcessingID uuid.UUID
 	OwnerID      uuid.UUID
-	Scanner      *string
+	ScannerID    *uuid.UUID
 }
 
 type ListProcessingScansRow struct {
 	ID           uuid.UUID
 	ProcessingID uuid.UUID
 	FrameID      uuid.UUID
-	Scanner      string
 	FileKey      string
 	FileName     string
 	ContentType  string
@@ -466,11 +425,14 @@ type ListProcessingScansRow struct {
 	UpdatedAt    pgtype.Timestamptz
 	DeletedAt    pgtype.Timestamptz
 	OwnerID      uuid.UUID
+	ScannerID    uuid.UUID
 	FrameNumber  int32
+	ScannerBrand string
+	ScannerModel *string
 }
 
 func (q *Queries) ListProcessingScans(ctx context.Context, arg ListProcessingScansParams) ([]ListProcessingScansRow, error) {
-	rows, err := q.db.Query(ctx, listProcessingScans, arg.ProcessingID, arg.OwnerID, arg.Scanner)
+	rows, err := q.db.Query(ctx, listProcessingScans, arg.ProcessingID, arg.OwnerID, arg.ScannerID)
 	if err != nil {
 		return nil, err
 	}
@@ -482,7 +444,6 @@ func (q *Queries) ListProcessingScans(ctx context.Context, arg ListProcessingSca
 			&i.ID,
 			&i.ProcessingID,
 			&i.FrameID,
-			&i.Scanner,
 			&i.FileKey,
 			&i.FileName,
 			&i.ContentType,
@@ -491,7 +452,10 @@ func (q *Queries) ListProcessingScans(ctx context.Context, arg ListProcessingSca
 			&i.UpdatedAt,
 			&i.DeletedAt,
 			&i.OwnerID,
+			&i.ScannerID,
 			&i.FrameNumber,
+			&i.ScannerBrand,
+			&i.ScannerModel,
 		); err != nil {
 			return nil, err
 		}
@@ -574,12 +538,13 @@ func (q *Queries) ListRollProcessing(ctx context.Context, arg ListRollProcessing
 
 const listScanOrders = `-- name: ListScanOrders :many
 
-SELECT o.processing_id, o.scanner, o.hi_res,
-       (SELECT count(*) FROM scan s WHERE s.processing_id = o.processing_id AND s.scanner = o.scanner AND s.deleted_at IS NULL)::int AS scan_count
+SELECT o.processing_id, o.scanner_id, o.settings, sc.brand AS scanner_brand, sc.model AS scanner_model, sc.kind AS scanner_kind,
+       (SELECT count(*) FROM scan s WHERE s.processing_id = o.processing_id AND s.scanner_id = o.scanner_id AND s.deleted_at IS NULL)::int AS scan_count
 FROM processing_scan_order o
 JOIN processing p ON p.id = o.processing_id
+JOIN scanner sc ON sc.id = o.scanner_id
 WHERE o.processing_id = ANY($1::uuid[]) AND p.owner_id = $2
-ORDER BY o.processing_id, o.scanner
+ORDER BY o.processing_id, lower(sc.brand), lower(sc.model)
 `
 
 type ListScanOrdersParams struct {
@@ -589,8 +554,11 @@ type ListScanOrdersParams struct {
 
 type ListScanOrdersRow struct {
 	ProcessingID uuid.UUID
-	Scanner      string
-	HiRes        bool
+	ScannerID    uuid.UUID
+	Settings     json.RawMessage
+	ScannerBrand string
+	ScannerModel *string
+	ScannerKind  *string
 	ScanCount    int32
 }
 
@@ -606,8 +574,11 @@ func (q *Queries) ListScanOrders(ctx context.Context, arg ListScanOrdersParams) 
 		var i ListScanOrdersRow
 		if err := rows.Scan(
 			&i.ProcessingID,
-			&i.Scanner,
-			&i.HiRes,
+			&i.ScannerID,
+			&i.Settings,
+			&i.ScannerBrand,
+			&i.ScannerModel,
+			&i.ScannerKind,
 			&i.ScanCount,
 		); err != nil {
 			return nil, err
@@ -692,7 +663,7 @@ func (q *Queries) ProcessingHasScans(ctx context.Context, arg ProcessingHasScans
 
 const replaceScan = `-- name: ReplaceScan :one
 UPDATE scan SET file_key = $2, file_name = $3, content_type = $4, size_bytes = $5, created_at = now()
-WHERE id = $1 AND owner_id = $6 AND deleted_at IS NULL RETURNING id, processing_id, frame_id, scanner, file_key, file_name, content_type, size_bytes, created_at, updated_at, deleted_at, owner_id
+WHERE id = $1 AND owner_id = $6 AND deleted_at IS NULL RETURNING id, processing_id, frame_id, file_key, file_name, content_type, size_bytes, created_at, updated_at, deleted_at, owner_id, scanner_id
 `
 
 type ReplaceScanParams struct {
@@ -718,7 +689,6 @@ func (q *Queries) ReplaceScan(ctx context.Context, arg ReplaceScanParams) (Scan,
 		&i.ID,
 		&i.ProcessingID,
 		&i.FrameID,
-		&i.Scanner,
 		&i.FileKey,
 		&i.FileName,
 		&i.ContentType,
@@ -727,37 +697,22 @@ func (q *Queries) ReplaceScan(ctx context.Context, arg ReplaceScanParams) (Scan,
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.OwnerID,
+		&i.ScannerID,
 	)
 	return i, err
 }
 
 const scanOrderExists = `-- name: ScanOrderExists :one
-SELECT EXISTS (SELECT 1 FROM processing_scan_order WHERE processing_id = $1 AND scanner = $2)
+SELECT EXISTS (SELECT 1 FROM processing_scan_order WHERE processing_id = $1 AND scanner_id = $2)
 `
 
 type ScanOrderExistsParams struct {
 	ProcessingID uuid.UUID
-	Scanner      string
+	ScannerID    uuid.UUID
 }
 
 func (q *Queries) ScanOrderExists(ctx context.Context, arg ScanOrderExistsParams) (bool, error) {
-	row := q.db.QueryRow(ctx, scanOrderExists, arg.ProcessingID, arg.Scanner)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
-}
-
-const scannerHasScans = `-- name: ScannerHasScans :one
-SELECT EXISTS (SELECT 1 FROM scan WHERE processing_id = $1 AND scanner = $2 AND deleted_at IS NULL)
-`
-
-type ScannerHasScansParams struct {
-	ProcessingID uuid.UUID
-	Scanner      string
-}
-
-func (q *Queries) ScannerHasScans(ctx context.Context, arg ScannerHasScansParams) (bool, error) {
-	row := q.db.QueryRow(ctx, scannerHasScans, arg.ProcessingID, arg.Scanner)
+	row := q.db.QueryRow(ctx, scanOrderExists, arg.ProcessingID, arg.ScannerID)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
@@ -965,17 +920,17 @@ func (q *Queries) UpdateProcessing(ctx context.Context, arg UpdateProcessingPara
 }
 
 const upsertScanOrder = `-- name: UpsertScanOrder :exec
-INSERT INTO processing_scan_order (processing_id, scanner, hi_res) VALUES ($1, $2, $3)
-ON CONFLICT (processing_id, scanner) DO UPDATE SET hi_res = EXCLUDED.hi_res
+INSERT INTO processing_scan_order (processing_id, scanner_id, settings) VALUES ($1, $2, $3)
+ON CONFLICT (processing_id, scanner_id) DO UPDATE SET settings = EXCLUDED.settings
 `
 
 type UpsertScanOrderParams struct {
 	ProcessingID uuid.UUID
-	Scanner      string
-	HiRes        bool
+	ScannerID    uuid.UUID
+	Settings     json.RawMessage
 }
 
 func (q *Queries) UpsertScanOrder(ctx context.Context, arg UpsertScanOrderParams) error {
-	_, err := q.db.Exec(ctx, upsertScanOrder, arg.ProcessingID, arg.Scanner, arg.HiRes)
+	_, err := q.db.Exec(ctx, upsertScanOrder, arg.ProcessingID, arg.ScannerID, arg.Settings)
 	return err
 }
