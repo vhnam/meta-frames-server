@@ -531,6 +531,16 @@ type GearStats struct {
 	Lenses  []RankedItem `json:"lenses"`
 }
 
+// GoogleConfig defines model for GoogleConfig.
+type GoogleConfig struct {
+	ServerClientId string `json:"serverClientId"`
+}
+
+// GoogleTokenInput defines model for GoogleTokenInput.
+type GoogleTokenInput struct {
+	IdToken string `json:"idToken"`
+}
+
 // Health Example: {"status":"ok"}
 type Health struct {
 	Status HealthStatus `json:"status"`
