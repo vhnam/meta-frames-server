@@ -63,7 +63,7 @@ func newHarness(test *testing.T) *harness {
 		test.Skip("integration tests need Docker; skipped with -short")
 	}
 	ctx := context.Background()
-	container, err := tcpostgres.Run(ctx, "postgres:17-alpine",
+	container, err := tcpostgres.Run(ctx, "postgres:18-alpine",
 		tcpostgres.WithDatabase("test"), tcpostgres.WithUsername("postgres"), tcpostgres.WithPassword("postgres"),
 		testcontainers.WithWaitStrategy(wait.ForLog("database system is ready to accept connections").WithOccurrence(2)))
 	if err != nil {
