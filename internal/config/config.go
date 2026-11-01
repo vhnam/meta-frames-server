@@ -31,6 +31,8 @@ type Config struct {
 	// Sign in with Google; disabled unless both are set.
 	GoogleClientID     string
 	GoogleClientSecret string
+	// iOS and Android OAuth clients allowed to sign in with an ID token.
+	GoogleMobileClientIDs []string
 }
 
 // Load reads the settings from the environment. It reports every invalid value at once.
@@ -53,6 +55,8 @@ func Load() (Config, error) {
 
 		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
 		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+
+		GoogleMobileClientIDs: splitList(os.Getenv("GOOGLE_MOBILE_CLIENT_IDS")),
 	}
 
 	maxConns, err := nonNegativeInt32("DB_MAX_CONNS")

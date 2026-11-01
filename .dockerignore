@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+.DS_Store
+coverage*.out
+/bin
+/tmp
+/data
+.agents
+.claude
+.gitnexus

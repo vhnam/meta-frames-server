@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `GET /auth/google/config` returns the web client id (`GOOGLE_CLIENT_ID`) that a mobile app names when it requests an ID token.
+- `POST /auth/google/token` signs in a mobile app with a Google ID token. It finds or creates the account as the browser flow does and sets the session cookie. `GOOGLE_MOBILE_CLIENT_IDS` lists the iOS and Android OAuth clients it accepts, besides `GOOGLE_CLIENT_ID`.
 - `make run-prod` runs the local server with `DATABASE_URL` from `.env.prod`. Other settings still come from `.env`.
 - Film stock `description` is documented as Markdown text in the API spec (`format: markdown`). The server stores it unchanged.
 - Scanners have their own table and endpoints: `GET /scanners`, `POST /scanners`, `GET|PUT|DELETE /scanners/{id}`. Two built-in scanners, Noritsu HS-1800 and Frontier SP-3000, are visible to every account and read-only (`409 built_in_scanner`). Each account adds its own (another lab's machine, a flatbed, a camera rig) with `brand`, `model`, an optional `kind` and `notes`. A scanner used by a job or a scan cannot be deleted (`409 scanner_in_use`).
@@ -19,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The server checks its settings at startup and exits with one message listing every invalid value. A bad `PORT`, `DB_MAX_CONNS`, URL, `MAIL_FROM`, `SMTP_ADDR` or `SESSION_SAMESITE`, or only one of `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, used to be ignored or fail later. Passwords in a URL are hidden in the message.
+- The server accepts unencrypted HTTP/2 (h2c) as well as HTTP/1.1, so Cloud Run can forward requests over 32 MiB, such as large scan uploads, when deployed with `--use-http2`.
+- Compose and the integration tests use Postgres 18, the major version production runs. Compose keeps its data in a new volume (`pgdata18`), so `make db-up` starts with an empty database; dump a Postgres 17 database and restore it to keep its data.
+- `.dockerignore` keeps `.env` files, `/data` and other local files out of the Docker build context.
 - A scanner's `model` is optional; `brand` stays required. A lab may run a Noritsu whose model nobody knows: such a scanner is named by its brand alone, and an account has at most one per brand. Migration `00013` drops the `NOT NULL` on `scanner.model`.
 - The fixed scanner list (`noritsu`, `frontier`, `other`) is gone from the database. Migration `00011` moves existing data to the scanner table: `other` becomes an "Unknown scanner" owned by each account that used it, to rename to the real machine.
 
