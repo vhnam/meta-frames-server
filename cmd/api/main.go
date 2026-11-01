@@ -130,7 +130,11 @@ func newAccounts(cfg config.Config, store db.Store) (*auth.Auth, error) {
 		APIURL:       cfg.APIURL,
 		MailFrom:     cfg.MailFrom,
 		Mailer:       newMailer(cfg),
-		Google:       auth.GoogleConfig{ClientID: cfg.GoogleClientID, ClientSecret: cfg.GoogleClientSecret},
+		Google: auth.GoogleConfig{
+			ClientID:        cfg.GoogleClientID,
+			ClientSecret:    cfg.GoogleClientSecret,
+			MobileClientIDs: cfg.GoogleMobileClientIDs,
+		},
 	})
 }
 

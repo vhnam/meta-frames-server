@@ -318,6 +318,76 @@ paths:
           headers:
             Location: { schema: { type: string }, description: "`{APP_URL}{redir}`, or `{APP_URL}/login?error=<code>`" }
 
+  /auth/google/config:
+    get:
+      tags: [Auth]
+      operationId: getGoogleConfig
+      security: [] # public
+      summary: The web client id a mobile app names when it requests a Google ID token
+      responses:
+        "200":
+          description: The server's web client id (`GOOGLE_CLIENT_ID`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GoogleConfig" }
+        "404":
+          description: "`not_configured`: the server has no web client"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /auth/google/token:
+    post:
+      tags: [Auth]
+      operationId: signInWithGoogleToken
+      security: [] # public
+      summary: Sign in a mobile app with a Google ID token
+      description: |
+        For native apps, which get an ID token from the device's Google account picker. The server checks the token
+        against Google's keys and requires its audience to be `GOOGLE_CLIENT_ID` or one of `GOOGLE_MOBILE_CLIENT_IDS`.
+        It then finds or creates the account as the browser flow does and sets the session cookie, like `/auth/login`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GoogleTokenInput" }
+      responses:
+        "200":
+          description: Signed in; the session cookie is set
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResult" }
+        "400":
+          description: Missing token
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401":
+          description: "`invalid_google_token`: the signature, expiry, issuer or audience is wrong"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "403":
+          description: "`email_not_verified`: Google has not verified the email"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "404":
+          description: "`not_configured`: the server accepts no Google clients"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "409":
+          description: "`account_conflict`: the email's account is linked to another Google account"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429":
+          description: "`account_locked`: too many wrong passwords"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
   /auth/me:
     get:
       tags: [Auth]
@@ -3690,6 +3760,19 @@ components:
         email: ansel@example.com
         password: "Zone-System5"
         name: Ansel
+
+    GoogleConfig:
+      type: object
+      required: [serverClientId]
+      properties:
+        serverClientId: { type: string }
+
+    GoogleTokenInput:
+      type: object
+      additionalProperties: false
+      required: [idToken]
+      properties:
+        idToken: { type: string, minLength: 1, maxLength: 8192 }
 
     LoginInput:
       type: object

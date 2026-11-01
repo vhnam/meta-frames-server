@@ -35,6 +35,12 @@ type GoogleConfig struct {
 	// Endpoint and UserInfoURL default to Google's; tests point them at a fake.
 	Endpoint    oauth2.Endpoint
 	UserInfoURL string
+
+	// MobileClientIDs are the iOS and Android OAuth clients whose ID tokens POST /auth/google/token
+	// accepts, besides ClientID. Setting any of them enables that route without a client secret.
+	MobileClientIDs []string
+	// VerifyIDToken defaults to checking against Google's keys; tests replace it.
+	VerifyIDToken GoogleIDTokenVerifier
 }
 
 func (google GoogleConfig) enabled() bool { return google.ClientID != "" && google.ClientSecret != "" }

@@ -1,5 +1,5 @@
 // Package auth adds accounts with authboss: registration, password login (with lockout after
-// repeated wrong passwords), sign-in with Google, logout and password recovery under /auth, plus the signed-in user
+// repeated wrong passwords), sign-in with Google from a browser or a mobile app, logout and password recovery under /auth, plus the signed-in user
 // for every other handler (GET /auth/me, and the session check in internal/server).
 //
 // Sessions live in the user_session table behind an HTTP-only cookie, so they can be ended
@@ -77,6 +77,10 @@ type Auth struct {
 	storer   *Storer
 	sessions *sessionStore
 	google   bool
+
+	googleWebClientID string
+	googleAudiences   []string
+	verifyGoogleToken GoogleIDTokenVerifier
 }
 
 func New(store db.Store, config Config) (*Auth, error) {
@@ -95,6 +99,10 @@ func New(store db.Store, config Config) (*Auth, error) {
 		storer:   storer,
 		sessions: &sessionStore{store: store, storer: storer, secure: config.SecureCookie, sameSite: sameSite},
 		google:   config.Google.enabled(),
+
+		googleWebClientID: config.Google.ClientID,
+		googleAudiences:   config.Google.audiences(),
+		verifyGoogleToken: config.Google.idTokenVerifier(),
 	}
 	appURL := strings.TrimRight(config.AppURL, "/")
 	browser := browserFlow{appURL: appURL}
@@ -174,6 +182,8 @@ func (accounts *Auth) Mount(router gin.IRoutes) {
 			})
 		}
 	}
+	router.GET(mountPath+googleConfigRoute, accounts.googleConfig)
+	router.POST(mountPath+googleTokenRoute, accounts.signInWithGoogleToken)
 }
 
 // LoadUser puts the signed-in user, if any, into the request context for CurrentUser.
