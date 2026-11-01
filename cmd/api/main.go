@@ -91,14 +91,7 @@ func run(cfg config.Config) error {
 		return err
 	}
 
-	srv := &http.Server{
-		Addr:              ":" + cfg.Port,
-		Handler:           handler,
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       60 * time.Second, // scan uploads are multipart, so keep this generous
-		WriteTimeout:      60 * time.Second,
-		IdleTimeout:       120 * time.Second,
-	}
+	srv := newServer(":"+cfg.Port, handler)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -114,6 +107,23 @@ func run(cfg config.Config) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
+	}
+}
+
+// newServer accepts HTTP/1.1 and unencrypted HTTP/2. A proxy that ends TLS can then forward
+// over HTTP/2, which Cloud Run needs for requests over 32 MiB, such as large scan uploads.
+func newServer(addr string, handler http.Handler) *http.Server {
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		Protocols:         protocols,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second, // scan uploads are multipart, so keep this generous
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 }
 

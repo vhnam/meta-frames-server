@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net"
 	"net/http"
 	"testing"
 
@@ -29,6 +30,36 @@ func TestParseSameSite(test *testing.T) {
 	}
 	if _, err := parseSameSite("sometimes"); err == nil {
 		test.Fatal("an unknown SameSite mode must fail")
+	}
+}
+
+func TestServerAcceptsHTTP1AndUnencryptedHTTP2(test *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		test.Fatal(err)
+	}
+	server := newServer(listener.Addr().String(), http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	go func() { _ = server.Serve(listener) }()
+	test.Cleanup(func() { _ = server.Close() })
+
+	http1 := new(http.Protocols)
+	http1.SetHTTP1(true)
+	unencryptedHTTP2 := new(http.Protocols)
+	unencryptedHTTP2.SetUnencryptedHTTP2(true)
+
+	for want, protocols := range map[string]*http.Protocols{"HTTP/1.1": http1, "HTTP/2.0": unencryptedHTTP2} {
+		transport := &http.Transport{Protocols: protocols}
+		test.Cleanup(transport.CloseIdleConnections)
+		response, err := (&http.Client{Transport: transport}).Get("http://" + listener.Addr().String())
+		if err != nil {
+			test.Fatalf("%s request: %v", want, err)
+		}
+		_ = response.Body.Close()
+		if response.Proto != want || response.StatusCode != http.StatusNoContent {
+			test.Fatalf("response = %s %d, want %s %d", response.Proto, response.StatusCode, want, http.StatusNoContent)
+		}
 	}
 }
 
