@@ -7,6 +7,6 @@ generate:
   embedded-spec: false # api/embed.go embeds the full spec instead
 output-options:
   # authboss serves these routes itself (see internal/auth); /auth/me is the only generated auth handler.
-  exclude-operation-ids: [register, login, logout, startPasswordRecovery, resetPassword, startGoogleSignIn, finishGoogleSignIn]
+  exclude-operation-ids: [register, login, logout, startPasswordRecovery, resetPassword, startGoogleSignIn, finishGoogleSignIn, getGoogleConfig, signInWithGoogleToken]
   # Keep the models of the excluded operations: internal/auth renders them.
   skip-prune: true
