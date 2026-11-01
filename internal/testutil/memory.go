@@ -4,6 +4,7 @@ package testutil
 import (
 	"context"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -31,9 +32,11 @@ type Memory struct {
 	Frames        map[uuid.UUID]gen.Frame
 	Scans         map[uuid.UUID]gen.Scan
 	ScanOrders    []gen.ProcessingScanOrder
+	Scanners      map[uuid.UUID]gen.Scanner // starts with the built-in pair
 
 	RollLenses  []gen.RollLens
 	Labs        map[uuid.UUID]gen.Lab
+	LabScanners []gen.LabScanner
 	AtLabRows   []gen.NegativesAtLabRow
 	Inventory   []gen.InventoryRowsRow
 	Expiries    []gen.SoonestExpiriesRow
@@ -53,8 +56,19 @@ func NewMemory() *Memory {
 		Stocks: map[uuid.UUID]gen.FilmStock{}, Rolls: map[uuid.UUID]gen.Roll{}, Jobs: map[uuid.UUID]gen.Processing{},
 		Frames: map[uuid.UUID]gen.Frame{}, Scans: map[uuid.UUID]gen.Scan{}, Idempotency: map[string]gen.IdempotencyKey{}, Labs: map[uuid.UUID]gen.Lab{},
 		Users: map[uuid.UUID]gen.AppUser{}, Sessions: map[string]gen.UserSession{},
+		Scanners: map[uuid.UUID]gen.Scanner{
+			NoritsuHS1800.ID: NoritsuHS1800, FrontierSP3000.ID: FrontierSP3000,
+		},
 	}
 }
+
+// The built-in scanners, as migration 00011 creates them.
+var (
+	minilab        = "minilab"
+	hs1800, sp3000 = "HS-1800", "SP-3000"
+	NoritsuHS1800  = gen.Scanner{ID: uuid.MustParse("d177cb3c-a850-4232-a4ca-75189b7b279b"), Brand: "Noritsu", Model: &hs1800, Kind: &minilab}
+	FrontierSP3000 = gen.Scanner{ID: uuid.MustParse("e2bf4cbd-87a8-4a17-8340-516b1a1cc6bc"), Brand: "Frontier", Model: &sp3000, Kind: &minilab}
+)
 
 // ---- cameras ----
 
@@ -325,7 +339,7 @@ func (queries *Memory) UpsertFrame(_ context.Context, arg gen.UpsertFrameParams)
 
 func (queries *Memory) GetScanSlot(_ context.Context, arg gen.GetScanSlotParams) (gen.Scan, error) {
 	for _, scan := range queries.Scans {
-		if !scan.DeletedAt.Valid && scan.ProcessingID == arg.ProcessingID && scan.FrameID == arg.FrameID && scan.Scanner == arg.Scanner {
+		if !scan.DeletedAt.Valid && scan.ProcessingID == arg.ProcessingID && scan.FrameID == arg.FrameID && scan.ScannerID == arg.ScannerID {
 			return scan, nil
 		}
 	}
@@ -334,7 +348,7 @@ func (queries *Memory) GetScanSlot(_ context.Context, arg gen.GetScanSlotParams)
 
 func (queries *Memory) InsertScan(_ context.Context, arg gen.InsertScanParams) (gen.Scan, error) {
 	scan := gen.Scan{
-		ID: arg.ID, ProcessingID: arg.ProcessingID, FrameID: arg.FrameID, Scanner: arg.Scanner,
+		ID: arg.ID, ProcessingID: arg.ProcessingID, FrameID: arg.FrameID, ScannerID: arg.ScannerID,
 		FileKey: arg.FileKey, FileName: arg.FileName, ContentType: arg.ContentType, SizeBytes: arg.SizeBytes,
 	}
 	queries.Scans[arg.ID] = scan
@@ -543,8 +557,10 @@ func (queries *Memory) ListRollScans(_ context.Context, arg gen.ListRollScansPar
 	for _, scan := range queries.Scans {
 		frame := queries.Frames[scan.FrameID]
 		if frame.RollID == rollID && !scan.DeletedAt.Valid {
+			scanner := queries.Scanners[scan.ScannerID]
 			rows = append(rows, gen.ListRollScansRow{
-				ID: scan.ID, ProcessingID: scan.ProcessingID, FrameID: scan.FrameID, Scanner: scan.Scanner, FrameNumber: frame.Number,
+				ID: scan.ID, ProcessingID: scan.ProcessingID, FrameID: scan.FrameID, ScannerID: scan.ScannerID, FrameNumber: frame.Number,
+				ScannerBrand: scanner.Brand, ScannerModel: scanner.Model,
 			})
 		}
 	}
@@ -554,19 +570,21 @@ func (queries *Memory) ListRollScans(_ context.Context, arg gen.ListRollScansPar
 func (queries *Memory) ListProcessingScans(_ context.Context, arg gen.ListProcessingScansParams) ([]gen.ListProcessingScansRow, error) {
 	var rows []gen.ListProcessingScansRow
 	for _, scan := range queries.Scans {
-		if scan.DeletedAt.Valid || scan.ProcessingID != arg.ProcessingID || (arg.Scanner != nil && *arg.Scanner != scan.Scanner) {
+		if scan.DeletedAt.Valid || scan.ProcessingID != arg.ProcessingID || (arg.ScannerID != nil && *arg.ScannerID != scan.ScannerID) {
 			continue
 		}
+		scanner := queries.Scanners[scan.ScannerID]
 		rows = append(rows, gen.ListProcessingScansRow{
-			ID: scan.ID, ProcessingID: scan.ProcessingID, FrameID: scan.FrameID, Scanner: scan.Scanner, FileKey: scan.FileKey,
+			ID: scan.ID, ProcessingID: scan.ProcessingID, FrameID: scan.FrameID, ScannerID: scan.ScannerID, FileKey: scan.FileKey,
 			FileName: scan.FileName, ContentType: scan.ContentType, SizeBytes: scan.SizeBytes, FrameNumber: queries.Frames[scan.FrameID].Number,
+			ScannerBrand: scanner.Brand, ScannerModel: scanner.Model,
 		})
 	}
 	sort.Slice(rows, func(left, right int) bool {
 		if rows[left].FrameNumber != rows[right].FrameNumber {
 			return rows[left].FrameNumber < rows[right].FrameNumber
 		}
-		return rows[left].Scanner < rows[right].Scanner
+		return scannerSortKey(rows[left].ScannerBrand, rows[left].ScannerModel) < scannerSortKey(rows[right].ScannerBrand, rows[right].ScannerModel)
 	})
 	return rows, nil
 }
@@ -609,6 +627,36 @@ func (queries *Memory) GetLab(_ context.Context, arg gen.GetLabParams) (gen.Lab,
 	if !found || lab.DeletedAt.Valid {
 		return gen.Lab{}, pgx.ErrNoRows
 	}
+	return lab, nil
+}
+
+func (queries *Memory) ListLabs(_ context.Context, owner uuid.UUID) ([]gen.Lab, error) {
+	labs := []gen.Lab{}
+	for _, lab := range queries.Labs {
+		if lab.OwnerID == owner && !lab.DeletedAt.Valid {
+			labs = append(labs, lab)
+		}
+	}
+	sort.Slice(labs, func(left, right int) bool { return labs[left].Name < labs[right].Name })
+	return labs, nil
+}
+
+func (queries *Memory) InsertLab(_ context.Context, arg gen.InsertLabParams) (gen.Lab, error) {
+	if _, taken := queries.Labs[arg.ID]; taken {
+		return gen.Lab{}, &pgconn.PgError{Code: "23505"}
+	}
+	lab := gen.Lab{ID: arg.ID, Name: arg.Name, Address: arg.Address, OwnerID: arg.OwnerID}
+	queries.Labs[arg.ID] = lab
+	return lab, nil
+}
+
+func (queries *Memory) UpdateLab(_ context.Context, arg gen.UpdateLabParams) (gen.Lab, error) {
+	lab, found := queries.Labs[arg.ID]
+	if !found || lab.DeletedAt.Valid || lab.OwnerID != arg.OwnerID {
+		return gen.Lab{}, pgx.ErrNoRows
+	}
+	lab.Name, lab.Address = arg.Name, arg.Address
+	queries.Labs[arg.ID] = lab
 	return lab, nil
 }
 
@@ -809,31 +857,37 @@ func (queries *Memory) ListScanOrders(_ context.Context, arg gen.ListScanOrdersP
 			}
 			var count int32
 			for _, scan := range queries.Scans {
-				if scan.ProcessingID == jobID && scan.Scanner == order.Scanner && !scan.DeletedAt.Valid {
+				if scan.ProcessingID == jobID && scan.ScannerID == order.ScannerID && !scan.DeletedAt.Valid {
 					count++
 				}
 			}
-			rows = append(rows, gen.ListScanOrdersRow{ProcessingID: jobID, Scanner: order.Scanner, HiRes: order.HiRes, ScanCount: count})
+			scanner := queries.Scanners[order.ScannerID]
+			rows = append(rows, gen.ListScanOrdersRow{
+				ProcessingID: jobID, ScannerID: order.ScannerID, Settings: order.Settings, ScanCount: count,
+				ScannerBrand: scanner.Brand, ScannerModel: scanner.Model, ScannerKind: scanner.Kind,
+			})
 		}
 	}
-	sort.SliceStable(rows, func(left, right int) bool { return rows[left].Scanner < rows[right].Scanner })
+	sort.SliceStable(rows, func(left, right int) bool {
+		return scannerSortKey(rows[left].ScannerBrand, rows[left].ScannerModel) < scannerSortKey(rows[right].ScannerBrand, rows[right].ScannerModel)
+	})
 	return rows, nil
 }
 
 func (queries *Memory) UpsertScanOrder(_ context.Context, arg gen.UpsertScanOrderParams) error {
 	for index, order := range queries.ScanOrders {
-		if order.ProcessingID == arg.ProcessingID && order.Scanner == arg.Scanner {
-			queries.ScanOrders[index].HiRes = arg.HiRes
+		if order.ProcessingID == arg.ProcessingID && order.ScannerID == arg.ScannerID {
+			queries.ScanOrders[index].Settings = arg.Settings
 			return nil
 		}
 	}
-	queries.ScanOrders = append(queries.ScanOrders, gen.ProcessingScanOrder{ProcessingID: arg.ProcessingID, Scanner: arg.Scanner, HiRes: arg.HiRes})
+	queries.ScanOrders = append(queries.ScanOrders, gen.ProcessingScanOrder{ProcessingID: arg.ProcessingID, ScannerID: arg.ScannerID, Settings: arg.Settings})
 	return nil
 }
 
 func (queries *Memory) DeleteScanOrder(_ context.Context, arg gen.DeleteScanOrderParams) (int64, error) {
 	for index, order := range queries.ScanOrders {
-		if order.ProcessingID == arg.ProcessingID && order.Scanner == arg.Scanner {
+		if order.ProcessingID == arg.ProcessingID && order.ScannerID == arg.ScannerID {
 			queries.ScanOrders = append(queries.ScanOrders[:index], queries.ScanOrders[index+1:]...)
 			return 1, nil
 		}
@@ -843,7 +897,131 @@ func (queries *Memory) DeleteScanOrder(_ context.Context, arg gen.DeleteScanOrde
 
 func (queries *Memory) ScanOrderExists(_ context.Context, arg gen.ScanOrderExistsParams) (bool, error) {
 	for _, order := range queries.ScanOrders {
-		if order.ProcessingID == arg.ProcessingID && order.Scanner == arg.Scanner {
+		if order.ProcessingID == arg.ProcessingID && order.ScannerID == arg.ScannerID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// ---- scanners ----
+
+// scannerSortKey orders by brand, then model; a scanner without a model comes first.
+func scannerSortKey(brand string, model *string) string {
+	key := strings.ToLower(brand) + "\x00"
+	if model != nil {
+		key += "\x01" + strings.ToLower(*model)
+	}
+	return key
+}
+
+// sameModel compares optional models ignoring case; two missing models are the same.
+func sameModel(left, right *string) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return strings.EqualFold(*left, *right)
+}
+
+// visibleScanner is a live scanner that is built-in or belongs to owner.
+func (queries *Memory) visibleScanner(id, owner uuid.UUID) (gen.Scanner, bool) {
+	scanner, found := queries.Scanners[id]
+	if !found || scanner.DeletedAt.Valid || (scanner.OwnerID != uuid.Nil && scanner.OwnerID != owner) {
+		return gen.Scanner{}, false
+	}
+	return scanner, true
+}
+
+func (queries *Memory) ListScanners(_ context.Context, owner uuid.UUID) ([]gen.Scanner, error) {
+	scanners := []gen.Scanner{}
+	for id := range queries.Scanners {
+		if scanner, ok := queries.visibleScanner(id, owner); ok {
+			scanners = append(scanners, scanner)
+		}
+	}
+	sort.Slice(scanners, func(left, right int) bool {
+		leftOwn, rightOwn := scanners[left].OwnerID != uuid.Nil, scanners[right].OwnerID != uuid.Nil
+		if leftOwn != rightOwn {
+			return rightOwn
+		}
+		return scannerSortKey(scanners[left].Brand, scanners[left].Model) < scannerSortKey(scanners[right].Brand, scanners[right].Model)
+	})
+	return scanners, nil
+}
+
+func (queries *Memory) GetScanner(_ context.Context, arg gen.GetScannerParams) (gen.Scanner, error) {
+	if scanner, ok := queries.visibleScanner(arg.ID, arg.OwnerID); ok {
+		return scanner, nil
+	}
+	return gen.Scanner{}, pgx.ErrNoRows
+}
+
+// liveScannerNamed finds a live scanner of owner (uuid.Nil for built-in) by name, ignoring case.
+func (queries *Memory) liveScannerNamed(owner uuid.UUID, brand string, model *string) (gen.Scanner, bool) {
+	for _, scanner := range queries.Scanners {
+		if !scanner.DeletedAt.Valid && scanner.OwnerID == owner &&
+			strings.EqualFold(scanner.Brand, brand) && sameModel(scanner.Model, model) {
+			return scanner, true
+		}
+	}
+	return gen.Scanner{}, false
+}
+
+func (queries *Memory) GetOwnScannerNamed(_ context.Context, arg gen.GetOwnScannerNamedParams) (gen.Scanner, error) {
+	if scanner, ok := queries.liveScannerNamed(arg.OwnerID, arg.Brand, arg.Model); ok {
+		return scanner, nil
+	}
+	return gen.Scanner{}, pgx.ErrNoRows
+}
+
+func (queries *Memory) BuiltInScannerNamed(_ context.Context, arg gen.BuiltInScannerNamedParams) (bool, error) {
+	_, ok := queries.liveScannerNamed(uuid.Nil, arg.Brand, arg.Model)
+	return ok, nil
+}
+
+func (queries *Memory) InsertScanner(_ context.Context, arg gen.InsertScannerParams) (gen.Scanner, error) {
+	if _, taken := queries.Scanners[arg.ID]; taken {
+		return gen.Scanner{}, &pgconn.PgError{Code: "23505"}
+	}
+	if _, taken := queries.liveScannerNamed(arg.OwnerID, arg.Brand, arg.Model); taken {
+		return gen.Scanner{}, &pgconn.PgError{Code: "23505"}
+	}
+	scanner := gen.Scanner{ID: arg.ID, OwnerID: arg.OwnerID, Brand: arg.Brand, Model: arg.Model, Kind: arg.Kind, Notes: arg.Notes, DefaultSettings: arg.DefaultSettings}
+	queries.Scanners[arg.ID] = scanner
+	return scanner, nil
+}
+
+func (queries *Memory) UpdateScanner(_ context.Context, arg gen.UpdateScannerParams) (gen.Scanner, error) {
+	scanner, found := queries.Scanners[arg.ID]
+	if !found || scanner.DeletedAt.Valid || scanner.OwnerID != arg.OwnerID {
+		return gen.Scanner{}, pgx.ErrNoRows
+	}
+	if other, taken := queries.liveScannerNamed(arg.OwnerID, arg.Brand, arg.Model); taken && other.ID != arg.ID {
+		return gen.Scanner{}, &pgconn.PgError{Code: "23505"}
+	}
+	scanner.Brand, scanner.Model, scanner.Kind, scanner.Notes, scanner.DefaultSettings = arg.Brand, arg.Model, arg.Kind, arg.Notes, arg.DefaultSettings
+	queries.Scanners[arg.ID] = scanner
+	return scanner, nil
+}
+
+func (queries *Memory) SoftDeleteScanner(_ context.Context, arg gen.SoftDeleteScannerParams) (int64, error) {
+	scanner, found := queries.Scanners[arg.ID]
+	if !found || scanner.DeletedAt.Valid || scanner.OwnerID != arg.OwnerID {
+		return 0, nil
+	}
+	scanner.DeletedAt = deletedNow
+	queries.Scanners[arg.ID] = scanner
+	return 1, nil
+}
+
+func (queries *Memory) ScannerInUse(_ context.Context, scannerID uuid.UUID) (bool, error) {
+	for _, order := range queries.ScanOrders {
+		if order.ScannerID == scannerID {
+			return true, nil
+		}
+	}
+	for _, scan := range queries.Scans {
+		if scan.ScannerID == scannerID {
 			return true, nil
 		}
 	}
@@ -948,5 +1126,60 @@ func (queries *Memory) DeleteExpiredSessions(context.Context) error {
 			delete(queries.Sessions, key)
 		}
 	}
+	return nil
+}
+
+// ---- lab scanners ----
+
+func (queries *Memory) ListLabScanners(_ context.Context, owner uuid.UUID) ([]gen.ListLabScannersRow, error) {
+	links := []gen.LabScanner{}
+	for _, link := range queries.LabScanners {
+		if queries.Labs[link.LabID].OwnerID == owner {
+			links = append(links, link)
+		}
+	}
+	sort.Slice(links, func(left, right int) bool {
+		if links[left].LabID != links[right].LabID {
+			return links[left].LabID.String() < links[right].LabID.String()
+		}
+		return links[left].Position < links[right].Position
+	})
+	rows := make([]gen.ListLabScannersRow, len(links))
+	for index, link := range links {
+		rows[index] = gen.ListLabScannersRow{LabID: link.LabID, ScannerID: link.ScannerID}
+	}
+	return rows, nil
+}
+
+func (queries *Memory) DeleteLabScannersExcept(_ context.Context, arg gen.DeleteLabScannersExceptParams) error {
+	kept := queries.LabScanners[:0]
+	for _, link := range queries.LabScanners {
+		if link.LabID != arg.LabID || slices.Contains(arg.Keep, link.ScannerID) {
+			kept = append(kept, link)
+		}
+	}
+	queries.LabScanners = kept
+	return nil
+}
+
+func (queries *Memory) UpsertLabScanner(_ context.Context, arg gen.UpsertLabScannerParams) error {
+	for index, link := range queries.LabScanners {
+		if link.LabID == arg.LabID && link.ScannerID == arg.ScannerID {
+			queries.LabScanners[index].Position = arg.Position
+			return nil
+		}
+	}
+	queries.LabScanners = append(queries.LabScanners, gen.LabScanner{LabID: arg.LabID, ScannerID: arg.ScannerID, Position: arg.Position})
+	return nil
+}
+
+func (queries *Memory) RemoveScannerFromLabs(_ context.Context, scannerID uuid.UUID) error {
+	kept := queries.LabScanners[:0]
+	for _, link := range queries.LabScanners {
+		if link.ScannerID != scannerID {
+			kept = append(kept, link)
+		}
+	}
+	queries.LabScanners = kept
 	return nil
 }

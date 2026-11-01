@@ -95,8 +95,9 @@ RETURNING *;
 UPDATE frame SET notes = $2 WHERE id = $1 AND owner_id = $3 RETURNING *;
 
 -- name: ListRollScans :many
-SELECT s.*, f.number AS frame_number FROM scan s JOIN frame f ON f.id = s.frame_id
-WHERE f.roll_id = $1 AND s.owner_id = $2 AND s.deleted_at IS NULL ORDER BY f.number, s.scanner;
+SELECT s.*, f.number AS frame_number, sc.brand AS scanner_brand, sc.model AS scanner_model
+FROM scan s JOIN frame f ON f.id = s.frame_id JOIN scanner sc ON sc.id = s.scanner_id
+WHERE f.roll_id = $1 AND s.owner_id = $2 AND s.deleted_at IS NULL ORDER BY f.number, lower(sc.brand), lower(sc.model);
 
 -- name: RollSpend :one
 SELECT COALESCE(r.price, 0)::int AS roll_price, (r.price IS NULL)::bool AS roll_price_missing,

@@ -9,7 +9,7 @@ import (
 const maxScanBytes = 40 << 20
 
 type ImportOptions struct {
-	Scanner         string
+	Scanner         gen.Scanner
 	ReplaceExisting bool
 }
 
@@ -23,7 +23,8 @@ type RefView struct {
 	ID           uuid.UUID
 	ProcessingID uuid.UUID
 	FrameNumber  int32
-	Scanner      string
+	ScannerID    uuid.UUID
+	ScannerName  string
 }
 
 type FrameView struct {
@@ -34,6 +35,7 @@ type FrameView struct {
 type View struct {
 	Scan        gen.Scan
 	FrameNumber int32
+	ScannerName string
 }
 
 type ImportPreviewItem struct {
@@ -47,8 +49,11 @@ type ImportOutcome struct {
 	Skipped bool
 }
 
+// FrameComparison holds every scan of one frame in a job. Noritsu, Frontier and Missing are
+// the built-in pair the API used to compare, kept for old clients.
 type FrameComparison struct {
 	FrameNumber         int
+	Scans               []View
 	Noritsu             *View
 	Frontier            *View
 	Missing             []string

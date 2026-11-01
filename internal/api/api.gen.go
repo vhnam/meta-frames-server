@@ -53,6 +53,7 @@ const (
 	AuditEntityTypeRoll                AuditEntityType = "roll"
 	AuditEntityTypeRollLens            AuditEntityType = "roll_lens"
 	AuditEntityTypeScan                AuditEntityType = "scan"
+	AuditEntityTypeScanner             AuditEntityType = "scanner"
 )
 
 // Valid indicates whether the value is a known member of the AuditEntityType enum.
@@ -79,6 +80,8 @@ func (e AuditEntityType) Valid() bool {
 	case AuditEntityTypeRollLens:
 		return true
 	case AuditEntityTypeScan:
+		return true
+	case AuditEntityTypeScanner:
 		return true
 	default:
 		return false
@@ -199,21 +202,72 @@ func (e RollStatus) Valid() bool {
 	}
 }
 
-// Defines values for Scanner.
+// Defines values for ScanOptionType.
 const (
-	Frontier Scanner = "frontier"
-	Noritsu  Scanner = "noritsu"
-	Other    Scanner = "other"
+	Boolean ScanOptionType = "boolean"
+	Enum    ScanOptionType = "enum"
+	Integer ScanOptionType = "integer"
 )
 
-// Valid indicates whether the value is a known member of the Scanner enum.
-func (e Scanner) Valid() bool {
+// Valid indicates whether the value is a known member of the ScanOptionType enum.
+func (e ScanOptionType) Valid() bool {
+	switch e {
+	case Boolean:
+		return true
+	case Enum:
+		return true
+	case Integer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScannerCode.
+const (
+	Frontier ScannerCode = "frontier"
+	Noritsu  ScannerCode = "noritsu"
+	Other    ScannerCode = "other"
+)
+
+// Valid indicates whether the value is a known member of the ScannerCode enum.
+func (e ScannerCode) Valid() bool {
 	switch e {
 	case Frontier:
 		return true
 	case Noritsu:
 		return true
 	case Other:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScannerKind.
+const (
+	ScannerKindCamera        ScannerKind = "camera"
+	ScannerKindDedicatedFilm ScannerKind = "dedicated_film"
+	ScannerKindDrum          ScannerKind = "drum"
+	ScannerKindFlatbed       ScannerKind = "flatbed"
+	ScannerKindMinilab       ScannerKind = "minilab"
+	ScannerKindVirtualDrum   ScannerKind = "virtual_drum"
+)
+
+// Valid indicates whether the value is a known member of the ScannerKind enum.
+func (e ScannerKind) Valid() bool {
+	switch e {
+	case ScannerKindCamera:
+		return true
+	case ScannerKindDedicatedFilm:
+		return true
+	case ScannerKindDrum:
+		return true
+	case ScannerKindFlatbed:
+		return true
+	case ScannerKindMinilab:
+		return true
+	case ScannerKindVirtualDrum:
 		return true
 	default:
 		return false
@@ -439,7 +493,7 @@ type FixedLensInput struct {
 	Model       *string `json:"model,omitempty"`
 }
 
-// Frame Example: {"id":"50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11","notes":"Golden hour on the bridge","number":7,"scans":[{"frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu"}]}
+// Frame Example: {"id":"50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11","notes":"Golden hour on the bridge","number":7,"scans":[{"frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu","scannerId":"d177cb3c-a850-4232-a4ca-75189b7b279b","scannerName":"Noritsu HS-1800"}]}
 type Frame struct {
 	Id     openapi_types.UUID `json:"id"`
 	Notes  *string            `json:"notes,omitempty"`
@@ -447,18 +501,23 @@ type Frame struct {
 	Scans  []ScanRef          `json:"scans"`
 }
 
-// FrameComparison Example: {"frameNumber":7,"missing":["frontier"],"nextFrameNumber":8,"noritsu":{"fileName":"000007.jpg","fileUrl":"/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file","frameId":"50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11","frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu","sizeBytes":2481920},"previousFrameNumber":6}
+// FrameComparison Example: {"frameNumber":7,"missing":["frontier"],"nextFrameNumber":8,"noritsu":{"fileName":"000007.jpg","fileUrl":"/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file","frameId":"50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11","frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu","scannerId":"d177cb3c-a850-4232-a4ca-75189b7b279b","scannerName":"Noritsu HS-1800","sizeBytes":2481920},"previousFrameNumber":6,"scans":[{"fileName":"000007.jpg","fileUrl":"/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file","frameId":"50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11","frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu","scannerId":"d177cb3c-a850-4232-a4ca-75189b7b279b","scannerName":"Noritsu HS-1800","sizeBytes":2481920}]}
 type FrameComparison struct {
 	FrameNumber int `json:"frameNumber"`
 
-	// Frontier Example: {"fileName":"000007.jpg","fileUrl":"/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file","frameId":"50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11","frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu","sizeBytes":2481920}
-	Frontier        *Scan     `json:"frontier,omitempty"`
-	Missing         []Scanner `json:"missing"`
-	NextFrameNumber *int      `json:"nextFrameNumber,omitempty"`
+	// Frontier Example: {"fileName":"000007.jpg","fileUrl":"/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file","frameId":"50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11","frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu","scannerId":"d177cb3c-a850-4232-a4ca-75189b7b279b","scannerName":"Noritsu HS-1800","sizeBytes":2481920}
+	Frontier *Scan `json:"frontier,omitempty"`
 
-	// Noritsu Example: {"fileName":"000007.jpg","fileUrl":"/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file","frameId":"50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11","frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu","sizeBytes":2481920}
+	// Missing Which of the two built-in scanners has no scan of this frame (deprecated, like noritsu and frontier)
+	Missing         []ScannerCode `json:"missing"`
+	NextFrameNumber *int          `json:"nextFrameNumber,omitempty"`
+
+	// Noritsu Example: {"fileName":"000007.jpg","fileUrl":"/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file","frameId":"50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11","frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu","scannerId":"d177cb3c-a850-4232-a4ca-75189b7b279b","scannerName":"Noritsu HS-1800","sizeBytes":2481920}
 	Noritsu             *Scan `json:"noritsu,omitempty"`
 	PreviousFrameNumber *int  `json:"previousFrameNumber,omitempty"`
+
+	// Scans Every scan of the frame in this job, by scanner name
+	Scans []Scan `json:"scans"`
 }
 
 // FrameInput Example: {"notes":"Golden hour on the bridge"}
@@ -506,7 +565,7 @@ type ImportPreviewItem struct {
 	FrameNumber *int `json:"frameNumber,omitempty"`
 }
 
-// ImportResult Example: {"failed":[{"fileName":"notes.txt","reason":"not a supported image (jpeg, png, webp, tiff)"}],"imported":[{"fileName":"000007.jpg","fileUrl":"/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file","frameId":"50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11","frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu","sizeBytes":2481920}],"scansReceivedAt":"2026-09-27","skipped":[{"fileName":"000009.jpg","reason":"a scan already exists for this frame and scanner"}]}
+// ImportResult Example: {"failed":[{"fileName":"notes.txt","reason":"not a supported image (jpeg, png, webp, tiff)"}],"imported":[{"fileName":"000007.jpg","fileUrl":"/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file","frameId":"50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11","frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu","scannerId":"d177cb3c-a850-4232-a4ca-75189b7b279b","scannerName":"Noritsu HS-1800","sizeBytes":2481920}],"scansReceivedAt":"2026-09-27","skipped":[{"fileName":"000009.jpg","reason":"a scan already exists for this frame and scanner"}]}
 type ImportResult struct {
 	Failed          []ImportFailure    `json:"failed"`
 	Imported        []Scan             `json:"imported"`
@@ -531,19 +590,26 @@ type InventoryItem struct {
 	Stock FilmStock `json:"stock"`
 }
 
-// Lab Example: {"address":"12 Nguyen Hue, District 1, Ho Chi Minh City","createdAt":"2026-09-01T08:30:00Z","id":"3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09","name":"Saigon Film Lab","updatedAt":"2026-09-20T10:00:00Z"}
+// Lab Example: {"address":"12 Nguyen Hue, District 1, Ho Chi Minh City","createdAt":"2026-09-01T08:30:00Z","id":"3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09","name":"Saigon Film Lab","scannerIds":["d177cb3c-a850-4232-a4ca-75189b7b279b"],"updatedAt":"2026-09-20T10:00:00Z"}
 type Lab struct {
 	Address   *string            `json:"address,omitempty"`
 	CreatedAt time.Time          `json:"createdAt"`
 	Id        openapi_types.UUID `json:"id"`
 	Name      string             `json:"name"`
-	UpdatedAt time.Time          `json:"updatedAt"`
+
+	// ScannerIds The scanners the lab runs, the default first; empty when none were given
+	ScannerIds []openapi_types.UUID `json:"scannerIds"`
+	UpdatedAt  time.Time            `json:"updatedAt"`
 }
 
-// LabInput Example: {"address":"12 Nguyen Hue, District 1, Ho Chi Minh City","name":"Saigon Film Lab"}
+// LabInput Example: {"address":"12 Nguyen Hue, District 1, Ho Chi Minh City","name":"Saigon Film Lab","scannerIds":["d177cb3c-a850-4232-a4ca-75189b7b279b"]}
 type LabInput struct {
 	Address *string `json:"address,omitempty"`
 	Name    string  `json:"name"`
+
+	// ScannerIds The scanners the lab runs, built-in or the account's own, in order: the first is the default
+	// for a job sent there. Replaces the lab's set; omit it to keep the set as it is.
+	ScannerIds *[]openapi_types.UUID `json:"scannerIds,omitempty"`
 }
 
 // Lens Example: {"brand":"Nikon","createdAt":"2026-09-01T08:30:00Z","focalLength":50,"id":"a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03","isActive":true,"isBuiltIn":false,"maxAperture":1.4,"model":"Nikkor 50mm f/1.4 AI-S","mount":"F","updatedAt":"2026-09-20T10:00:00Z"}
@@ -629,7 +695,7 @@ type Problem struct {
 // Process defines model for Process.
 type Process string
 
-// Processing Example: {"id":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","isOpen":true,"labId":"3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09","labName":"Saigon Film Lab","notes":"Push 1 stop","price":90000,"process":"C-41","rollId":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","scanOrders":[{"hiRes":false,"scanCount":36,"scanner":"noritsu"}],"scansExpectedAt":"2026-10-04","scansReceivedAt":"2026-09-27","sentAt":"2026-09-20","type":"develop_scan"}
+// Processing Example: {"id":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","isOpen":true,"labId":"3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09","labName":"Saigon Film Lab","notes":"Push 1 stop","price":90000,"process":"C-41","rollId":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","scanOrders":[{"hiRes":false,"scanCount":36,"scanner":"noritsu","scannerId":"d177cb3c-a850-4232-a4ca-75189b7b279b","scannerName":"Noritsu HS-1800","settings":{"resolution":"standard"}}],"scansExpectedAt":"2026-10-04","scansReceivedAt":"2026-09-27","sentAt":"2026-09-20","type":"develop_scan"}
 type Processing struct {
 	Id                  openapi_types.UUID  `json:"id"`
 	IsOpen              bool                `json:"isOpen"`
@@ -648,7 +714,7 @@ type Processing struct {
 	Type                ProcessingType      `json:"type"`
 }
 
-// ProcessingInput Example: {"labId":"3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09","notes":"Push 1 stop","price":90000,"process":"C-41","scanOrders":[{"hiRes":false,"scanner":"noritsu"}],"scansExpectedAt":"2026-10-04","sentAt":"2026-09-20","type":"develop_scan"}
+// ProcessingInput Example: {"labId":"3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09","notes":"Push 1 stop","price":90000,"process":"C-41","scanOrders":[{"hiRes":false,"scannerId":"d177cb3c-a850-4232-a4ca-75189b7b279b"}],"scansExpectedAt":"2026-10-04","sentAt":"2026-09-20","type":"develop_scan"}
 type ProcessingInput struct {
 	// LabId Absent means processed at home
 	LabId *openapi_types.UUID `json:"labId,omitempty"`
@@ -768,7 +834,7 @@ type RollTotals struct {
 	Total           int  `json:"total"`
 }
 
-// Scan Example: {"fileName":"000007.jpg","fileUrl":"/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file","frameId":"50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11","frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu","sizeBytes":2481920}
+// Scan Example: {"fileName":"000007.jpg","fileUrl":"/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file","frameId":"50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11","frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu","scannerId":"d177cb3c-a850-4232-a4ca-75189b7b279b","scannerName":"Noritsu HS-1800","sizeBytes":2481920}
 type Scan struct {
 	FileName     string             `json:"fileName"`
 	FileUrl      string             `json:"fileUrl"`
@@ -776,37 +842,177 @@ type Scan struct {
 	FrameNumber  int                `json:"frameNumber"`
 	Id           openapi_types.UUID `json:"id"`
 	ProcessingId openapi_types.UUID `json:"processingId"`
-	Scanner      Scanner            `json:"scanner"`
-	SizeBytes    int64              `json:"sizeBytes"`
+
+	// Scanner Old way to name a scanner, kept until clients move to scanner ids. noritsu and frontier are the
+	// built-in Noritsu HS-1800 and Frontier SP-3000; in responses every other scanner reads as other.
+	// As input, other means the account's "Unknown scanner", created on first use.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+	Scanner     ScannerCode        `json:"scanner"`
+	ScannerId   openapi_types.UUID `json:"scannerId"`
+	ScannerName string             `json:"scannerName"`
+	SizeBytes   int64              `json:"sizeBytes"`
 }
 
-// ScanOrder Example: {"hiRes":true,"scanCount":36,"scanner":"noritsu"}
+// ScanOption Example: {"default":"standard","key":"resolution","label":"Resolution","type":"enum","values":[{"label":"Standard","value":"standard"},{"label":"Hi-res","value":"hi_res"}]}
+type ScanOption struct {
+	// Default Value used when the option is left out: a string, a boolean or an integer, by type
+	Default interface{} `json:"default"`
+	Key     string      `json:"key"`
+	Label   string      `json:"label"`
+
+	// Max Highest value of an integer option
+	Max *int `json:"max,omitempty"`
+
+	// Min Lowest value of an integer option
+	Min  *int           `json:"min,omitempty"`
+	Type ScanOptionType `json:"type"`
+
+	// Values Choices of an enum option
+	Values *[]ScanOptionValue `json:"values,omitempty"`
+}
+
+// ScanOptionType defines model for ScanOption.Type.
+type ScanOptionType string
+
+// ScanOptionValue defines model for ScanOptionValue.
+type ScanOptionValue struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+}
+
+// ScanOrder Example: {"hiRes":true,"scanCount":36,"scanner":"noritsu","scannerId":"d177cb3c-a850-4232-a4ca-75189b7b279b","scannerName":"Noritsu HS-1800","settings":{"resolution":"hi_res"}}
 type ScanOrder struct {
+	// HiRes settings.resolution is hi_res
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	HiRes bool `json:"hiRes"`
 
 	// ScanCount Scans imported for this scanner so far
-	ScanCount int     `json:"scanCount"`
-	Scanner   Scanner `json:"scanner"`
+	ScanCount int `json:"scanCount"`
+
+	// Scanner Old way to name a scanner, kept until clients move to scanner ids. noritsu and frontier are the
+	// built-in Noritsu HS-1800 and Frontier SP-3000; in responses every other scanner reads as other.
+	// As input, other means the account's "Unknown scanner", created on first use.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+	Scanner     ScannerCode        `json:"scanner"`
+	ScannerId   openapi_types.UUID `json:"scannerId"`
+	ScannerName string             `json:"scannerName"`
+
+	// Settings Chosen value of each scan option, by option key: a string for enum options, a boolean or an
+	// integer. Which keys and values are allowed depends on the scanner's kind (GET /scanner-kinds).
+	//
+	//
+	// Example: {"format":"tiff","resolution":"hi_res"}
+	Settings ScanSettings `json:"settings"`
 }
 
-// ScanOrderInput Example: {"hiRes":true,"scanner":"noritsu"}
+// ScanOrderInput Names the scanner by scannerId, or by the deprecated scanner code; exactly one of the two.
+// Without settings (or the deprecated hiRes), an order already on the job keeps its settings and
+// a new one starts from the scanner's defaultSettings.
+//
+// Example: {"scannerId":"d177cb3c-a850-4232-a4ca-75189b7b279b","settings":{"format":"tiff","resolution":"hi_res"}}
 type ScanOrderInput struct {
-	HiRes   *bool   `json:"hiRes,omitempty"`
-	Scanner Scanner `json:"scanner"`
+	// HiRes Old flag for settings { resolution hi_res } (true) or { resolution standard } (false); ignored with settings.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+	HiRes *bool `json:"hiRes,omitempty"`
+
+	// Scanner Old way to name a scanner, kept until clients move to scanner ids. noritsu and frontier are the
+	// built-in Noritsu HS-1800 and Frontier SP-3000; in responses every other scanner reads as other.
+	// As input, other means the account's "Unknown scanner", created on first use.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+	Scanner   *ScannerCode        `json:"scanner,omitempty"`
+	ScannerId *openapi_types.UUID `json:"scannerId,omitempty"`
+
+	// Settings Chosen value of each scan option, by option key: a string for enum options, a boolean or an
+	// integer. Which keys and values are allowed depends on the scanner's kind (GET /scanner-kinds).
+	//
+	//
+	// Example: {"format":"tiff","resolution":"hi_res"}
+	Settings *ScanSettings `json:"settings,omitempty"`
 }
 
-// ScanRef Example: {"frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu"}
+// ScanRef Example: {"frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu","scannerId":"d177cb3c-a850-4232-a4ca-75189b7b279b","scannerName":"Noritsu HS-1800"}
 type ScanRef struct {
 	FrameNumber  int                 `json:"frameNumber"`
 	Id           openapi_types.UUID  `json:"id"`
 	ProcessingId *openapi_types.UUID `json:"processingId,omitempty"`
-	Scanner      Scanner             `json:"scanner"`
+
+	// Scanner Old way to name a scanner, kept until clients move to scanner ids. noritsu and frontier are the
+	// built-in Noritsu HS-1800 and Frontier SP-3000; in responses every other scanner reads as other.
+	// As input, other means the account's "Unknown scanner", created on first use.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+	Scanner     ScannerCode        `json:"scanner"`
+	ScannerId   openapi_types.UUID `json:"scannerId"`
+	ScannerName string             `json:"scannerName"`
 }
 
-// Scanner defines model for Scanner.
-type Scanner string
+// ScanSettings Chosen value of each scan option, by option key: a string for enum options, a boolean or an
+// integer. Which keys and values are allowed depends on the scanner's kind (GET /scanner-kinds).
+//
+// Example: {"format":"tiff","resolution":"hi_res"}
+type ScanSettings map[string]interface{}
 
-// SearchResult Example: {"roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400"},"scans":[{"frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu"}]}
+// Scanner Example: {"brand":"Noritsu","builtIn":true,"createdAt":"2026-10-29T00:00:00Z","defaultSettings":{},"id":"d177cb3c-a850-4232-a4ca-75189b7b279b","kind":"minilab","model":"HS-1800","name":"Noritsu HS-1800","updatedAt":"2026-10-29T00:00:00Z"}
+type Scanner struct {
+	Brand string `json:"brand"`
+
+	// BuiltIn Part of the shared catalog: visible to every account, read-only
+	BuiltIn   bool      `json:"builtIn"`
+	CreatedAt time.Time `json:"createdAt"`
+
+	// DefaultSettings Chosen value of each scan option, by option key: a string for enum options, a boolean or an
+	// integer. Which keys and values are allowed depends on the scanner's kind (GET /scanner-kinds).
+	//
+	//
+	// Example: {"format":"tiff","resolution":"hi_res"}
+	DefaultSettings ScanSettings       `json:"defaultSettings"`
+	Id              openapi_types.UUID `json:"id"`
+	Kind            *ScannerKind       `json:"kind,omitempty"`
+
+	// Model Absent when unknown
+	Model *string `json:"model,omitempty"`
+
+	// Name Brand and model (the brand alone without a model), for display
+	Name string `json:"name"`
+
+	// Notes Markdown text
+	Notes     *string   `json:"notes,omitempty"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// ScannerCode Old way to name a scanner, kept until clients move to scanner ids. noritsu and frontier are the
+// built-in Noritsu HS-1800 and Frontier SP-3000; in responses every other scanner reads as other.
+// As input, other means the account's "Unknown scanner", created on first use.
+//
+// Deprecated: this type has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+type ScannerCode string
+
+// ScannerInput Example: {"brand":"Epson","defaultSettings":{"dpi":3200,"dust_removal":true},"kind":"flatbed","model":"V850"}
+type ScannerInput struct {
+	// Brand Required, e.g. Noritsu or Frontier
+	Brand string `json:"brand"`
+
+	// DefaultSettings Settings a new scan order on this scanner starts from; checked against the options of its kind
+	DefaultSettings *ScanSettings `json:"defaultSettings,omitempty"`
+	Kind            *ScannerKind  `json:"kind,omitempty"`
+
+	// Model Optional: a lab may run a Noritsu whose model nobody knows. For a camera rig, the body and lens, e.g. A7R IV + Laowa 100mm
+	Model *string `json:"model,omitempty"`
+
+	// Notes Markdown text: light source, holder, conversion software
+	Notes *string `json:"notes,omitempty"`
+}
+
+// ScannerKind defines model for ScannerKind.
+type ScannerKind string
+
+// ScannerKindOptions Example: {"kind":"camera","label":"Camera scan","options":[{"default":false,"key":"pixel_shift","label":"Pixel shift","type":"boolean"},{"default":1,"key":"stitch_shots","label":"Shots stitched per frame","max":16,"min":1,"type":"integer"}]}
+type ScannerKindOptions struct {
+	Kind    *ScannerKind `json:"kind,omitempty"`
+	Label   string       `json:"label"`
+	Options []ScanOption `json:"options"`
+}
+
+// SearchResult Example: {"roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400"},"scans":[{"frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu","scannerId":"d177cb3c-a850-4232-a4ca-75189b7b279b","scannerName":"Noritsu HS-1800"}]}
 type SearchResult struct {
 	// Roll Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400"}
 	Roll  RollSummary `json:"roll"`
@@ -909,7 +1115,11 @@ type ListLensesParams struct {
 
 // ListProcessingScansParams defines parameters for ListProcessingScans.
 type ListProcessingScansParams struct {
-	Scanner *Scanner `form:"scanner,omitempty" json:"scanner,omitempty"`
+	ScannerId *openapi_types.UUID `form:"scannerId,omitempty" json:"scannerId,omitempty"`
+
+	// Scanner Old filter by code; use scannerId.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+	Scanner *ScannerCode `form:"scanner,omitempty" json:"scanner,omitempty"`
 }
 
 // ImportScansMultipartBody defines parameters for ImportScans.
@@ -917,7 +1127,13 @@ type ImportScansMultipartBody struct {
 	File        *[]openapi_types.File               `json:"file,omitempty"`
 	FrameNumber *[]int                              `json:"frameNumber,omitempty"`
 	OnConflict  *ImportScansMultipartBodyOnConflict `json:"onConflict,omitempty"`
-	Scanner     Scanner                             `json:"scanner"`
+
+	// Scanner Old way to name a scanner, kept until clients move to scanner ids. noritsu and frontier are the
+	// built-in Noritsu HS-1800 and Frontier SP-3000; in responses every other scanner reads as other.
+	// As input, other means the account's "Unknown scanner", created on first use.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+	Scanner   *ScannerCode        `json:"scanner,omitempty"`
+	ScannerId *openapi_types.UUID `json:"scannerId,omitempty"`
 }
 
 // ImportScansMultipartBodyOnConflict defines parameters for ImportScans.
@@ -1020,6 +1236,12 @@ type LoadRollJSONRequestBody = LoadRollInput
 // PutProcessingJSONRequestBody defines body for PutProcessing for application/json ContentType.
 type PutProcessingJSONRequestBody = ProcessingInput
 
+// CreateScannerJSONRequestBody defines body for CreateScanner for application/json ContentType.
+type CreateScannerJSONRequestBody = ScannerInput
+
+// PutScannerJSONRequestBody defines body for PutScanner for application/json ContentType.
+type PutScannerJSONRequestBody = ScannerInput
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// ListAuditLogs Audit trail of changes, newest first. Filter by entity to see one record's history.
@@ -1121,7 +1343,7 @@ type ServerInterface interface {
 
 	// (GET /processing/{id})
 	GetProcessing(c *gin.Context, id Id)
-	// CompareFrame Noritsu vs Frontier for one frame, with previous/next frame (UC-33)
+	// CompareFrame Every scanner's scan of one frame, with previous/next frame (UC-33)
 	// (GET /processing/{id}/frames/{number}/compare)
 	CompareFrame(c *gin.Context, id Id, number int)
 	// RecordNegativesReturned Record that negatives came back from the lab (UC-26)
@@ -1130,8 +1352,8 @@ type ServerInterface interface {
 	// ListProcessingScans Scan grid of a job, ordered by frame number (UC-32)
 	// (GET /processing/{id}/scans)
 	ListProcessingScans(c *gin.Context, id Id, params ListProcessingScansParams)
-	// ImportScans Import scan files (UC-30). Multipart fields: scanner, optional onConflict (skip|replace),
-	// then one `frameNumber` text field immediately before each `file` part.
+	// ImportScans Import scan files (UC-30). Multipart fields: scannerId (or the deprecated scanner code),
+	// optional onConflict (skip|replace), then one `frameNumber` text field immediately before each `file` part.
 	// (POST /processing/{id}/scans)
 	ImportScans(c *gin.Context, id Id)
 	// RecordScansReceived Record that scans arrived (UC-25)
@@ -1179,6 +1401,24 @@ type ServerInterface interface {
 	// PutProcessing Send a roll for processing, or edit a job (UC-24, UC-28)
 	// (PUT /rolls/{id}/processing/{jobId})
 	PutProcessing(c *gin.Context, id Id, jobId openapi_types.UUID)
+	// ListScannerKinds Scan options of each scanner kind; the entry without a kind is for scanners whose kind is unknown
+	// (GET /scanner-kinds)
+	ListScannerKinds(c *gin.Context)
+	// ListScanners Built-in scanners first, then the account's own, by name
+	// (GET /scanners)
+	ListScanners(c *gin.Context)
+	// CreateScanner Add a scanner of your own; the server assigns its id
+	// (POST /scanners)
+	CreateScanner(c *gin.Context)
+	// DeleteScanner Delete one of your scanners that no job or scan uses
+	// (DELETE /scanners/{id})
+	DeleteScanner(c *gin.Context, id Id)
+
+	// (GET /scanners/{id})
+	GetScanner(c *gin.Context, id Id)
+	// PutScanner Add or edit one of your scanners; built-in scanners cannot be changed (409)
+	// (PUT /scanners/{id})
+	PutScanner(c *gin.Context, id Id)
 	// DeleteScan Delete a scan; the image file is kept in storage
 	// (DELETE /scans/{id})
 	DeleteScan(c *gin.Context, id Id)
@@ -2074,6 +2314,14 @@ func (siw *ServerInterfaceWrapper) ListProcessingScans(c *gin.Context) {
 	// Parameter object where we will unmarshal all parameters from the context
 	var params ListProcessingScansParams
 
+	// ------------- Optional query parameter "scannerId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "scannerId", c.Request.URL.Query(), &params.ScannerId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter scannerId: %w", err), http.StatusBadRequest)
+		return
+	}
+
 	// ------------- Optional query parameter "scanner" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "scanner", c.Request.URL.Query(), &params.Scanner, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
@@ -2584,6 +2832,120 @@ func (siw *ServerInterfaceWrapper) PutProcessing(c *gin.Context) {
 	siw.Handler.PutProcessing(c, id, jobId)
 }
 
+// ListScannerKinds operation middleware
+func (siw *ServerInterfaceWrapper) ListScannerKinds(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListScannerKinds(c)
+}
+
+// ListScanners operation middleware
+func (siw *ServerInterfaceWrapper) ListScanners(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListScanners(c)
+}
+
+// CreateScanner operation middleware
+func (siw *ServerInterfaceWrapper) CreateScanner(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateScanner(c)
+}
+
+// DeleteScanner operation middleware
+func (siw *ServerInterfaceWrapper) DeleteScanner(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteScanner(c, id)
+}
+
+// GetScanner operation middleware
+func (siw *ServerInterfaceWrapper) GetScanner(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetScanner(c, id)
+}
+
+// PutScanner operation middleware
+func (siw *ServerInterfaceWrapper) PutScanner(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PutScanner(c, id)
+}
+
 // DeleteScan operation middleware
 func (siw *ServerInterfaceWrapper) DeleteScan(c *gin.Context) {
 
@@ -2820,6 +3182,12 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.DELETE(options.BaseURL+"/labs/:id", wrapper.DeleteLab)
 	router.GET(options.BaseURL+"/labs/:id", wrapper.GetLab)
 	router.PUT(options.BaseURL+"/labs/:id", wrapper.PutLab)
+	router.GET(options.BaseURL+"/scanners", wrapper.ListScanners)
+	router.POST(options.BaseURL+"/scanners", wrapper.CreateScanner)
+	router.GET(options.BaseURL+"/scanner-kinds", wrapper.ListScannerKinds)
+	router.DELETE(options.BaseURL+"/scanners/:id", wrapper.DeleteScanner)
+	router.GET(options.BaseURL+"/scanners/:id", wrapper.GetScanner)
+	router.PUT(options.BaseURL+"/scanners/:id", wrapper.PutScanner)
 	router.GET(options.BaseURL+"/audit-logs", wrapper.ListAuditLogs)
 	router.GET(options.BaseURL+"/audit-logs/:id", wrapper.GetAuditLog)
 	router.GET(options.BaseURL+"/rolls", wrapper.ListRolls)
@@ -6359,6 +6727,383 @@ func (response PutProcessing422JSONResponse) VisitPutProcessingResponse(w http.R
 	return err
 }
 
+type ListScannerKindsRequestObject struct {
+}
+
+type ListScannerKindsResponseObject interface {
+	VisitListScannerKindsResponse(w http.ResponseWriter) error
+}
+
+type ListScannerKinds200JSONResponse []ScannerKindOptions
+
+func (response ListScannerKinds200JSONResponse) VisitListScannerKindsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListScannerKinds401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListScannerKinds401JSONResponse) VisitListScannerKindsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListScannersRequestObject struct {
+}
+
+type ListScannersResponseObject interface {
+	VisitListScannersResponse(w http.ResponseWriter) error
+}
+
+type ListScanners200JSONResponse []Scanner
+
+func (response ListScanners200JSONResponse) VisitListScannersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListScanners401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListScanners401JSONResponse) VisitListScannersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateScannerRequestObject struct {
+	Body *CreateScannerJSONRequestBody
+}
+
+type CreateScannerResponseObject interface {
+	VisitCreateScannerResponse(w http.ResponseWriter) error
+}
+
+type CreateScanner201JSONResponse Scanner
+
+func (response CreateScanner201JSONResponse) VisitCreateScannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateScanner400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateScanner400JSONResponse) VisitCreateScannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateScanner401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateScanner401JSONResponse) VisitCreateScannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateScanner409JSONResponse struct{ ConflictJSONResponse }
+
+func (response CreateScanner409JSONResponse) VisitCreateScannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateScanner422JSONResponse struct{ UnprocessableJSONResponse }
+
+func (response CreateScanner422JSONResponse) VisitCreateScannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteScannerRequestObject struct {
+	Id Id `json:"id"`
+}
+
+type DeleteScannerResponseObject interface {
+	VisitDeleteScannerResponse(w http.ResponseWriter) error
+}
+
+type DeleteScanner204Response struct {
+}
+
+func (response DeleteScanner204Response) VisitDeleteScannerResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteScanner400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response DeleteScanner400JSONResponse) VisitDeleteScannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteScanner401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteScanner401JSONResponse) VisitDeleteScannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteScanner404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteScanner404JSONResponse) VisitDeleteScannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteScanner409JSONResponse struct{ ConflictJSONResponse }
+
+func (response DeleteScanner409JSONResponse) VisitDeleteScannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScannerRequestObject struct {
+	Id Id `json:"id"`
+}
+
+type GetScannerResponseObject interface {
+	VisitGetScannerResponse(w http.ResponseWriter) error
+}
+
+type GetScanner200JSONResponse Scanner
+
+func (response GetScanner200JSONResponse) VisitGetScannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScanner400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response GetScanner400JSONResponse) VisitGetScannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScanner401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetScanner401JSONResponse) VisitGetScannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScanner404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetScanner404JSONResponse) VisitGetScannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutScannerRequestObject struct {
+	Id   Id `json:"id"`
+	Body *PutScannerJSONRequestBody
+}
+
+type PutScannerResponseObject interface {
+	VisitPutScannerResponse(w http.ResponseWriter) error
+}
+
+type PutScanner200JSONResponse Scanner
+
+func (response PutScanner200JSONResponse) VisitPutScannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutScanner201JSONResponse Scanner
+
+func (response PutScanner201JSONResponse) VisitPutScannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutScanner400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response PutScanner400JSONResponse) VisitPutScannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutScanner401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response PutScanner401JSONResponse) VisitPutScannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutScanner409JSONResponse struct{ ConflictJSONResponse }
+
+func (response PutScanner409JSONResponse) VisitPutScannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutScanner422JSONResponse struct{ UnprocessableJSONResponse }
+
+func (response PutScanner422JSONResponse) VisitPutScannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DeleteScanRequestObject struct {
 	Id Id `json:"id"`
 }
@@ -6872,7 +7617,7 @@ type StrictServerInterface interface {
 
 	// (GET /processing/{id})
 	GetProcessing(ctx context.Context, request GetProcessingRequestObject) (GetProcessingResponseObject, error)
-	// CompareFrame Noritsu vs Frontier for one frame, with previous/next frame (UC-33)
+	// CompareFrame Every scanner's scan of one frame, with previous/next frame (UC-33)
 	// (GET /processing/{id}/frames/{number}/compare)
 	CompareFrame(ctx context.Context, request CompareFrameRequestObject) (CompareFrameResponseObject, error)
 	// RecordNegativesReturned Record that negatives came back from the lab (UC-26)
@@ -6881,8 +7626,8 @@ type StrictServerInterface interface {
 	// ListProcessingScans Scan grid of a job, ordered by frame number (UC-32)
 	// (GET /processing/{id}/scans)
 	ListProcessingScans(ctx context.Context, request ListProcessingScansRequestObject) (ListProcessingScansResponseObject, error)
-	// ImportScans Import scan files (UC-30). Multipart fields: scanner, optional onConflict (skip|replace),
-	// then one `frameNumber` text field immediately before each `file` part.
+	// ImportScans Import scan files (UC-30). Multipart fields: scannerId (or the deprecated scanner code),
+	// optional onConflict (skip|replace), then one `frameNumber` text field immediately before each `file` part.
 	// (POST /processing/{id}/scans)
 	ImportScans(ctx context.Context, request ImportScansRequestObject) (ImportScansResponseObject, error)
 	// RecordScansReceived Record that scans arrived (UC-25)
@@ -6930,6 +7675,24 @@ type StrictServerInterface interface {
 	// PutProcessing Send a roll for processing, or edit a job (UC-24, UC-28)
 	// (PUT /rolls/{id}/processing/{jobId})
 	PutProcessing(ctx context.Context, request PutProcessingRequestObject) (PutProcessingResponseObject, error)
+	// ListScannerKinds Scan options of each scanner kind; the entry without a kind is for scanners whose kind is unknown
+	// (GET /scanner-kinds)
+	ListScannerKinds(ctx context.Context, request ListScannerKindsRequestObject) (ListScannerKindsResponseObject, error)
+	// ListScanners Built-in scanners first, then the account's own, by name
+	// (GET /scanners)
+	ListScanners(ctx context.Context, request ListScannersRequestObject) (ListScannersResponseObject, error)
+	// CreateScanner Add a scanner of your own; the server assigns its id
+	// (POST /scanners)
+	CreateScanner(ctx context.Context, request CreateScannerRequestObject) (CreateScannerResponseObject, error)
+	// DeleteScanner Delete one of your scanners that no job or scan uses
+	// (DELETE /scanners/{id})
+	DeleteScanner(ctx context.Context, request DeleteScannerRequestObject) (DeleteScannerResponseObject, error)
+
+	// (GET /scanners/{id})
+	GetScanner(ctx context.Context, request GetScannerRequestObject) (GetScannerResponseObject, error)
+	// PutScanner Add or edit one of your scanners; built-in scanners cannot be changed (409)
+	// (PUT /scanners/{id})
+	PutScanner(ctx context.Context, request PutScannerRequestObject) (PutScannerResponseObject, error)
 	// DeleteScan Delete a scan; the image file is kept in storage
 	// (DELETE /scans/{id})
 	DeleteScan(ctx context.Context, request DeleteScanRequestObject) (DeleteScanResponseObject, error)
@@ -8508,6 +9271,170 @@ func (sh *strictHandler) PutProcessing(ctx *gin.Context, id Id, jobId openapi_ty
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(PutProcessingResponseObject); ok {
 		if err := validResponse.VisitPutProcessingResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListScannerKinds operation middleware
+func (sh *strictHandler) ListScannerKinds(ctx *gin.Context) {
+	var request ListScannerKindsRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListScannerKinds(ctx, request.(ListScannerKindsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListScannerKinds")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ListScannerKindsResponseObject); ok {
+		if err := validResponse.VisitListScannerKindsResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListScanners operation middleware
+func (sh *strictHandler) ListScanners(ctx *gin.Context) {
+	var request ListScannersRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListScanners(ctx, request.(ListScannersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListScanners")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ListScannersResponseObject); ok {
+		if err := validResponse.VisitListScannersResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateScanner operation middleware
+func (sh *strictHandler) CreateScanner(ctx *gin.Context) {
+	var request CreateScannerRequestObject
+
+	var body CreateScannerJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateScanner(ctx, request.(CreateScannerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateScanner")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CreateScannerResponseObject); ok {
+		if err := validResponse.VisitCreateScannerResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteScanner operation middleware
+func (sh *strictHandler) DeleteScanner(ctx *gin.Context, id Id) {
+	var request DeleteScannerRequestObject
+
+	request.Id = id
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteScanner(ctx, request.(DeleteScannerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteScanner")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(DeleteScannerResponseObject); ok {
+		if err := validResponse.VisitDeleteScannerResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetScanner operation middleware
+func (sh *strictHandler) GetScanner(ctx *gin.Context, id Id) {
+	var request GetScannerRequestObject
+
+	request.Id = id
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetScanner(ctx, request.(GetScannerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetScanner")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetScannerResponseObject); ok {
+		if err := validResponse.VisitGetScannerResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PutScanner operation middleware
+func (sh *strictHandler) PutScanner(ctx *gin.Context, id Id) {
+	var request PutScannerRequestObject
+
+	request.Id = id
+
+	var body PutScannerJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.PutScanner(ctx, request.(PutScannerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PutScanner")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(PutScannerResponseObject); ok {
+		if err := validResponse.VisitPutScannerResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {

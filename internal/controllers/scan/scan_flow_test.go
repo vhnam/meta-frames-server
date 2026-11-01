@@ -35,10 +35,10 @@ func newFixture(jobType string) fixture {
 	rollID, jobID := uuid.New(), uuid.New()
 	memory.Rolls[rollID] = gen.Roll{ID: rollID, Status: domain.RollStatusAtLab}
 	memory.Jobs[jobID] = gen.Processing{ID: jobID, RollID: rollID, Type: jobType, SentAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)}
-	for _, scanner := range []string{domain.ScannerNoritsu, domain.ScannerFrontier} {
-		memory.ScanOrders = append(memory.ScanOrders, gen.ProcessingScanOrder{ProcessingID: jobID, Scanner: scanner})
+	for _, scannerID := range []uuid.UUID{domain.ScannerNoritsuHS1800, domain.ScannerFrontierSP3000} {
+		memory.ScanOrders = append(memory.ScanOrders, gen.ProcessingScanOrder{ProcessingID: jobID, ScannerID: scannerID})
 	}
-	return fixture{controller: New(all.Scans), memory: memory, rollID: rollID, jobID: jobID}
+	return fixture{controller: New(all.Scans, all.Scanners), memory: memory, rollID: rollID, jobID: jobID}
 }
 
 type part struct {
@@ -97,7 +97,16 @@ func TestImportScansValidatesTheRequest(test *testing.T) {
 		"file before scanner": {{name: "file", fileName: "000001.jpg", content: jpeg}},
 		"no files":            {{name: "scanner", content: []byte("noritsu")}},
 		"bad scanner":         {{name: "scanner", content: []byte("epson")}},
+		"bad scanner id":      {{name: "scannerId", content: []byte("epson")}},
 		"no scanner at all":   {{name: "frameNumber", content: []byte("1")}},
+		"scanner not ordered": {
+			{name: "scannerId", content: []byte(uuid.NewString())},
+			{name: "file", fileName: "000001.jpg", content: jpeg},
+		},
+		"other without an unknown scanner": {
+			{name: "scanner", content: []byte("other")},
+			{name: "file", fileName: "000001.jpg", content: jpeg},
+		},
 	} {
 		if _, err := f.importParts(test, parts...); err == nil {
 			test.Errorf("%s: expected an error", name)
@@ -123,18 +132,26 @@ func TestBrowseCompareAndDownloadScans(test *testing.T) {
 	f := newFixture(domain.JobTypeDevelopScan)
 	ctx := context.Background()
 	if _, err := f.importParts(test,
-		part{name: "scanner", content: []byte("frontier")},
+		part{name: "scannerId", content: []byte(domain.ScannerFrontierSP3000.String())},
 		part{name: "frameNumber", content: []byte("2")},
 		part{name: "file", fileName: "a.jpg", content: jpeg},
 	); err != nil {
 		test.Fatal(err)
 	}
 
-	scanner := api.Scanner("frontier")
-	listed, err := f.controller.ListProcessingScans(ctx, api.ListProcessingScansRequestObject{Id: f.jobID, Params: api.ListProcessingScansParams{Scanner: &scanner}})
+	listed, err := f.controller.ListProcessingScans(ctx, api.ListProcessingScansRequestObject{Id: f.jobID, Params: api.ListProcessingScansParams{ScannerId: &domain.ScannerFrontierSP3000}})
 	scans := listed.(api.ListProcessingScans200JSONResponse)
-	if err != nil || len(scans) != 1 {
+	if err != nil || len(scans) != 1 || scans[0].ScannerName != "Frontier SP-3000" || scans[0].Scanner != api.Frontier {
 		test.Fatalf("scans=%v err=%v", scans, err)
+	}
+	code := api.Noritsu
+	listed, err = f.controller.ListProcessingScans(ctx, api.ListProcessingScansRequestObject{Id: f.jobID, Params: api.ListProcessingScansParams{Scanner: &code}})
+	if scans := listed.(api.ListProcessingScans200JSONResponse); err != nil || len(scans) != 0 {
+		test.Fatalf("noritsu scans=%v err=%v", scans, err)
+	}
+	both := api.ListProcessingScansParams{Scanner: &code, ScannerId: &domain.ScannerNoritsuHS1800}
+	if _, err := f.controller.ListProcessingScans(ctx, api.ListProcessingScansRequestObject{Id: f.jobID, Params: both}); err == nil {
+		test.Fatal("scannerId and scanner together must be rejected")
 	}
 	if _, err := f.controller.ListProcessingScans(ctx, api.ListProcessingScansRequestObject{Id: uuid.New()}); err == nil {
 		test.Fatal("an unknown job must fail")
@@ -194,8 +211,8 @@ func TestReadFieldValueTrimsAndLimitsTheField(test *testing.T) {
 }
 
 func TestToAPIScanRefsMapsEveryRef(test *testing.T) {
-	refs := ToAPIScanRefs([]scansvc.RefView{{ID: uuid.New(), FrameNumber: 4, Scanner: domain.ScannerNoritsu}})
-	if len(refs) != 1 || refs[0].FrameNumber != 4 || refs[0].Scanner != api.Noritsu {
+	refs := ToAPIScanRefs([]scansvc.RefView{{ID: uuid.New(), FrameNumber: 4, ScannerID: domain.ScannerNoritsuHS1800, ScannerName: "Noritsu HS-1800"}})
+	if len(refs) != 1 || refs[0].FrameNumber != 4 || refs[0].Scanner != api.Noritsu || refs[0].ScannerName != "Noritsu HS-1800" {
 		test.Fatalf("refs = %+v", refs)
 	}
 }

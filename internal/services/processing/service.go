@@ -77,39 +77,67 @@ func validateScanOrders(jobType string, orders []ScanOrderInput) error {
 	if len(orders) == 0 {
 		return apperror.Unprocessable("scan_orders_required", "scanOrders needs at least one scanner for this job type")
 	}
-	seen := make(map[string]bool, len(orders))
+	seen := make(map[uuid.UUID]bool, len(orders))
 	for _, order := range orders {
-		if seen[order.Scanner] {
+		if seen[order.ScannerID] {
 			return apperror.Unprocessable("duplicate_scanner", "each scanner can appear only once in scanOrders")
 		}
-		seen[order.Scanner] = true
+		seen[order.ScannerID] = true
 	}
 	return nil
 }
 
-// syncScanOrders makes the stored set equal to orders. A scanner that already has scans cannot be removed.
+// syncScanOrders makes the stored set equal to orders. A scanner that already has scans cannot be removed,
+// and each ordered scanner must be built-in or the account's own. Settings are checked against the
+// options of the scanner's kind when they change, so an order the kind no longer fits can be kept as is.
 func syncScanOrders(ctx context.Context, queries gen.Querier, jobID uuid.UUID, orders []ScanOrderInput) error {
-	wanted := make(map[string]bool, len(orders))
-	for _, order := range orders {
-		wanted[order.Scanner] = true
-	}
 	current, err := queries.ListScanOrders(ctx, gen.ListScanOrdersParams{ProcessingIds: []uuid.UUID{jobID}, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return err
 	}
+	stored := make(map[uuid.UUID]domain.ScanSettings, len(current))
 	for _, row := range current {
-		if wanted[row.Scanner] {
+		stored[row.ScannerID] = domain.DecodeScanSettings(row.Settings)
+	}
+	wanted := make(map[uuid.UUID]bool, len(orders))
+	settingsByScanner := make(map[uuid.UUID]domain.ScanSettings, len(orders))
+	for _, order := range orders {
+		wanted[order.ScannerID] = true
+		scanner, err := queries.GetScanner(ctx, gen.GetScannerParams{ID: order.ScannerID, OwnerID: requestctx.Owner(ctx)})
+		if err != nil {
+			if db.IsNoRows(err) {
+				return apperror.Unprocessable("unknown_scanner", "scanner does not exist")
+			}
+			return err
+		}
+		previous, ordered := stored[order.ScannerID]
+		settings := order.Settings
+		switch {
+		case settings == nil && ordered:
+			settings = previous
+		case settings == nil:
+			settings = domain.DecodeScanSettings(scanner.DefaultSettings)
+		}
+		if !ordered || !domain.SameScanSettings(settings, previous) {
+			if err := domain.CheckScanSettings(scanner.Kind, settings); err != nil {
+				return apperror.Unprocessable("invalid_scan_settings", err.Error())
+			}
+		}
+		settingsByScanner[order.ScannerID] = settings
+	}
+	for _, row := range current {
+		if wanted[row.ScannerID] {
 			continue
 		}
 		if row.ScanCount > 0 {
 			return apperror.Conflict("scanner_has_scans", "a scanner with imported scans cannot be removed from the order; delete its scans first")
 		}
-		if _, err := queries.DeleteScanOrder(ctx, gen.DeleteScanOrderParams{ProcessingID: jobID, Scanner: row.Scanner}); err != nil {
+		if _, err := queries.DeleteScanOrder(ctx, gen.DeleteScanOrderParams{ProcessingID: jobID, ScannerID: row.ScannerID}); err != nil {
 			return err
 		}
 	}
 	for _, order := range orders {
-		if err := queries.UpsertScanOrder(ctx, gen.UpsertScanOrderParams{ProcessingID: jobID, Scanner: order.Scanner, HiRes: order.HiRes}); err != nil {
+		if err := queries.UpsertScanOrder(ctx, gen.UpsertScanOrderParams{ProcessingID: jobID, ScannerID: order.ScannerID, Settings: domain.EncodeScanSettings(settingsByScanner[order.ScannerID])}); err != nil {
 			return err
 		}
 	}
@@ -138,7 +166,10 @@ func BuildViews(ctx context.Context, queries gen.Querier, rollID uuid.UUID) ([]V
 	ordersByJob := make(map[uuid.UUID][]ScanOrder, len(rows))
 	for _, order := range orderRows {
 		ordersByJob[order.ProcessingID] = append(ordersByJob[order.ProcessingID],
-			ScanOrder{Scanner: order.Scanner, HiRes: order.HiRes, ScanCount: int(order.ScanCount)})
+			ScanOrder{
+				ScannerID: order.ScannerID, ScannerName: domain.ScannerName(order.ScannerBrand, order.ScannerModel),
+				Settings: domain.DecodeScanSettings(order.Settings), ScanCount: int(order.ScanCount),
+			})
 	}
 	views := make([]View, len(rows))
 	for index, row := range rows {

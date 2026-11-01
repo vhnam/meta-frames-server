@@ -5,7 +5,7 @@ info:
   description: |
     REST API for tracking rolls of film: gear, stock, shooting, processing and scans.
 
-    **Creating records.** `POST /cameras|lenses|film-stocks|labs` assigns the id. `PUT /{resource}/{id}` is the
+    **Creating records.** `POST /cameras|lenses|film-stocks|labs|scanners` assigns the id. `PUT /{resource}/{id}` is the
     idempotent create-or-update for clients that generate their own ids.
 
     **Deleting.** Nothing is physically deleted: `DELETE` sets `deleted_at` and the record disappears from
@@ -38,6 +38,7 @@ tags:
   - { name: Lenses, description: Lenses }
   - { name: Film stocks, description: Film stocks and inventory }
   - { name: Labs, description: Labs that process film }
+  - { name: Scanners, description: "Built-in scanners plus the account's own (other lab machines, flatbeds, camera rigs)" }
   - { name: Rolls, description: "Rolls of film, from stock to shot, plus frames" }
   - { name: Processing, description: Sending rolls for development and scanning }
   - { name: Scans, description: Scan images }
@@ -1377,6 +1378,7 @@ paths:
                       address: "12 Nguyen Hue, District 1, Ho Chi Minh City"
                       createdAt: "2026-09-01T08:30:00Z"
                       updatedAt: "2026-09-20T10:00:00Z"
+                      scannerIds: [d177cb3c-a850-4232-a4ca-75189b7b279b]
     post:
       tags: [Labs]
       operationId: createLab
@@ -1412,6 +1414,7 @@ paths:
                     address: "12 Nguyen Hue, District 1, Ho Chi Minh City"
                     createdAt: "2026-09-01T08:30:00Z"
                     updatedAt: "2026-09-20T10:00:00Z"
+                    scannerIds: [d177cb3c-a850-4232-a4ca-75189b7b279b]
         "400": { $ref: "#/components/responses/BadRequest" }
         "422": { $ref: "#/components/responses/Unprocessable" }
 
@@ -1437,6 +1440,7 @@ paths:
                     address: "12 Nguyen Hue, District 1, Ho Chi Minh City"
                     createdAt: "2026-09-01T08:30:00Z"
                     updatedAt: "2026-09-20T10:00:00Z"
+                    scannerIds: [d177cb3c-a850-4232-a4ca-75189b7b279b]
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
     put:
@@ -1479,6 +1483,7 @@ paths:
                     address: "12 Nguyen Hue, District 1, Ho Chi Minh City"
                     createdAt: "2026-09-01T08:30:00Z"
                     updatedAt: "2026-09-20T10:00:00Z"
+                    scannerIds: [d177cb3c-a850-4232-a4ca-75189b7b279b]
         "201":
           description: Created
           content:
@@ -1493,12 +1498,240 @@ paths:
                     address: "12 Nguyen Hue, District 1, Ho Chi Minh City"
                     createdAt: "2026-09-01T08:30:00Z"
                     updatedAt: "2026-09-20T10:00:00Z"
+                    scannerIds: [d177cb3c-a850-4232-a4ca-75189b7b279b]
         "400": { $ref: "#/components/responses/BadRequest" }
         "422": { $ref: "#/components/responses/Unprocessable" }
     delete:
       tags: [Labs]
       operationId: deleteLab
       summary: Delete a lab without processing history (UC-23)
+      responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "204": { description: Deleted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /scanners:
+    get:
+      tags: [Scanners]
+      operationId: listScanners
+      summary: Built-in scanners first, then the account's own, by name
+      responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "200":
+          description: Scanners
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Scanner" } }
+              examples:
+                scanners:
+                  summary: Built-in and own scanners
+                  value:
+                    - id: d177cb3c-a850-4232-a4ca-75189b7b279b
+                      brand: Noritsu
+                      model: HS-1800
+                      name: Noritsu HS-1800
+                      kind: minilab
+                      builtIn: true
+                      defaultSettings: {}
+                      createdAt: "2026-10-29T00:00:00Z"
+                      updatedAt: "2026-10-29T00:00:00Z"
+                    - id: e2bf4cbd-87a8-4a17-8340-516b1a1cc6bc
+                      brand: Frontier
+                      model: SP-3000
+                      name: Frontier SP-3000
+                      kind: minilab
+                      builtIn: true
+                      defaultSettings: {}
+                      createdAt: "2026-10-29T00:00:00Z"
+                      updatedAt: "2026-10-29T00:00:00Z"
+                    - id: 0f6a2c8e-5b1d-4e3a-9c7f-2d4b6e8a0c13
+                      brand: Sony
+                      model: A7R IV + Laowa 100mm
+                      name: Sony A7R IV + Laowa 100mm
+                      kind: camera
+                      notes: "CS-Lite light, Valoi easy35 holder, converted in Negative Lab Pro"
+                      builtIn: false
+                      defaultSettings: {}
+                      createdAt: "2026-10-01T08:30:00Z"
+                      updatedAt: "2026-10-01T08:30:00Z"
+    post:
+      tags: [Scanners]
+      operationId: createScanner
+      summary: Add a scanner of your own; the server assigns its id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScannerInput" }
+            examples:
+              flatbed:
+                summary: A flatbed at home
+                value:
+                  brand: Epson
+                  model: V850
+                  kind: flatbed
+              cameraRig:
+                summary: Scanning with a digital camera
+                value:
+                  brand: Sony
+                  model: A7R IV + Laowa 100mm
+                  kind: camera
+                  notes: "CS-Lite light, Valoi easy35 holder, converted in Negative Lab Pro"
+      responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scanner" }
+              examples:
+                created:
+                  summary: Created scanner
+                  value:
+                    id: 0f6a2c8e-5b1d-4e3a-9c7f-2d4b6e8a0c13
+                    brand: Epson
+                    model: V850
+                    name: Epson V850
+                    kind: flatbed
+                    builtIn: false
+                    defaultSettings: {}
+                    createdAt: "2026-10-01T08:30:00Z"
+                    updatedAt: "2026-10-01T08:30:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
+  /scanner-kinds:
+    get:
+      tags: [Scanners]
+      operationId: listScannerKinds
+      summary: Scan options of each scanner kind; the entry without a kind is for scanners whose kind is unknown
+      responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "200":
+          description: Kinds and their options
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/ScannerKindOptions" } }
+              examples:
+                kinds:
+                  summary: A minilab and a scanner of unknown kind
+                  value:
+                    - kind: minilab
+                      label: Lab minilab
+                      options:
+                        - key: resolution
+                          label: Resolution
+                          type: enum
+                          values:
+                            - value: standard
+                              label: Standard
+                            - value: hi_res
+                              label: Hi-res
+                          default: standard
+                    - label: Unknown kind
+                      options:
+                        - key: resolution
+                          label: Resolution
+                          type: enum
+                          values:
+                            - value: standard
+                              label: Standard
+                            - value: hi_res
+                              label: Hi-res
+                          default: standard
+
+  /scanners/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Scanners]
+      operationId: getScanner
+      responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "200":
+          description: Scanner
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scanner" }
+              examples:
+                scanner:
+                  summary: A scanner
+                  value:
+                    id: 0f6a2c8e-5b1d-4e3a-9c7f-2d4b6e8a0c13
+                    brand: Epson
+                    model: V850
+                    name: Epson V850
+                    kind: flatbed
+                    builtIn: false
+                    defaultSettings: {}
+                    createdAt: "2026-10-01T08:30:00Z"
+                    updatedAt: "2026-10-01T08:30:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Scanners]
+      operationId: putScanner
+      summary: Add or edit one of your scanners; built-in scanners cannot be changed (409)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScannerInput" }
+            examples:
+              rename:
+                summary: Name the scanner that replaced "other"
+                value:
+                  brand: Epson
+                  model: V850
+                  kind: flatbed
+      responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scanner" }
+              examples:
+                updated:
+                  summary: Updated scanner
+                  value:
+                    id: 0f6a2c8e-5b1d-4e3a-9c7f-2d4b6e8a0c13
+                    brand: Epson
+                    model: V850
+                    name: Epson V850
+                    kind: flatbed
+                    builtIn: false
+                    defaultSettings: {}
+                    createdAt: "2026-10-01T08:30:00Z"
+                    updatedAt: "2026-10-01T08:30:00Z"
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scanner" }
+              examples:
+                created:
+                  summary: Created scanner
+                  value:
+                    id: 0f6a2c8e-5b1d-4e3a-9c7f-2d4b6e8a0c13
+                    brand: Epson
+                    model: V850
+                    name: Epson V850
+                    kind: flatbed
+                    builtIn: false
+                    defaultSettings: {}
+                    createdAt: "2026-10-01T08:30:00Z"
+                    updatedAt: "2026-10-01T08:30:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+    delete:
+      tags: [Scanners]
+      operationId: deleteScanner
+      summary: Delete one of your scanners that no job or scan uses
       responses:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "204": { description: Deleted }
@@ -1851,8 +2084,12 @@ paths:
                         notes: Push 1 stop
                         scanOrders:
                           - scanner: noritsu
+                            scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                            scannerName: Noritsu HS-1800
                             hiRes: false
                             scanCount: 36
+                            settings:
+                              resolution: standard
                         isOpen: true
                     frames:
                       - id: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
@@ -1862,6 +2099,8 @@ paths:
                           - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
                             frameNumber: 7
                             scanner: noritsu
+                            scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                            scannerName: Noritsu HS-1800
                             processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
                     totals:
                       rollPrice: 150000
@@ -1960,8 +2199,12 @@ paths:
                         notes: Push 1 stop
                         scanOrders:
                           - scanner: noritsu
+                            scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                            scannerName: Noritsu HS-1800
                             hiRes: false
                             scanCount: 36
+                            settings:
+                              resolution: standard
                         isOpen: true
                     frames:
                       - id: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
@@ -1971,6 +2214,8 @@ paths:
                           - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
                             frameNumber: 7
                             scanner: noritsu
+                            scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                            scannerName: Noritsu HS-1800
                             processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
                     totals:
                       rollPrice: 150000
@@ -2083,8 +2328,12 @@ paths:
                         notes: Push 1 stop
                         scanOrders:
                           - scanner: noritsu
+                            scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                            scannerName: Noritsu HS-1800
                             hiRes: false
                             scanCount: 36
+                            settings:
+                              resolution: standard
                         isOpen: true
                     frames:
                       - id: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
@@ -2094,6 +2343,8 @@ paths:
                           - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
                             frameNumber: 7
                             scanner: noritsu
+                            scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                            scannerName: Noritsu HS-1800
                             processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
                     totals:
                       rollPrice: 150000
@@ -2236,8 +2487,12 @@ paths:
                         notes: Push 1 stop
                         scanOrders:
                           - scanner: noritsu
+                            scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                            scannerName: Noritsu HS-1800
                             hiRes: false
                             scanCount: 36
+                            settings:
+                              resolution: standard
                         isOpen: true
                     frames:
                       - id: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
@@ -2247,6 +2502,8 @@ paths:
                           - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
                             frameNumber: 7
                             scanner: noritsu
+                            scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                            scannerName: Noritsu HS-1800
                             processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
                     totals:
                       rollPrice: 150000
@@ -2288,8 +2545,12 @@ paths:
                       notes: Push 1 stop
                       scanOrders:
                         - scanner: noritsu
+                          scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                          scannerName: Noritsu HS-1800
                           hiRes: false
                           scanCount: 36
+                          settings:
+                            resolution: standard
                       isOpen: true
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -2318,7 +2579,7 @@ paths:
                   price: 90000
                   notes: Push 1 stop
                   scanOrders:
-                    - scanner: noritsu
+                    - scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
                       hiRes: false
               colorTwoScanners:
                 summary: Colour develop and scan, two scanners
@@ -2328,9 +2589,9 @@ paths:
                   process: C-41
                   sentAt: "2026-09-20"
                   scanOrders:
-                    - scanner: noritsu
+                    - scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
                       hiRes: true
-                    - scanner: frontier
+                    - scannerId: e2bf4cbd-87a8-4a17-8340-516b1a1cc6bc
                       hiRes: false
               bw:
                 summary: B&W develop and scan on one scanner
@@ -2340,7 +2601,7 @@ paths:
                   process: BW
                   sentAt: "2026-09-20"
                   scanOrders:
-                    - scanner: noritsu
+                    - scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
                       hiRes: false
               home:
                 summary: Developed at home (no lab)
@@ -2371,8 +2632,12 @@ paths:
                     notes: Push 1 stop
                     scanOrders:
                       - scanner: noritsu
+                        scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                        scannerName: Noritsu HS-1800
                         hiRes: false
                         scanCount: 36
+                        settings:
+                          resolution: standard
                     isOpen: true
         "201":
           description: Created
@@ -2393,8 +2658,12 @@ paths:
                     price: 90000
                     scanOrders:
                       - scanner: noritsu
+                        scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                        scannerName: Noritsu HS-1800
                         hiRes: true
                         scanCount: 0
+                        settings:
+                          resolution: hi_res
                     isOpen: true
                 home:
                   summary: Developed at home
@@ -2436,6 +2705,8 @@ paths:
                         - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
                           frameNumber: 7
                           scanner: noritsu
+                          scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                          scannerName: Noritsu HS-1800
                           processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -2465,6 +2736,8 @@ paths:
                       - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
                         frameNumber: 7
                         scanner: noritsu
+                        scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                        scannerName: Noritsu HS-1800
                         processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -2503,6 +2776,8 @@ paths:
                       - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
                         frameNumber: 7
                         scanner: noritsu
+                        scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                        scannerName: Noritsu HS-1800
                         processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -2536,8 +2811,12 @@ paths:
                     notes: Push 1 stop
                     scanOrders:
                       - scanner: noritsu
+                        scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                        scannerName: Noritsu HS-1800
                         hiRes: false
                         scanCount: 36
+                        settings:
+                          resolution: standard
                     isOpen: true
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -2594,8 +2873,12 @@ paths:
                     notes: Push 1 stop
                     scanOrders:
                       - scanner: noritsu
+                        scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                        scannerName: Noritsu HS-1800
                         hiRes: false
                         scanCount: 36
+                        settings:
+                          resolution: standard
                     isOpen: true
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -2646,8 +2929,12 @@ paths:
                     notes: Push 1 stop
                     scanOrders:
                       - scanner: noritsu
+                        scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                        scannerName: Noritsu HS-1800
                         hiRes: false
                         scanCount: 36
+                        settings:
+                          resolution: standard
                     isOpen: false
                     negativesReturnedAt: "2026-09-29"
         "400": { $ref: "#/components/responses/BadRequest" }
@@ -2686,7 +2973,12 @@ paths:
       operationId: listProcessingScans
       summary: Scan grid of a job, ordered by frame number (UC-32)
       parameters:
-        - { name: scanner, in: query, schema: { $ref: "#/components/schemas/Scanner" } }
+        - { name: scannerId, in: query, schema: { type: string, format: uuid } }
+        - name: scanner
+          in: query
+          deprecated: true
+          description: Old filter by code; use scannerId.
+          schema: { $ref: "#/components/schemas/ScannerCode" }
       responses:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
@@ -2703,6 +2995,8 @@ paths:
                       frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
                       frameNumber: 7
                       scanner: noritsu
+                      scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                      scannerName: Noritsu HS-1800
                       fileName: "000007.jpg"
                       sizeBytes: 2481920
                       fileUrl: "/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file"
@@ -2711,6 +3005,8 @@ paths:
                       frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
                       frameNumber: 7
                       scanner: frontier
+                      scannerId: e2bf4cbd-87a8-4a17-8340-516b1a1cc6bc
+                      scannerName: Frontier SP-3000
                       fileName: "000007.jpg"
                       sizeBytes: 2481920
                       fileUrl: "/scans/61d2ae8f-4d7c-4ab9-f5c8-be7fdf9b2f22/file"
@@ -2720,8 +3016,8 @@ paths:
       tags: [Scans]
       operationId: importScans
       summary: |
-        Import scan files (UC-30). Multipart fields: scanner, optional onConflict (skip|replace),
-        then one `frameNumber` text field immediately before each `file` part.
+        Import scan files (UC-30). Multipart fields: scannerId (or the deprecated scanner code),
+        optional onConflict (skip|replace), then one `frameNumber` text field immediately before each `file` part.
       requestBody:
         required: true
         content:
@@ -2729,16 +3025,16 @@ paths:
             schema:
               type: object
               properties:
-                scanner: { $ref: "#/components/schemas/Scanner" }
+                scannerId: { type: string, format: uuid }
+                scanner: { $ref: "#/components/schemas/ScannerCode" }
                 onConflict: { type: string, enum: [skip, replace] }
                 frameNumber: { type: array, items: { type: integer, minimum: 0 } }
                 file: { type: array, items: { type: string, format: binary } }
-              required: [scanner]
             examples:
               oneFile:
                 summary: Import one frame from the Noritsu scanner
                 value:
-                  scanner: noritsu
+                  scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
                   onConflict: skip
                   frameNumber:
                     - 7
@@ -2761,6 +3057,8 @@ paths:
                         frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
                         frameNumber: 7
                         scanner: noritsu
+                        scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                        scannerName: Noritsu HS-1800
                         fileName: "000007.jpg"
                         sizeBytes: 2481920
                         fileUrl: "/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file"
@@ -2838,7 +3136,7 @@ paths:
     get:
       tags: [Scans]
       operationId: compareFrame
-      summary: Noritsu vs Frontier for one frame, with previous/next frame (UC-33)
+      summary: Every scanner's scan of one frame, with previous/next frame (UC-33)
       responses:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
@@ -2851,12 +3149,35 @@ paths:
                   summary: Both scanners present
                   value:
                     frameNumber: 7
+                    scans:
+                      - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+                        processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                        frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+                        frameNumber: 7
+                        scanner: noritsu
+                        scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                        scannerName: Noritsu HS-1800
+                        fileName: "000007.jpg"
+                        sizeBytes: 2481920
+                        fileUrl: "/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file"
+                      - id: 61d2ae8f-4d7c-4ab9-f5c8-be7fdf9b2f22
+                        processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                        frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+                        frameNumber: 7
+                        scanner: frontier
+                        scannerId: e2bf4cbd-87a8-4a17-8340-516b1a1cc6bc
+                        scannerName: Frontier SP-3000
+                        fileName: "000007.jpg"
+                        sizeBytes: 2481920
+                        fileUrl: "/scans/61d2ae8f-4d7c-4ab9-f5c8-be7fdf9b2f22/file"
                     noritsu:
                       id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
                       processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
                       frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
                       frameNumber: 7
                       scanner: noritsu
+                      scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                      scannerName: Noritsu HS-1800
                       fileName: "000007.jpg"
                       sizeBytes: 2481920
                       fileUrl: "/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file"
@@ -2866,6 +3187,8 @@ paths:
                       frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
                       frameNumber: 7
                       scanner: frontier
+                      scannerId: e2bf4cbd-87a8-4a17-8340-516b1a1cc6bc
+                      scannerName: Frontier SP-3000
                       fileName: "000007.jpg"
                       sizeBytes: 2481920
                       fileUrl: "/scans/61d2ae8f-4d7c-4ab9-f5c8-be7fdf9b2f22/file"
@@ -2876,12 +3199,25 @@ paths:
                   summary: Frontier scan missing
                   value:
                     frameNumber: 7
+                    scans:
+                      - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+                        processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+                        frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+                        frameNumber: 7
+                        scanner: noritsu
+                        scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                        scannerName: Noritsu HS-1800
+                        fileName: "000007.jpg"
+                        sizeBytes: 2481920
+                        fileUrl: "/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file"
                     noritsu:
                       id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
                       processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
                       frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
                       frameNumber: 7
                       scanner: noritsu
+                      scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                      scannerName: Noritsu HS-1800
                       fileName: "000007.jpg"
                       sizeBytes: 2481920
                       fileUrl: "/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file"
@@ -2914,6 +3250,8 @@ paths:
                     frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
                     frameNumber: 7
                     scanner: noritsu
+                    scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                    scannerName: Noritsu HS-1800
                     fileName: "000007.jpg"
                     sizeBytes: 2481920
                     fileUrl: "/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file"
@@ -2985,6 +3323,8 @@ paths:
                         - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
                           frameNumber: 7
                           scanner: noritsu
+                          scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+                          scannerName: Noritsu HS-1800
                           processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
         "400": { $ref: "#/components/responses/BadRequest" }
 
@@ -3224,6 +3564,16 @@ components:
               value:
                 code: already_exists
                 message: a camera with this id already exists
+            scannerInUse:
+              summary: Scanner used by a job or a scan
+              value:
+                code: scanner_in_use
+                message: a scanner used by a job or a scan cannot be deleted
+            builtInScanner:
+              summary: Built-in scanners are read-only
+              value:
+                code: built_in_scanner
+                message: built-in scanners cannot be changed
             scannerHasScans:
               summary: Removing a scanner that already has scans
               value:
@@ -3265,6 +3615,21 @@ components:
               value:
                 code: duplicate_scanner
                 message: each scanner can appear only once in scanOrders
+            invalidScanSettings:
+              summary: Settings the scanner's kind does not offer
+              value:
+                code: invalid_scan_settings
+                message: pixel_shift is not an option of this scanner
+            unknownScanner:
+              summary: Scanner id that the account cannot use
+              value:
+                code: unknown_scanner
+                message: scanner does not exist
+            invalidScanner:
+              summary: Neither or both of scannerId and scanner
+              value:
+                code: invalid_scanner
+                message: give either scannerId or scanner
             scannerNotOrdered:
               summary: Scan imported for a scanner that was not ordered
               value:
@@ -3654,7 +4019,15 @@ components:
           month: 6
 
     RollStatus: { type: string, enum: [in_stock, in_camera, done_shooting, at_lab, developed, scanned] }
-    Scanner: { type: string, enum: [noritsu, frontier, other] }
+    ScannerCode:
+      type: string
+      enum: [noritsu, frontier, other]
+      deprecated: true
+      description: |
+        Old way to name a scanner, kept until clients move to scanner ids. noritsu and frontier are the
+        built-in Noritsu HS-1800 and Frontier SP-3000; in responses every other scanner reads as other.
+        As input, other means the account's "Unknown scanner", created on first use.
+    ScannerKind: { type: string, enum: [minilab, virtual_drum, drum, dedicated_film, flatbed, camera] }
     ProcessingType: { type: string, enum: [develop, develop_scan, scan, print] }
 
     DateInput:
@@ -3664,23 +4037,141 @@ components:
       example:
         date: "2026-10-02"
 
+    ScanSettings:
+      type: object
+      description: |
+        Chosen value of each scan option, by option key: a string for enum options, a boolean or an
+        integer. Which keys and values are allowed depends on the scanner's kind (GET /scanner-kinds).
+      additionalProperties: true
+      example:
+        resolution: hi_res
+        format: tiff
+
+    ScanOptionValue:
+      type: object
+      required: [value, label]
+      properties:
+        value: { type: string }
+        label: { type: string }
+
+    ScanOption:
+      type: object
+      required: [key, label, type, default]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        type: { type: string, enum: [enum, boolean, integer] }
+        values: { type: array, items: { $ref: "#/components/schemas/ScanOptionValue" }, description: Choices of an enum option }
+        min: { type: integer, description: Lowest value of an integer option }
+        max: { type: integer, description: Highest value of an integer option }
+        default: { description: "Value used when the option is left out: a string, a boolean or an integer, by type" }
+      example:
+        key: resolution
+        label: Resolution
+        type: enum
+        values:
+          - value: standard
+            label: Standard
+          - value: hi_res
+            label: Hi-res
+        default: standard
+
+    ScannerKindOptions:
+      type: object
+      required: [label, options]
+      properties:
+        kind: { $ref: "#/components/schemas/ScannerKind" }
+        label: { type: string }
+        options: { type: array, items: { $ref: "#/components/schemas/ScanOption" } }
+      example:
+        kind: camera
+        label: Camera scan
+        options:
+          - key: pixel_shift
+            label: Pixel shift
+            type: boolean
+            default: false
+          - key: stitch_shots
+            label: Shots stitched per frame
+            type: integer
+            min: 1
+            max: 16
+            default: 1
+
+    ScannerInput:
+      type: object
+      required: [brand]
+      properties:
+        brand: { type: string, description: "Required, e.g. Noritsu or Frontier" }
+        model:
+          type: string
+          description: "Optional: a lab may run a Noritsu whose model nobody knows. For a camera rig, the body and lens, e.g. A7R IV + Laowa 100mm"
+        kind: { $ref: "#/components/schemas/ScannerKind" }
+        notes: { type: string, format: markdown, description: "Markdown text: light source, holder, conversion software" }
+        defaultSettings:
+          allOf: [{ $ref: "#/components/schemas/ScanSettings" }]
+          description: Settings a new scan order on this scanner starts from; checked against the options of its kind
+      example:
+        brand: Epson
+        model: V850
+        kind: flatbed
+        defaultSettings:
+          dpi: 3200
+          dust_removal: true
+
+    Scanner:
+      type: object
+      required: [id, brand, name, defaultSettings, builtIn, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        brand: { type: string }
+        model: { type: string, description: Absent when unknown }
+        name: { type: string, description: "Brand and model (the brand alone without a model), for display" }
+        kind: { $ref: "#/components/schemas/ScannerKind" }
+        notes: { type: string, format: markdown, description: Markdown text }
+        defaultSettings: { $ref: "#/components/schemas/ScanSettings" }
+        builtIn: { type: boolean, description: "Part of the shared catalog: visible to every account, read-only" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      example:
+        id: d177cb3c-a850-4232-a4ca-75189b7b279b
+        brand: Noritsu
+        model: HS-1800
+        name: Noritsu HS-1800
+        kind: minilab
+        builtIn: true
+        defaultSettings: {}
+        createdAt: "2026-10-29T00:00:00Z"
+        updatedAt: "2026-10-29T00:00:00Z"
+
     LabInput:
       type: object
       required: [name]
       properties:
         name: { type: string }
         address: { type: string }
+        scannerIds:
+          type: array
+          items: { type: string, format: uuid }
+          description: |
+            The scanners the lab runs, built-in or the account's own, in order: the first is the default
+            for a job sent there. Replaces the lab's set; omit it to keep the set as it is.
       example:
         name: Saigon Film Lab
         address: 12 Nguyen Hue, District 1, Ho Chi Minh City
+        scannerIds: [d177cb3c-a850-4232-a4ca-75189b7b279b]
 
     Lab:
       type: object
-      required: [id, name, createdAt, updatedAt]
+      required: [id, name, scannerIds, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
         address: { type: string }
+        scannerIds:
+          type: array
+          items: { type: string, format: uuid }
+          description: The scanners the lab runs, the default first; empty when none were given
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
       example:
@@ -3689,6 +4180,7 @@ components:
         updatedAt: "2026-09-20T10:00:00Z"
         name: Saigon Film Lab
         address: 12 Nguyen Hue, District 1, Ho Chi Minh City
+        scannerIds: [d177cb3c-a850-4232-a4ca-75189b7b279b]
 
     BulkRollsInput:
       type: object
@@ -3805,16 +4297,20 @@ components:
 
     ScanRef:
       type: object
-      required: [id, frameNumber, scanner]
+      required: [id, frameNumber, scanner, scannerId, scannerName]
       properties:
         id: { type: string, format: uuid }
         frameNumber: { type: integer }
-        scanner: { $ref: "#/components/schemas/Scanner" }
+        scanner: { $ref: "#/components/schemas/ScannerCode" }
+        scannerId: { type: string, format: uuid }
+        scannerName: { type: string }
         processingId: { type: string, format: uuid }
       example:
         id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
         frameNumber: 7
         scanner: noritsu
+        scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+        scannerName: Noritsu HS-1800
         processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
 
     Frame:
@@ -3833,6 +4329,8 @@ components:
           - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
             frameNumber: 7
             scanner: noritsu
+            scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+            scannerName: Noritsu HS-1800
             processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
 
     FrameInput:
@@ -4003,30 +4501,47 @@ components:
         price: 90000
         notes: Push 1 stop
         scanOrders:
-          - scanner: noritsu
+          - scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
             hiRes: false
 
     ScanOrderInput:
       type: object
-      required: [scanner]
+      description: |
+        Names the scanner by scannerId, or by the deprecated scanner code; exactly one of the two.
+        Without settings (or the deprecated hiRes), an order already on the job keeps its settings and
+        a new one starts from the scanner's defaultSettings.
       properties:
-        scanner: { $ref: "#/components/schemas/Scanner" }
-        hiRes: { type: boolean, default: false }
+        scannerId: { type: string, format: uuid }
+        scanner: { $ref: "#/components/schemas/ScannerCode" }
+        settings: { $ref: "#/components/schemas/ScanSettings" }
+        hiRes:
+          type: boolean
+          deprecated: true
+          description: Old flag for settings { resolution hi_res } (true) or { resolution standard } (false); ignored with settings.
       example:
-        scanner: noritsu
-        hiRes: true
+        scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+        settings:
+          resolution: hi_res
+          format: tiff
 
     ScanOrder:
       type: object
-      required: [scanner, hiRes, scanCount]
+      required: [scanner, scannerId, scannerName, settings, hiRes, scanCount]
       properties:
-        scanner: { $ref: "#/components/schemas/Scanner" }
-        hiRes: { type: boolean }
+        scanner: { $ref: "#/components/schemas/ScannerCode" }
+        scannerId: { type: string, format: uuid }
+        scannerName: { type: string }
+        settings: { $ref: "#/components/schemas/ScanSettings" }
+        hiRes: { type: boolean, deprecated: true, description: "settings.resolution is hi_res" }
         scanCount: { type: integer, minimum: 0, description: Scans imported for this scanner so far }
       example:
         scanner: noritsu
+        scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+        scannerName: Noritsu HS-1800
         hiRes: true
         scanCount: 36
+        settings:
+          resolution: hi_res
 
     Processing:
       type: object
@@ -4061,8 +4576,12 @@ components:
         notes: Push 1 stop
         scanOrders:
           - scanner: noritsu
+            scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+            scannerName: Noritsu HS-1800
             hiRes: false
             scanCount: 36
+            settings:
+              resolution: standard
         isOpen: true
 
     NegativesAtLabItem:
@@ -4087,13 +4606,15 @@ components:
 
     Scan:
       type: object
-      required: [id, processingId, frameId, frameNumber, scanner, fileName, sizeBytes, fileUrl]
+      required: [id, processingId, frameId, frameNumber, scanner, scannerId, scannerName, fileName, sizeBytes, fileUrl]
       properties:
         id: { type: string, format: uuid }
         processingId: { type: string, format: uuid }
         frameId: { type: string, format: uuid }
         frameNumber: { type: integer }
-        scanner: { $ref: "#/components/schemas/Scanner" }
+        scanner: { $ref: "#/components/schemas/ScannerCode" }
+        scannerId: { type: string, format: uuid }
+        scannerName: { type: string }
         fileName: { type: string }
         sizeBytes: { type: integer, format: int64 }
         fileUrl: { type: string }
@@ -4103,6 +4624,8 @@ components:
         frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
         frameNumber: 7
         scanner: noritsu
+        scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+        scannerName: Noritsu HS-1800
         fileName: 000007.jpg
         sizeBytes: 2481920
         fileUrl: /scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file
@@ -4162,6 +4685,8 @@ components:
             frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
             frameNumber: 7
             scanner: noritsu
+            scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+            scannerName: Noritsu HS-1800
             fileName: 000007.jpg
             sizeBytes: 2481920
             fileUrl: /scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file
@@ -4175,22 +4700,39 @@ components:
 
     FrameComparison:
       type: object
-      required: [frameNumber, missing]
+      required: [frameNumber, scans, missing]
       properties:
         frameNumber: { type: integer }
+        scans: { type: array, items: { $ref: "#/components/schemas/Scan" }, description: "Every scan of the frame in this job, by scanner name" }
         noritsu: { $ref: "#/components/schemas/Scan" }
         frontier: { $ref: "#/components/schemas/Scan" }
-        missing: { type: array, items: { $ref: "#/components/schemas/Scanner" } }
+        missing:
+          type: array
+          items: { $ref: "#/components/schemas/ScannerCode" }
+          description: Which of the two built-in scanners has no scan of this frame (deprecated, like noritsu and frontier)
         previousFrameNumber: { type: integer }
         nextFrameNumber: { type: integer }
       example:
         frameNumber: 7
+        scans:
+          - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
+            processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
+            frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
+            frameNumber: 7
+            scanner: noritsu
+            scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+            scannerName: Noritsu HS-1800
+            fileName: 000007.jpg
+            sizeBytes: 2481920
+            fileUrl: /scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file
         noritsu:
           id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
           processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
           frameId: 50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11
           frameNumber: 7
           scanner: noritsu
+          scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+          scannerName: Noritsu HS-1800
           fileName: 000007.jpg
           sizeBytes: 2481920
           fileUrl: /scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file
@@ -4228,6 +4770,8 @@ components:
           - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
             frameNumber: 7
             scanner: noritsu
+            scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b
+            scannerName: Noritsu HS-1800
             processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
 
     RankedItem:
@@ -4314,7 +4858,7 @@ components:
 
     AuditEntityType:
       type: string
-      enum: [camera, lens, film_stock, lab, roll, processing, frame, scan, camera_lens, roll_lens, processing_scan_order]
+      enum: [camera, lens, film_stock, lab, scanner, roll, processing, frame, scan, camera_lens, roll_lens, processing_scan_order]
 
     AuditAction: { type: string, enum: [create, update, delete] }
 
