@@ -175,9 +175,13 @@ func BuildViews(ctx context.Context, queries gen.Querier, rollID uuid.UUID) ([]V
 	for index, row := range rows {
 		job := gen.Processing{
 			ID: row.ID, RollID: row.RollID, LabID: row.LabID, Type: row.Type, Process: row.Process, SentAt: row.SentAt,
-			ScansReceivedAt: row.ScansReceivedAt, ScansExpectedAt: row.ScansExpectedAt, NegativesExpectedAt: row.NegativesExpectedAt, NegativesReturnedAt: row.NegativesReturnedAt, Price: row.Price, Notes: row.Notes,
+			ScansReceivedAt: row.ScansReceivedAt, ScansExpectedAt: row.ScansExpectedAt, NegativesExpectedAt: row.NegativesExpectedAt, NegativesReturnedAt: row.NegativesReturnedAt, Price: row.Price, OrderItemID: row.OrderItemID, Notes: row.Notes,
 		}
-		views[index] = View{Job: job, LabName: row.LabName, ScanOrders: ordersByJob[row.ID], IsOpen: isJobOpen(job)}
+		views[index] = View{Job: job, LabName: row.LabName, ScanOrders: ordersByJob[row.ID], IsOpen: isJobOpen(job), Price: row.Price}
+		if row.OrderItemID != nil && row.OrderID != nil && row.OrderCode != nil && row.OrderProduct != nil {
+			views[index].Price = row.OrderUnitCost
+			views[index].Order = &OrderLink{ID: *row.OrderID, Code: *row.OrderCode, ItemID: *row.OrderItemID, Product: *row.OrderProduct}
+		}
 	}
 	return views, nil
 }
@@ -275,6 +279,15 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 			return apperror.Unprocessable("invalid_scans_expected_at", "scansExpectedAt cannot be before sentAt")
 		}
 
+		if input.OrderItemID != nil {
+			if input.Price != nil {
+				return apperror.Unprocessable("price_from_order", "a job on an order takes its price from the order line")
+			}
+			if err := checkOrderItem(ctx, queries, *input.OrderItemID, input.LabID, jobID); err != nil {
+				return err
+			}
+		}
+
 		existing, lookupErr := queries.GetProcessingForUpdate(ctx, gen.GetProcessingForUpdateParams{ID: jobID, OwnerID: requestctx.Owner(ctx)})
 		if lookupErr != nil && !db.IsNoRows(lookupErr) {
 			return lookupErr
@@ -293,7 +306,7 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 			}
 			if _, err := queries.UpdateProcessing(ctx, gen.UpdateProcessingParams{
 				ID: jobID, LabID: input.LabID, SentAt: sentAt, ScansExpectedAt: input.ScansExpectedAt, NegativesExpectedAt: input.NegativesExpectedAt, Price: pointers.Int32(input.Price), Notes: pointers.TrimmedOrNil(input.Notes),
-				Process: process, OwnerID: requestctx.Owner(ctx),
+				Process: process, OwnerID: requestctx.Owner(ctx), OrderItemID: input.OrderItemID,
 			}); err != nil {
 				return err
 			}
@@ -315,7 +328,7 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 			if _, err := queries.InsertProcessing(ctx, gen.InsertProcessingParams{
 				ID: jobID, RollID: rollID, LabID: input.LabID, Type: input.Type, Process: process,
 				SentAt: sentAt, ScansExpectedAt: input.ScansExpectedAt, NegativesExpectedAt: input.NegativesExpectedAt, Price: pointers.Int32(input.Price), Notes: pointers.TrimmedOrNil(input.Notes),
-				OwnerID: requestctx.Owner(ctx),
+				OwnerID: requestctx.Owner(ctx), OrderItemID: input.OrderItemID,
 			}); err != nil {
 				return err
 			}
@@ -330,6 +343,56 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 		return err
 	})
 	return view, created, err
+}
+
+// checkOrderItem decides whether a job at a lab may go on an order line: the order must be from
+// that lab, and the line must have room. The row lock keeps two jobs from taking its last place.
+func checkOrderItem(ctx context.Context, queries gen.Querier, itemID uuid.UUID, labID *uuid.UUID, jobID uuid.UUID) error {
+	owner := requestctx.Owner(ctx)
+	item, err := queries.GetLabOrderItemForUpdate(ctx, gen.GetLabOrderItemForUpdateParams{ID: itemID, OwnerID: owner})
+	if err != nil {
+		if db.IsNoRows(err) {
+			return apperror.Unprocessable("unknown_order_item", "order line does not exist")
+		}
+		return err
+	}
+	if labID == nil || *labID != item.LabID {
+		return apperror.Unprocessable("order_lab_mismatch", "the job and the order must be from the same lab")
+	}
+	taken, err := queries.CountLabOrderItemJobs(ctx, gen.CountLabOrderItemJobsParams{OrderItemID: &itemID, OwnerID: owner, ExceptJobID: jobID})
+	if err != nil {
+		return err
+	}
+	if taken >= item.Quantity {
+		return apperror.Conflict("order_item_full", "this order line already has as many rolls as its quantity")
+	}
+	return nil
+}
+
+// SetOrderItem puts a job on an order line, or takes it off with a nil line.
+func (service *Service) SetOrderItem(ctx context.Context, jobID uuid.UUID, itemID *uuid.UUID) (View, error) {
+	var view View
+	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
+		owner := requestctx.Owner(ctx)
+		job, err := queries.GetProcessingForUpdate(ctx, gen.GetProcessingForUpdateParams{ID: jobID, OwnerID: owner})
+		if err != nil {
+			return shared.NotFoundOr(err, "processing job")
+		}
+		if itemID != nil {
+			if err := checkOrderItem(ctx, queries, *itemID, job.LabID, jobID); err != nil {
+				return err
+			}
+		}
+		// A job on no order keeps its own price when there is nothing to take it off.
+		if itemID != nil || job.OrderItemID != nil {
+			if _, err := queries.SetProcessingOrderItem(ctx, gen.SetProcessingOrderItemParams{ID: jobID, OwnerID: owner, OrderItemID: itemID}); err != nil {
+				return err
+			}
+		}
+		view, err = BuildView(ctx, queries, jobID)
+		return err
+	})
+	return view, err
 }
 
 // resolveProcess uses the requested process, defaulting to the film stock's own (UC-24 step 4).
