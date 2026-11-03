@@ -2,6 +2,7 @@ package camera
 
 import (
 	"meta-frames-server/internal/api"
+	"meta-frames-server/internal/common/pointers"
 	"meta-frames-server/internal/db/gen"
 	camerasvc "meta-frames-server/internal/services/camera"
 	"testing"
@@ -22,7 +23,7 @@ func TestToAPICameraIncludesTheLoadedRoll(test *testing.T) {
 	view := camerasvc.View{
 		Camera:        gen.Camera{ID: uuid.New(), Brand: "Canon", Model: "QL17", HasFixedLens: true, IsActive: true},
 		BuiltInLensID: &builtInLensID,
-		LoadedRoll:    &camerasvc.LoadedRoll{StockBrand: "Kodak", StockName: "Gold", ShotISO: 800, StartedAt: &started, DaysLoaded: 31},
+		LoadedRoll:    &camerasvc.LoadedRoll{StockBrand: "Kodak", StockName: "Gold", ShotISO: pointers.To(int32(800)), StartedAt: &started, DaysLoaded: 31},
 	}
 	camera := toAPICamera(view)
 

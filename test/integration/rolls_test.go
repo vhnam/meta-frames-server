@@ -20,7 +20,7 @@ func seedGear(harness *harness) gear {
 	harness.test.Helper()
 	seeded := gear{stockID: newID(), fixedCamera: newID(), slrCamera: newID(), fiftyMmLensID: newID()}
 	harness.expect(harness.call("PUT", "/film-stocks/"+seeded.stockID, map[string]any{
-		"brand": "Kodak", "name": "UltraMax 400", "type": "color", "boxIso": 400, "process": "C-41", "packaging": "factory",
+		"brand": "Kodak", "name": "UltraMax 400", "type": "color", "boxIso": "400", "process": "C-41", "packaging": "factory",
 	}), http.StatusCreated)
 	harness.expect(harness.call("PUT", "/cameras/"+seeded.fixedCamera, map[string]any{
 		"brand": "Canon", "model": "QL17", "hasFixedLens": true,

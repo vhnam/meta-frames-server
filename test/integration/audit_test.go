@@ -123,7 +123,7 @@ func TestLinkChangesAndRollEventsAreAudited(test *testing.T) {
 	}
 
 	harness.expect(harness.call("PUT", "/film-stocks/"+newID(), map[string]any{
-		"brand": "Kodak", "name": "Gold", "type": "color", "boxIso": 200, "process": "C-41", "packaging": "factory",
+		"brand": "Kodak", "name": "Gold", "type": "color", "boxIso": "200", "process": "C-41", "packaging": "factory",
 	}), http.StatusCreated)
 	if stocks := harness.auditTrail("entityType=film_stock"); len(stocks) != 1 || stocks[0]["action"] != "create" {
 		test.Fatalf("film stock audit = %v", stocks)

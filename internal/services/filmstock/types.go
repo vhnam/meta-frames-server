@@ -11,7 +11,7 @@ type Input struct {
 	Brand       string
 	Name        string
 	Type        string
-	BoxISO      int
+	BoxISO      string
 	Process     string
 	Packaging   string
 	StockOrigin *string

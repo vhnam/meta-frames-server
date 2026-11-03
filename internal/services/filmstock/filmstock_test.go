@@ -83,7 +83,7 @@ func TestFilmStockCreateReportsWarnings(test *testing.T) {
 	service := New(testutil.Store{Querier: queries})
 
 	detail, err := service.Create(context.Background(), uuid.New(), Input{
-		Brand: " Ilford ", Name: "HP5", Type: "bw", BoxISO: 400, Process: "C-41", Packaging: "factory",
+		Brand: " Ilford ", Name: "HP5", Type: "bw", BoxISO: "400", Process: "C-41", Packaging: "factory",
 	})
 	if err != nil {
 		test.Fatal(err)
@@ -99,11 +99,11 @@ func TestFilmStockUpdateEditsInPlaceAndNeedsAnExistingStock(test *testing.T) {
 	stockID := uuid.New()
 	queries.Stocks[stockID] = gen.FilmStock{ID: stockID, Brand: "Ilford", Name: "HP5"}
 
-	detail, err := service.Update(context.Background(), stockID, Input{Brand: "Ilford", Name: "HP5 Plus", Type: "bw", BoxISO: 400, Process: "BW", Packaging: "factory"})
+	detail, err := service.Update(context.Background(), stockID, Input{Brand: "Ilford", Name: "HP5 Plus", Type: "bw", BoxISO: "400", Process: "BW", Packaging: "factory"})
 	if err != nil || detail.Stock.Name != "HP5 Plus" || len(queries.Stocks) != 1 {
 		test.Fatalf("detail=%+v err=%v", detail, err)
 	}
-	_, err = service.Update(context.Background(), uuid.New(), Input{Brand: "a", Name: "b"})
+	_, err = service.Update(context.Background(), uuid.New(), Input{Brand: "a", Name: "b", BoxISO: "400"})
 	assertAppError(test, err, apperror.KindNotFound, "not_found")
 }
 

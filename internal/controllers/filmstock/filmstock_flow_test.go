@@ -22,7 +22,7 @@ func newController() (*Controller, *testutil.Memory) {
 }
 
 func stockInput() *api.FilmStockInput {
-	return &api.FilmStockInput{Brand: "Kodak", Name: "Gold", Type: "color_negative", BoxIso: 200, Process: "C-41", Packaging: "roll"}
+	return &api.FilmStockInput{Brand: "Kodak", Name: "Gold", Type: "color_negative", BoxIso: "200", Process: "C-41", Packaging: "roll"}
 }
 
 func TestPutFilmStockCreatesThenUpdates(test *testing.T) {

@@ -299,7 +299,7 @@ type ListLoadedRollsRow struct {
 	StockID    uuid.UUID
 	StockBrand string
 	StockName  string
-	BoxIso     int32
+	BoxIso     string
 	DaysLoaded int32
 }
 

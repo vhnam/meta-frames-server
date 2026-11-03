@@ -30,7 +30,7 @@ func newFixture() fixture {
 	memory := testutil.NewMemory()
 	all := services.New(testutil.Store{Querier: memory}, testutil.NewMemoryFiles(), clock.Fixed{Date: time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)})
 	stockID, rollID, cameraID := uuid.New(), uuid.New(), uuid.New()
-	memory.Stocks[stockID] = gen.FilmStock{ID: stockID, Brand: "Kodak", Name: "Gold", BoxIso: 200}
+	memory.Stocks[stockID] = gen.FilmStock{ID: stockID, Brand: "Kodak", Name: "Gold", BoxIso: "200"}
 	memory.Rolls[rollID] = gen.Roll{ID: rollID, FilmStockID: stockID, Status: domain.RollStatusInStock, Format: 135, Exposures: 36}
 	memory.Cameras[cameraID] = gen.Camera{ID: cameraID, IsActive: true, Mount: pointers.To("F")}
 	return fixture{controller: New(all.Rolls), memory: memory, stockID: stockID, rollID: rollID, cameraID: cameraID}
