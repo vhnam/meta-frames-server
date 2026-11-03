@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-11-03
+
 ### Added
 
 - `GET /auth/google/config` returns the web client id (`GOOGLE_CLIENT_ID`) that a mobile app names when it requests an ID token.
@@ -20,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- A film stock's `boxIso` is now a string: a single ISO (`"400"`) or a rising range (`"100-400"`). Other values fail with `400` or `422 invalid_box_iso`. This breaks clients that send or read it as a number. A roll's `shotIso` stays an integer: one equal to a single box ISO is stored as null, and one within a range is kept. `LoadedRoll.shotIso` is left out when the roll has no shot ISO and its stock has a range. `GET /inventory?iso=` also matches stocks whose range includes the speed. Migration `00015` changes the column to text.
+- A film stock's `boxIso` is now a string: a single ISO (`"400"`) or a rising range (`"100-400"`). Other values fail with `400` or `422 invalid_box_iso`. This breaks clients that send or read it as a number (breaking, API 0.6.0). A roll's `shotIso` stays an integer: one equal to a single box ISO is stored as null, and one within a range is kept. `LoadedRoll.shotIso` is left out when the roll has no shot ISO and its stock has a range. `GET /inventory?iso=` also matches stocks whose range includes the speed. Migration `00015` changes the column to text.
 - The server checks its settings at startup and exits with one message listing every invalid value. A bad `PORT`, `DB_MAX_CONNS`, URL, `MAIL_FROM`, `SMTP_ADDR` or `SESSION_SAMESITE`, or only one of `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, used to be ignored or fail later. Passwords in a URL are hidden in the message.
 - The server accepts unencrypted HTTP/2 (h2c) as well as HTTP/1.1, so Cloud Run can forward requests over 32 MiB, such as large scan uploads, when deployed with `--use-http2`.
 - Compose and the integration tests use Postgres 18, the major version production runs. Compose keeps its data in a new volume (`pgdata18`), so `make db-up` starts with an empty database; dump a Postgres 17 database and restore it to keep its data.
@@ -82,6 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `POST /rolls/bulk` with an `Idempotency-Key` failed while saving the response, because the JSON was sent as bytea hex.
 - `GET /cameras` returned 500 when a loaded roll had no start date. The camera now reports `daysLoaded` as 0 in that case.
 
-[Unreleased]: https://github.com/vhnam/meta-frames/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/vhnam/meta-frames/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/vhnam/meta-frames/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/vhnam/meta-frames/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/vhnam/meta-frames/releases/tag/v1.0.0
