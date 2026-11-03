@@ -108,6 +108,39 @@ type Lab struct {
 	OwnerID   uuid.UUID
 }
 
+type LabOrder struct {
+	ID        uuid.UUID
+	OwnerID   uuid.UUID
+	LabID     uuid.UUID
+	Code      string
+	OrderedAt pgtype.Timestamptz
+	DueDate   *time.Time
+	Vat       int32
+	Discount  int32
+	Notes     *string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+	DeletedAt pgtype.Timestamptz
+}
+
+type LabOrderItem struct {
+	ID        uuid.UUID
+	OwnerID   uuid.UUID
+	OrderID   uuid.UUID
+	Product   string
+	Options   *string
+	Quantity  int32
+	UnitPrice int32
+	Position  int32
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+type LabOrderItemCost struct {
+	ItemID   uuid.UUID
+	UnitCost int32
+}
+
 type LabScanner struct {
 	LabID     uuid.UUID
 	ScannerID uuid.UUID
@@ -149,6 +182,7 @@ type Processing struct {
 	ScansExpectedAt     *time.Time
 	NegativesExpectedAt *time.Time
 	OwnerID             uuid.UUID
+	OrderItemID         *uuid.UUID
 }
 
 type ProcessingScanOrder struct {

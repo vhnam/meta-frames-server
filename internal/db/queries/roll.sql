@@ -101,8 +101,10 @@ WHERE f.roll_id = $1 AND s.owner_id = $2 AND s.deleted_at IS NULL ORDER BY f.num
 
 -- name: RollSpend :one
 SELECT COALESCE(r.price, 0)::int AS roll_price, (r.price IS NULL)::bool AS roll_price_missing,
-       (SELECT COALESCE(sum(price), 0) FROM processing WHERE roll_id = r.id AND deleted_at IS NULL)::int AS processing_price,
-       EXISTS (SELECT 1 FROM processing WHERE roll_id = r.id AND deleted_at IS NULL AND price IS NULL)::bool AS processing_price_missing
+       (SELECT COALESCE(sum(COALESCE(cost.unit_cost, p.price)), 0) FROM processing p LEFT JOIN lab_order_item_cost cost ON cost.item_id = p.order_item_id
+        WHERE p.roll_id = r.id AND p.deleted_at IS NULL)::int AS processing_price,
+       EXISTS (SELECT 1 FROM processing p LEFT JOIN lab_order_item_cost cost ON cost.item_id = p.order_item_id
+               WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND COALESCE(cost.unit_cost, p.price) IS NULL)::bool AS processing_price_missing
 FROM roll r WHERE r.id = $1 AND r.owner_id = $2 AND r.deleted_at IS NULL;
 
 -- name: GetIdempotencyKey :one
