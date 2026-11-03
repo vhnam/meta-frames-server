@@ -199,9 +199,10 @@ func (q *Queries) StatsLenses(ctx context.Context, arg StatsLensesParams) ([]Sta
 }
 
 const statsProcessingSpend = `-- name: StatsProcessingSpend :many
-SELECT EXTRACT(YEAR FROM sent_at)::int AS year, EXTRACT(MONTH FROM sent_at)::int AS month,
-       COALESCE(sum(price), 0)::int AS cost, (count(*) FILTER (WHERE price IS NULL))::int AS missing
-FROM processing WHERE owner_id = $1 AND deleted_at IS NULL GROUP BY 1, 2
+SELECT EXTRACT(YEAR FROM p.sent_at)::int AS year, EXTRACT(MONTH FROM p.sent_at)::int AS month,
+       COALESCE(sum(COALESCE(cost.unit_cost, p.price)), 0)::int AS cost, (count(*) FILTER (WHERE COALESCE(cost.unit_cost, p.price) IS NULL))::int AS missing
+FROM processing p LEFT JOIN lab_order_item_cost cost ON cost.item_id = p.order_item_id
+WHERE p.owner_id = $1 AND p.deleted_at IS NULL GROUP BY 1, 2
 `
 
 type StatsProcessingSpendRow struct {
