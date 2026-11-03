@@ -11,6 +11,7 @@ import (
 	"meta-frames-server/internal/controllers/camera"
 	"meta-frames-server/internal/controllers/filmstock"
 	"meta-frames-server/internal/controllers/lab"
+	"meta-frames-server/internal/controllers/laborder"
 	"meta-frames-server/internal/controllers/lens"
 	"meta-frames-server/internal/controllers/processing"
 	"meta-frames-server/internal/controllers/roll"
@@ -26,6 +27,7 @@ type (
 	auditController      = audit.Controller
 	cameraController     = camera.Controller
 	labController        = lab.Controller
+	labOrderController   = laborder.Controller
 	lensController       = lens.Controller
 	filmStockController  = filmstock.Controller
 	processingController = processing.Controller
@@ -45,6 +47,7 @@ type Controllers struct {
 	*filmStockController
 	*rollController
 	*labController
+	*labOrderController
 	*scannerController
 	*processingController
 	*scanController
@@ -63,6 +66,7 @@ func New(appServices *services.Services) *Controllers {
 		filmStockController:  filmstock.New(appServices.FilmStocks),
 		rollController:       roll.New(appServices.Rolls),
 		labController:        lab.New(appServices.Labs),
+		labOrderController:   laborder.New(appServices.LabOrders),
 		scannerController:    scanner.New(appServices.Scanners),
 		processingController: processing.New(appServices.Processing, appServices.Scanners),
 		scanController:       scan.New(appServices.Scans, appServices.Scanners),
