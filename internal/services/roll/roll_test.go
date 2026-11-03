@@ -133,7 +133,7 @@ func TestRollListAndDetail(test *testing.T) {
 		test.Fatalf("rolls=%v err=%v", rolls, err)
 	}
 	detail, err := fixture.service.Detail(ctx, fixture.rollID)
-	if err != nil || detail.Totals.RollPrice != 100 || !detail.Totals.Incomplete || detail.Stock.BoxIso != 400 {
+	if err != nil || detail.Totals.RollPrice != 100 || !detail.Totals.Incomplete || detail.Stock.BoxIso != "400" {
 		test.Fatalf("detail=%+v err=%v", detail, err)
 	}
 	if _, err := fixture.service.Detail(ctx, uuid.New()); err == nil {
@@ -297,7 +297,7 @@ type loadFixture struct {
 func newLoadFixture() loadFixture {
 	queries := newMemoryQueries()
 	stockID, rollID, cameraID := uuid.New(), uuid.New(), uuid.New()
-	queries.Stocks[stockID] = gen.FilmStock{ID: stockID, BoxIso: 400}
+	queries.Stocks[stockID] = gen.FilmStock{ID: stockID, BoxIso: "400"}
 	queries.Rolls[rollID] = gen.Roll{ID: rollID, FilmStockID: stockID, Status: domain.RollStatusInStock}
 	queries.Cameras[cameraID] = gen.Camera{ID: cameraID, IsActive: true, Mount: stringRef("F")}
 	return loadFixture{queries: queries, service: New(testutil.Store{Querier: queries}, fixedClock()), rollID: rollID, cameraID: cameraID}
@@ -478,14 +478,17 @@ func TestResolveExposures(test *testing.T) {
 }
 
 func TestNormalizeShotISO(test *testing.T) {
-	if got := normalizeShotISO(nil, 400); got != nil {
+	if got := normalizeShotISO(nil, "400"); got != nil {
 		test.Fatalf("nil shot ISO = %v", got)
 	}
-	if got := normalizeShotISO(intRef(400), 400); got != nil {
+	if got := normalizeShotISO(intRef(400), "400"); got != nil {
 		test.Fatalf("box ISO must become null, got %v", *got)
 	}
-	if got := normalizeShotISO(intRef(800), 400); got == nil || *got != 800 {
+	if got := normalizeShotISO(intRef(800), "400"); got == nil || *got != 800 {
 		test.Fatalf("pushed ISO = %v", got)
+	}
+	if got := normalizeShotISO(intRef(200), "100-400"); got == nil || *got != 200 {
+		test.Fatalf("speed within a range = %v", got)
 	}
 }
 

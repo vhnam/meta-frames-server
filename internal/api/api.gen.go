@@ -434,12 +434,14 @@ type ExpiryView struct {
 	NoExpiry []RollSummary `json:"noExpiry"`
 }
 
-// FilmStock Example: {"boxIso":400,"brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"}
+// FilmStock Example: {"boxIso":"400","brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"}
 type FilmStock struct {
 	BaseStockId *openapi_types.UUID `json:"baseStockId,omitempty"`
-	BoxIso      int                 `json:"boxIso"`
-	Brand       string              `json:"brand"`
-	CreatedAt   time.Time           `json:"createdAt"`
+
+	// BoxIso The box speed, a single ISO ("400") or a range ("100-400")
+	BoxIso    string    `json:"boxIso"`
+	Brand     string    `json:"brand"`
+	CreatedAt time.Time `json:"createdAt"`
 
 	// Description Markdown text
 	Description *string            `json:"description,omitempty"`
@@ -453,9 +455,9 @@ type FilmStock struct {
 	UpdatedAt   time.Time          `json:"updatedAt"`
 }
 
-// FilmStockDetail Example: {"baseStock":{"boxIso":400,"brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"},"derived":[],"siblings":[],"stock":{"baseStockId":"f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06","boxIso":400,"brand":"Respool Co.","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400 (respooled)","packaging":"respooled","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"},"warnings":[]}
+// FilmStockDetail Example: {"baseStock":{"boxIso":"400","brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"},"derived":[],"siblings":[],"stock":{"baseStockId":"f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06","boxIso":"400","brand":"Respool Co.","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400 (respooled)","packaging":"respooled","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"},"warnings":[]}
 type FilmStockDetail struct {
-	// BaseStock Example: {"boxIso":400,"brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"}
+	// BaseStock Example: {"boxIso":"400","brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"}
 	BaseStock *FilmStock `json:"baseStock,omitempty"`
 
 	// Derived Stocks that use this stock as their base
@@ -464,16 +466,18 @@ type FilmStockDetail struct {
 	// Siblings Other stocks with the same base stock
 	Siblings []FilmStock `json:"siblings"`
 
-	// Stock Example: {"boxIso":400,"brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"}
+	// Stock Example: {"boxIso":"400","brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"}
 	Stock    FilmStock `json:"stock"`
 	Warnings []string  `json:"warnings"`
 }
 
-// FilmStockInput Example: {"boxIso":400,"brand":"Kodak","description":"**Fine-grain** portrait film","name":"Portra 400","packaging":"factory","process":"C-41","stockOrigin":"USA","type":"color"}
+// FilmStockInput Example: {"boxIso":"400","brand":"Kodak","description":"**Fine-grain** portrait film","name":"Portra 400","packaging":"factory","process":"C-41","stockOrigin":"USA","type":"color"}
 type FilmStockInput struct {
 	BaseStockId *openapi_types.UUID `json:"baseStockId,omitempty"`
-	BoxIso      int                 `json:"boxIso"`
-	Brand       string              `json:"brand"`
+
+	// BoxIso The box speed, a single ISO ("400") or a rising range ("100-400")
+	BoxIso string `json:"boxIso"`
+	Brand  string `json:"brand"`
 
 	// Description Markdown text
 	Description *string   `json:"description,omitempty"`
@@ -589,25 +593,28 @@ type InventoryFormatCount struct {
 	Format int `json:"format"`
 }
 
-// InventoryItem Example: {"formats":[{"count":3,"format":135},{"count":1,"format":120}],"soonestExpiry":{"month":6,"year":2027},"stock":{"boxIso":400,"brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"}}
+// InventoryItem Example: {"formats":[{"count":3,"format":135},{"count":1,"format":120}],"soonestExpiry":{"month":6,"year":2027},"stock":{"boxIso":"400","brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"}}
 type InventoryItem struct {
 	Formats []InventoryFormatCount `json:"formats"`
 
 	// SoonestExpiry Example: {"month":6,"year":2027}
 	SoonestExpiry *ExpiryMonth `json:"soonestExpiry,omitempty"`
 
-	// Stock Example: {"boxIso":400,"brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"}
+	// Stock Example: {"boxIso":"400","brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"}
 	Stock FilmStock `json:"stock"`
 }
 
 // Lab Example: {"address":"12 Nguyen Hue, District 1, Ho Chi Minh City","createdAt":"2026-09-01T08:30:00Z","id":"3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09","name":"Saigon Film Lab","scannerIds":["d177cb3c-a850-4232-a4ca-75189b7b279b"],"updatedAt":"2026-09-20T10:00:00Z"}
 type Lab struct {
-	Address   *string            `json:"address,omitempty"`
-	CreatedAt time.Time          `json:"createdAt"`
-	Id        openapi_types.UUID `json:"id"`
-	Name      string             `json:"name"`
+	Address   *string   `json:"address,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
 
-	// ScannerIds The scanners the lab runs, the default first; empty when none were given
+	// DefaultScannerId The scanner a job sent to the lab starts with; absent when the lab has no default
+	DefaultScannerId *openapi_types.UUID `json:"defaultScannerId,omitempty"`
+	Id               openapi_types.UUID  `json:"id"`
+	Name             string              `json:"name"`
+
+	// ScannerIds The scanners the lab runs, in order; empty when none were given
 	ScannerIds []openapi_types.UUID `json:"scannerIds"`
 	UpdatedAt  time.Time            `json:"updatedAt"`
 }
@@ -615,10 +622,14 @@ type Lab struct {
 // LabInput Example: {"address":"12 Nguyen Hue, District 1, Ho Chi Minh City","name":"Saigon Film Lab","scannerIds":["d177cb3c-a850-4232-a4ca-75189b7b279b"]}
 type LabInput struct {
 	Address *string `json:"address,omitempty"`
-	Name    string  `json:"name"`
 
-	// ScannerIds The scanners the lab runs, built-in or the account's own, in order: the first is the default
-	// for a job sent there. Replaces the lab's set; omit it to keep the set as it is.
+	// DefaultScannerId The scanner a job sent to the lab starts with: one of scannerIds. Optional, and saved with
+	// scannerIds: sending scannerIds without it leaves the lab with no default.
+	DefaultScannerId *openapi_types.UUID `json:"defaultScannerId,omitempty"`
+	Name             string              `json:"name"`
+
+	// ScannerIds The scanners the lab runs, built-in or the account's own, in order. Replaces the lab's set;
+	// omit it to keep the set as it is.
 	ScannerIds *[]openapi_types.UUID `json:"scannerIds,omitempty"`
 }
 
@@ -776,9 +787,9 @@ type ResetPasswordInput struct {
 	Token    string `json:"token"`
 }
 
-// RollDetail Example: {"frames":[],"lenses":[{"brand":"Nikon","createdAt":"2026-09-01T08:30:00Z","focalLength":50,"id":"a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03","isActive":true,"isBuiltIn":false,"maxAperture":1.4,"model":"Nikkor 50mm f/1.4 AI-S","mount":"F","updatedAt":"2026-09-20T10:00:00Z"}],"processing":[],"roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400"},"stock":{"boxIso":400,"brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"},"totals":{"incomplete":false,"processingPrice":90000,"rollPrice":150000,"total":240000},"warnings":[]}
+// RollDetail Example: {"frames":[],"lenses":[{"brand":"Nikon","createdAt":"2026-09-01T08:30:00Z","focalLength":50,"id":"a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03","isActive":true,"isBuiltIn":false,"maxAperture":1.4,"model":"Nikkor 50mm f/1.4 AI-S","mount":"F","updatedAt":"2026-09-20T10:00:00Z"}],"processing":[],"roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400"},"stock":{"boxIso":"400","brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"},"totals":{"incomplete":false,"processingPrice":90000,"rollPrice":150000,"total":240000},"warnings":[]}
 type RollDetail struct {
-	// BaseStock Example: {"boxIso":400,"brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"}
+	// BaseStock Example: {"boxIso":"400","brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"}
 	BaseStock  *FilmStock   `json:"baseStock,omitempty"`
 	Frames     []Frame      `json:"frames"`
 	Lenses     []Lens       `json:"lenses"`
@@ -787,7 +798,7 @@ type RollDetail struct {
 	// Roll Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400"}
 	Roll RollSummary `json:"roll"`
 
-	// Stock Example: {"boxIso":400,"brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"}
+	// Stock Example: {"boxIso":"400","brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"}
 	Stock FilmStock `json:"stock"`
 
 	// Totals Example: {"incomplete":false,"processingPrice":90000,"rollPrice":150000,"total":240000}
@@ -1112,7 +1123,9 @@ type ListFilmStocksParams struct {
 type GetInventoryParams struct {
 	Type    *StockType `form:"type,omitempty" json:"type,omitempty"`
 	Process *Process   `form:"process,omitempty" json:"process,omitempty"`
-	Iso     *int       `form:"iso,omitempty" json:"iso,omitempty"`
+
+	// Iso A speed; matches stocks with that box ISO, or a box ISO range that includes it
+	Iso *int `form:"iso,omitempty" json:"iso,omitempty"`
 }
 
 // ListLensesParams defines parameters for ListLenses.
