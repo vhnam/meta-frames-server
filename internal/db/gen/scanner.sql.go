@@ -32,6 +32,16 @@ func (q *Queries) BuiltInScannerNamed(ctx context.Context, arg BuiltInScannerNam
 	return exists, err
 }
 
+const clearLabDefaultScanner = `-- name: ClearLabDefaultScanner :exec
+UPDATE lab_scanner SET is_default = false WHERE lab_id = $1 AND is_default
+`
+
+// Runs before the upserts, so the new default cannot collide with the old one.
+func (q *Queries) ClearLabDefaultScanner(ctx context.Context, labID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, clearLabDefaultScanner, labID)
+	return err
+}
+
 const deleteLabScannersExcept = `-- name: DeleteLabScannersExcept :exec
 DELETE FROM lab_scanner WHERE lab_id = $1 AND NOT (scanner_id = ANY($2::uuid[]))
 `
@@ -144,13 +154,14 @@ func (q *Queries) InsertScanner(ctx context.Context, arg InsertScannerParams) (S
 }
 
 const listLabScanners = `-- name: ListLabScanners :many
-SELECT ls.lab_id, ls.scanner_id FROM lab_scanner ls JOIN lab l ON l.id = ls.lab_id
+SELECT ls.lab_id, ls.scanner_id, ls.is_default FROM lab_scanner ls JOIN lab l ON l.id = ls.lab_id
 WHERE l.owner_id = $1 ORDER BY ls.lab_id, ls.position
 `
 
 type ListLabScannersRow struct {
 	LabID     uuid.UUID
 	ScannerID uuid.UUID
+	IsDefault bool
 }
 
 // Scanners of the account's labs, each lab's in the order they were given.
@@ -163,7 +174,7 @@ func (q *Queries) ListLabScanners(ctx context.Context, ownerID uuid.UUID) ([]Lis
 	var items []ListLabScannersRow
 	for rows.Next() {
 		var i ListLabScannersRow
-		if err := rows.Scan(&i.LabID, &i.ScannerID); err != nil {
+		if err := rows.Scan(&i.LabID, &i.ScannerID, &i.IsDefault); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -297,18 +308,24 @@ func (q *Queries) UpdateScanner(ctx context.Context, arg UpdateScannerParams) (S
 }
 
 const upsertLabScanner = `-- name: UpsertLabScanner :exec
-INSERT INTO lab_scanner (lab_id, scanner_id, position) VALUES ($1, $2, $3)
-ON CONFLICT (lab_id, scanner_id) DO UPDATE SET position = EXCLUDED.position
-WHERE lab_scanner.position IS DISTINCT FROM EXCLUDED.position
+INSERT INTO lab_scanner (lab_id, scanner_id, position, is_default) VALUES ($1, $2, $3, $4)
+ON CONFLICT (lab_id, scanner_id) DO UPDATE SET position = EXCLUDED.position, is_default = EXCLUDED.is_default
+WHERE (lab_scanner.position, lab_scanner.is_default) IS DISTINCT FROM (EXCLUDED.position, EXCLUDED.is_default)
 `
 
 type UpsertLabScannerParams struct {
 	LabID     uuid.UUID
 	ScannerID uuid.UUID
 	Position  int32
+	IsDefault bool
 }
 
 func (q *Queries) UpsertLabScanner(ctx context.Context, arg UpsertLabScannerParams) error {
-	_, err := q.db.Exec(ctx, upsertLabScanner, arg.LabID, arg.ScannerID, arg.Position)
+	_, err := q.db.Exec(ctx, upsertLabScanner,
+		arg.LabID,
+		arg.ScannerID,
+		arg.Position,
+		arg.IsDefault,
+	)
 	return err
 }

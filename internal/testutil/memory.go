@@ -1146,7 +1146,7 @@ func (queries *Memory) ListLabScanners(_ context.Context, owner uuid.UUID) ([]ge
 	})
 	rows := make([]gen.ListLabScannersRow, len(links))
 	for index, link := range links {
-		rows[index] = gen.ListLabScannersRow{LabID: link.LabID, ScannerID: link.ScannerID}
+		rows[index] = gen.ListLabScannersRow{LabID: link.LabID, ScannerID: link.ScannerID, IsDefault: link.IsDefault}
 	}
 	return rows, nil
 }
@@ -1166,10 +1166,20 @@ func (queries *Memory) UpsertLabScanner(_ context.Context, arg gen.UpsertLabScan
 	for index, link := range queries.LabScanners {
 		if link.LabID == arg.LabID && link.ScannerID == arg.ScannerID {
 			queries.LabScanners[index].Position = arg.Position
+			queries.LabScanners[index].IsDefault = arg.IsDefault
 			return nil
 		}
 	}
-	queries.LabScanners = append(queries.LabScanners, gen.LabScanner{LabID: arg.LabID, ScannerID: arg.ScannerID, Position: arg.Position})
+	queries.LabScanners = append(queries.LabScanners, gen.LabScanner{LabID: arg.LabID, ScannerID: arg.ScannerID, Position: arg.Position, IsDefault: arg.IsDefault})
+	return nil
+}
+
+func (queries *Memory) ClearLabDefaultScanner(_ context.Context, labID uuid.UUID) error {
+	for index, link := range queries.LabScanners {
+		if link.LabID == labID {
+			queries.LabScanners[index].IsDefault = false
+		}
+	}
 	return nil
 }
 

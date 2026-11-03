@@ -39,16 +39,20 @@ SELECT EXISTS (
 
 -- Scanners of the account's labs, each lab's in the order they were given.
 -- name: ListLabScanners :many
-SELECT ls.lab_id, ls.scanner_id FROM lab_scanner ls JOIN lab l ON l.id = ls.lab_id
+SELECT ls.lab_id, ls.scanner_id, ls.is_default FROM lab_scanner ls JOIN lab l ON l.id = ls.lab_id
 WHERE l.owner_id = $1 ORDER BY ls.lab_id, ls.position;
 
 -- name: DeleteLabScannersExcept :exec
 DELETE FROM lab_scanner WHERE lab_id = $1 AND NOT (scanner_id = ANY(@keep::uuid[]));
 
 -- name: UpsertLabScanner :exec
-INSERT INTO lab_scanner (lab_id, scanner_id, position) VALUES ($1, $2, $3)
-ON CONFLICT (lab_id, scanner_id) DO UPDATE SET position = EXCLUDED.position
-WHERE lab_scanner.position IS DISTINCT FROM EXCLUDED.position;
+INSERT INTO lab_scanner (lab_id, scanner_id, position, is_default) VALUES ($1, $2, $3, $4)
+ON CONFLICT (lab_id, scanner_id) DO UPDATE SET position = EXCLUDED.position, is_default = EXCLUDED.is_default
+WHERE (lab_scanner.position, lab_scanner.is_default) IS DISTINCT FROM (EXCLUDED.position, EXCLUDED.is_default);
+
+-- Runs before the upserts, so the new default cannot collide with the old one.
+-- name: ClearLabDefaultScanner :exec
+UPDATE lab_scanner SET is_default = false WHERE lab_id = $1 AND is_default;
 
 -- A deleted scanner leaves the labs that ran it.
 -- name: RemoveScannerFromLabs :exec

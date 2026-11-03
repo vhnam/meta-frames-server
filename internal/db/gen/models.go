@@ -113,6 +113,7 @@ type LabScanner struct {
 	ScannerID uuid.UUID
 	Position  int32
 	CreatedAt pgtype.Timestamptz
+	IsDefault bool
 }
 
 type Lens struct {

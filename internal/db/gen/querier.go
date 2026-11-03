@@ -16,6 +16,8 @@ type Querier interface {
 	ClaimIdempotencyKey(ctx context.Context, arg ClaimIdempotencyKeyParams) (int64, error)
 	// Hands records created before accounts existed to a new account (see 00010_ownership.sql).
 	ClaimUnownedData(ctx context.Context, newOwner uuid.UUID) error
+	// Runs before the upserts, so the new default cannot collide with the old one.
+	ClearLabDefaultScanner(ctx context.Context, labID uuid.UUID) error
 	CountCameraRolls(ctx context.Context, arg CountCameraRollsParams) (int64, error)
 	DeleteCameraLensesExcept(ctx context.Context, arg DeleteCameraLensesExceptParams) error
 	DeleteExpiredSessions(ctx context.Context) error

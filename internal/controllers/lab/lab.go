@@ -22,13 +22,13 @@ func New(labs *labsvc.Service) *Controller { return &Controller{labs: labs} }
 func toAPILab(view labsvc.View) api.Lab {
 	lab := view.Lab
 	return api.Lab{
-		Id: lab.ID, Name: lab.Name, Address: lab.Address, ScannerIds: view.ScannerIDs,
+		Id: lab.ID, Name: lab.Name, Address: lab.Address, ScannerIds: view.ScannerIDs, DefaultScannerId: view.DefaultScannerID,
 		CreatedAt: convert.Timestamp(lab.CreatedAt), UpdatedAt: convert.Timestamp(lab.UpdatedAt),
 	}
 }
 
 func toInput(body *api.LabInput) labsvc.Input {
-	return labsvc.Input{Name: body.Name, Address: body.Address, ScannerIDs: body.ScannerIds}
+	return labsvc.Input{Name: body.Name, Address: body.Address, ScannerIDs: body.ScannerIds, DefaultScannerID: body.DefaultScannerId}
 }
 
 func (controller *Controller) ListLabs(ctx context.Context, _ api.ListLabsRequestObject) (api.ListLabsResponseObject, error) {
