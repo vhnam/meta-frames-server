@@ -8,6 +8,7 @@ import (
 	"meta-frames-server/internal/api"
 	"meta-frames-server/internal/common/apperror"
 	"meta-frames-server/internal/common/convert"
+	"meta-frames-server/internal/common/pointers"
 	"meta-frames-server/internal/controllers/lens"
 	camerasvc "meta-frames-server/internal/services/camera"
 )
@@ -29,10 +30,9 @@ func toAPICamera(view camerasvc.View) api.Camera {
 	}
 	if view.LoadedRoll != nil {
 		loaded := view.LoadedRoll
-		shotISO := int(loaded.ShotISO)
 		camera.LoadedRoll = &api.LoadedRoll{
 			RollId: loaded.RollID, StockId: loaded.StockID, StockBrand: loaded.StockBrand, StockName: loaded.StockName,
-			ShotIso: &shotISO, StartedAt: convert.ToAPIDate(loaded.StartedAt), DaysLoaded: int(loaded.DaysLoaded),
+			ShotIso: pointers.Int(loaded.ShotISO), StartedAt: convert.ToAPIDate(loaded.StartedAt), DaysLoaded: int(loaded.DaysLoaded),
 		}
 	}
 	return camera

@@ -30,6 +30,33 @@ func TestLabsRunTheirOwnScanners(test *testing.T) {
 		test.Fatalf("labs = %v", labs)
 	}
 
+	// The default is optional: the lab has none until one is named, and it can be cleared again.
+	if labs := harness.listOf("/labs"); labs[0]["defaultScannerId"] != nil {
+		test.Fatalf("labs = %v", labs)
+	}
+	withDefault := harness.expect(harness.call("PUT", "/labs/"+labID, map[string]any{
+		"name": "Lab B", "scannerIds": []string{noritsuOwnID, frontierID}, "defaultScannerId": frontierID,
+	}), http.StatusOK)
+	if withDefault.Body["defaultScannerId"] != frontierID {
+		test.Fatalf("lab = %s", withDefault.Raw)
+	}
+	// Moving the default to another scanner does not collide with the old one.
+	moved := harness.expect(harness.call("PUT", "/labs/"+labID, map[string]any{
+		"name": "Lab B", "scannerIds": []string{noritsuOwnID, frontierID}, "defaultScannerId": noritsuOwnID,
+	}), http.StatusOK)
+	if moved.Body["defaultScannerId"] != noritsuOwnID {
+		test.Fatalf("lab = %s", moved.Raw)
+	}
+	harness.expect(harness.call("PUT", "/labs/"+labID, map[string]any{
+		"name": "Lab B", "scannerIds": []string{noritsuOwnID, frontierID}, "defaultScannerId": newID(),
+	}), http.StatusUnprocessableEntity)
+	cleared := harness.expect(harness.call("PUT", "/labs/"+labID, map[string]any{
+		"name": "Lab B", "scannerIds": []string{noritsuOwnID, frontierID},
+	}), http.StatusOK)
+	if cleared.Body["defaultScannerId"] != nil {
+		test.Fatalf("lab = %s", cleared.Raw)
+	}
+
 	// Another account cannot give its lab this account's scanner.
 	harness.expect(harness.callAs("bob", "PUT", "/labs/"+newID(), map[string]any{
 		"name": "Bob's lab", "scannerIds": []string{noritsuOwnID},

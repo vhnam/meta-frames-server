@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-11-03
+
 ### Added
 
 - `GET /auth/google/config` returns the web client id (`GOOGLE_CLIENT_ID`) that a mobile app names when it requests an ID token.
@@ -15,11 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Film stock `description` is documented as Markdown text in the API spec (`format: markdown`). The server stores it unchanged.
 - Scanners have their own table and endpoints: `GET /scanners`, `POST /scanners`, `GET|PUT|DELETE /scanners/{id}`. Two built-in scanners, Noritsu HS-1800 and Frontier SP-3000, are visible to every account and read-only (`409 built_in_scanner`). Each account adds its own (another lab's machine, a flatbed, a camera rig) with `brand`, `model`, an optional `kind` and `notes`. A scanner used by a job or a scan cannot be deleted (`409 scanner_in_use`).
 - Scan options depend on the scanner's kind: `GET /scanner-kinds` lists each kind's options (a minilab's resolution and format; a flatbed's dpi, bit depth, dust removal and multi-exposure; a camera rig's file format, pixel shift and stitched shots; and on every kind the framing: cropped, with the film border, or with border and sprockets), with a set for scanners of unknown kind. A scan order keeps its choices in `settings`, and a scanner keeps `defaultSettings` that a new order starts from. The server checks settings against the scanner's kind (`422 invalid_scan_settings`); an order's settings are only checked again when they change. Migration `00012` moves `hi_res` into `settings.resolution`.
-- Labs name the scanners they run: `LabInput.scannerIds` sets them in order, the first being the default for a job sent there, and `Lab.scannerIds` returns them. Leaving `scannerIds` out keeps the lab's scanners; an empty list clears them. Each must be a built-in scanner or one of the account's own (`422 unknown_scanner`). Deleting a scanner removes it from the labs that ran it. Migration `00013` adds the `lab_scanner` table.
+- Labs name the scanners they run: `LabInput.scannerIds` sets them in order and `Lab.scannerIds` returns them. `defaultScannerId` optionally names the one a job sent there starts with; it must be one of `scannerIds` (`422 unknown_default_scanner`) and is saved with them, so sending `scannerIds` without it clears the default. Leaving `scannerIds` out keeps the lab's scanners; an empty list clears them. Each must be a built-in scanner or one of the account's own (`422 unknown_scanner`). Deleting a scanner removes it from the labs that ran it. Migration `00013` adds the `lab_scanner` table, and `00014` adds `is_default` with each lab's first scanner as its default.
 - Scan orders, scans, scan refs and frame comparisons carry `scannerId` and `scannerName`. Requests name a scanner by `scannerId`: in `scanOrders`, in the `scannerId` multipart field of a scan import, and in the `scannerId` filter of `GET /processing/{id}/scans`. `GET /processing/{id}/frames/{number}/compare` returns every scan of the frame in `scans`.
 
 ### Changed
 
+- A film stock's `boxIso` is now a string: a single ISO (`"400"`) or a rising range (`"100-400"`). Other values fail with `400` or `422 invalid_box_iso`. This breaks clients that send or read it as a number (breaking, API 0.6.0). A roll's `shotIso` stays an integer: one equal to a single box ISO is stored as null, and one within a range is kept. `LoadedRoll.shotIso` is left out when the roll has no shot ISO and its stock has a range. `GET /inventory?iso=` also matches stocks whose range includes the speed. Migration `00015` changes the column to text.
 - The server checks its settings at startup and exits with one message listing every invalid value. A bad `PORT`, `DB_MAX_CONNS`, URL, `MAIL_FROM`, `SMTP_ADDR` or `SESSION_SAMESITE`, or only one of `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, used to be ignored or fail later. Passwords in a URL are hidden in the message.
 - The server accepts unencrypted HTTP/2 (h2c) as well as HTTP/1.1, so Cloud Run can forward requests over 32 MiB, such as large scan uploads, when deployed with `--use-http2`.
 - Compose and the integration tests use Postgres 18, the major version production runs. Compose keeps its data in a new volume (`pgdata18`), so `make db-up` starts with an empty database; dump a Postgres 17 database and restore it to keep its data.
@@ -81,6 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `POST /rolls/bulk` with an `Idempotency-Key` failed while saving the response, because the JSON was sent as bytea hex.
 - `GET /cameras` returned 500 when a loaded roll had no start date. The camera now reports `daysLoaded` as 0 in that case.
 
-[Unreleased]: https://github.com/vhnam/meta-frames/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/vhnam/meta-frames/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/vhnam/meta-frames/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/vhnam/meta-frames/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/vhnam/meta-frames/releases/tag/v1.0.0

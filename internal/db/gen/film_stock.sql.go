@@ -148,7 +148,7 @@ type InsertFilmStockParams struct {
 	Brand       string
 	Name        string
 	Type        string
-	BoxIso      int32
+	BoxIso      string
 	Process     string
 	Packaging   string
 	StockOrigin *string
@@ -200,7 +200,7 @@ FROM roll r JOIN film_stock fs ON fs.id = r.film_stock_id
 WHERE r.owner_id = $1 AND r.status = 'in_stock' AND r.deleted_at IS NULL
   AND ($2::text IS NULL OR fs.type = $2)
   AND ($3::text IS NULL OR fs.process = $3)
-  AND ($4::int IS NULL OR fs.box_iso = $4)
+  AND ($4::int IS NULL OR $4::int BETWEEN split_part(fs.box_iso, '-', 1)::int AND substring(fs.box_iso from '[0-9]+$')::int)
 GROUP BY fs.id, r.format
 ORDER BY fs.id, r.format
 `
@@ -407,7 +407,7 @@ FROM roll r JOIN film_stock fs ON fs.id = r.film_stock_id
 WHERE r.owner_id = $1 AND r.status = 'in_stock' AND r.deleted_at IS NULL AND r.expiry_year IS NOT NULL
   AND ($2::text IS NULL OR fs.type = $2)
   AND ($3::text IS NULL OR fs.process = $3)
-  AND ($4::int IS NULL OR fs.box_iso = $4)
+  AND ($4::int IS NULL OR $4::int BETWEEN split_part(fs.box_iso, '-', 1)::int AND substring(fs.box_iso from '[0-9]+$')::int)
 ORDER BY fs.id, r.expiry_year, COALESCE(r.expiry_month, 12)
 `
 
@@ -463,7 +463,7 @@ type UpdateFilmStockParams struct {
 	Brand       string
 	Name        string
 	Type        string
-	BoxIso      int32
+	BoxIso      string
 	Process     string
 	Packaging   string
 	StockOrigin *string

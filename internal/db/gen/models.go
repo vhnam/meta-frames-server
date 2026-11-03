@@ -66,7 +66,7 @@ type FilmStock struct {
 	Brand       string
 	Name        string
 	Type        string
-	BoxIso      int32
+	BoxIso      string
 	Process     string
 	Packaging   string
 	StockOrigin *string
@@ -113,6 +113,7 @@ type LabScanner struct {
 	ScannerID uuid.UUID
 	Position  int32
 	CreatedAt pgtype.Timestamptz
+	IsDefault bool
 }
 
 type Lens struct {

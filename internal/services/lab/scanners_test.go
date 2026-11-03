@@ -25,7 +25,7 @@ func TestLabKeepsItsScannersInOrder(test *testing.T) {
 	own := uuid.New()
 	memory.Scanners[own] = gen.Scanner{ID: own, OwnerID: requestctx.Owner(ctx), Brand: "Noritsu"}
 
-	// the first scanner is the lab's default; one given twice keeps its first place
+	// one given twice keeps its first place
 	scanners := []uuid.UUID{own, domain.ScannerFrontierSP3000, own}
 	lab, err := service.Create(ctx, uuid.New(), Input{Name: "Lab A", ScannerIDs: &scanners})
 	if err != nil || !slices.Equal(lab.ScannerIDs, []uuid.UUID{own, domain.ScannerFrontierSP3000}) {
@@ -52,6 +52,39 @@ func TestLabKeepsItsScannersInOrder(test *testing.T) {
 	if err != nil || len(labs) != 1 || len(labs[0].ScannerIDs) != 0 {
 		test.Fatalf("labs=%+v err=%v", labs, err)
 	}
+}
+
+func TestLabDefaultScannerIsOptional(test *testing.T) {
+	service, _, ctx := newMemoryLabService()
+	scanners := []uuid.UUID{domain.ScannerNoritsuHS1800, domain.ScannerFrontierSP3000}
+
+	lab, err := service.Create(ctx, uuid.New(), Input{Name: "Lab A", ScannerIDs: &scanners})
+	if err != nil || lab.DefaultScannerID != nil {
+		test.Fatalf("lab=%+v err=%v", lab, err)
+	}
+
+	frontier := domain.ScannerFrontierSP3000
+	lab, err = service.Update(ctx, lab.Lab.ID, Input{Name: "Lab A", ScannerIDs: &scanners, DefaultScannerID: &frontier})
+	if err != nil || lab.DefaultScannerID == nil || *lab.DefaultScannerID != frontier {
+		test.Fatalf("lab=%+v err=%v", lab, err)
+	}
+
+	// without scannerIds the default stays; with them and no default it clears
+	lab, err = service.Update(ctx, lab.Lab.ID, Input{Name: "Lab B"})
+	if err != nil || lab.DefaultScannerID == nil || *lab.DefaultScannerID != frontier {
+		test.Fatalf("lab=%+v err=%v", lab, err)
+	}
+	lab, err = service.Update(ctx, lab.Lab.ID, Input{Name: "Lab B", ScannerIDs: &scanners})
+	if err != nil || lab.DefaultScannerID != nil {
+		test.Fatalf("lab=%+v err=%v", lab, err)
+	}
+
+	// the default must be one of the lab's scanners
+	stranger := uuid.New()
+	_, err = service.Update(ctx, lab.Lab.ID, Input{Name: "Lab B", ScannerIDs: &scanners, DefaultScannerID: &stranger})
+	assertAppError(test, err, apperror.KindUnprocessable, "unknown_default_scanner")
+	_, err = service.Update(ctx, lab.Lab.ID, Input{Name: "Lab B", DefaultScannerID: &frontier})
+	assertAppError(test, err, apperror.KindUnprocessable, "unknown_default_scanner")
 }
 
 func TestLabRefusesScannersItCannotSee(test *testing.T) {

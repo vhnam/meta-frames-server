@@ -512,7 +512,7 @@ type ListRollSummariesRow struct {
 	OwnerID        uuid.UUID
 	StockBrand     string
 	StockName      string
-	BoxIso         int32
+	BoxIso         string
 	CameraBrand    *string
 	CameraModel    *string
 	NegativesAtLab bool

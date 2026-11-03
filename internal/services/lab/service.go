@@ -2,6 +2,7 @@ package lab
 
 import (
 	"context"
+	"slices"
 
 	"github.com/google/uuid"
 
@@ -19,25 +20,37 @@ type Service struct {
 
 func New(store db.Store) *Service { return &Service{store: store} }
 
+// labScanners holds a lab's scanners in order, and its default scanner if it has one.
+type labScanners struct {
+	scannerIDs []uuid.UUID
+	defaultID  *uuid.UUID
+}
+
 // scannersByLab groups the account's lab scanners by lab, each lab's in order.
-func scannersByLab(ctx context.Context, queries gen.Querier) (map[uuid.UUID][]uuid.UUID, error) {
+func scannersByLab(ctx context.Context, queries gen.Querier) (map[uuid.UUID]labScanners, error) {
 	rows, err := queries.ListLabScanners(ctx, requestctx.Owner(ctx))
 	if err != nil {
 		return nil, err
 	}
-	byLab := map[uuid.UUID][]uuid.UUID{}
+	byLab := map[uuid.UUID]labScanners{}
 	for _, row := range rows {
-		byLab[row.LabID] = append(byLab[row.LabID], row.ScannerID)
+		scanners := byLab[row.LabID]
+		scanners.scannerIDs = append(scanners.scannerIDs, row.ScannerID)
+		if row.IsDefault {
+			scanners.defaultID = &row.ScannerID
+		}
+		byLab[row.LabID] = scanners
 	}
 	return byLab, nil
 }
 
-func viewOf(lab gen.Lab, byLab map[uuid.UUID][]uuid.UUID) View {
-	scannerIDs := byLab[lab.ID]
+func viewOf(lab gen.Lab, byLab map[uuid.UUID]labScanners) View {
+	scanners := byLab[lab.ID]
+	scannerIDs := scanners.scannerIDs
 	if scannerIDs == nil {
 		scannerIDs = []uuid.UUID{}
 	}
-	return View{Lab: lab, ScannerIDs: scannerIDs}
+	return View{Lab: lab, ScannerIDs: scannerIDs, DefaultScannerID: scanners.defaultID}
 }
 
 func (service *Service) List(ctx context.Context) ([]View, error) {
@@ -82,10 +95,17 @@ func validLabName(name string) (string, error) {
 }
 
 // saveScanners replaces the lab's scanners with the given ones, in order. Each must be a built-in
-// scanner or one of the account's own; a scanner given twice keeps its first place.
-func saveScanners(ctx context.Context, queries gen.Querier, labID uuid.UUID, scannerIDs *[]uuid.UUID) error {
+// scanner or one of the account's own; a scanner given twice keeps its first place. The default is
+// optional and must be one of the given scanners.
+func saveScanners(ctx context.Context, queries gen.Querier, labID uuid.UUID, scannerIDs *[]uuid.UUID, defaultID *uuid.UUID) error {
 	if scannerIDs == nil {
+		if defaultID != nil {
+			return unknownDefaultScanner()
+		}
 		return nil
+	}
+	if defaultID != nil && !slices.Contains(*scannerIDs, *defaultID) {
+		return unknownDefaultScanner()
 	}
 	keep := []uuid.UUID{}
 	seen := map[uuid.UUID]bool{}
@@ -106,12 +126,20 @@ func saveScanners(ctx context.Context, queries gen.Querier, labID uuid.UUID, sca
 	if err := queries.DeleteLabScannersExcept(ctx, gen.DeleteLabScannersExceptParams{LabID: labID, Keep: keep}); err != nil {
 		return err
 	}
+	if err := queries.ClearLabDefaultScanner(ctx, labID); err != nil {
+		return err
+	}
 	for position, scannerID := range keep {
-		if err := queries.UpsertLabScanner(ctx, gen.UpsertLabScannerParams{LabID: labID, ScannerID: scannerID, Position: int32(position)}); err != nil {
+		isDefault := defaultID != nil && scannerID == *defaultID
+		if err := queries.UpsertLabScanner(ctx, gen.UpsertLabScannerParams{LabID: labID, ScannerID: scannerID, Position: int32(position), IsDefault: isDefault}); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func unknownDefaultScanner() error {
+	return apperror.Unprocessable("unknown_default_scanner", "defaultScannerId must be one of scannerIds")
 }
 
 // Create adds a lab (UC-23).
@@ -125,7 +153,7 @@ func (service *Service) Create(ctx context.Context, labID uuid.UUID, input Input
 		if _, err := queries.InsertLab(ctx, gen.InsertLabParams{ID: labID, Name: name, Address: pointers.TrimmedOrNil(input.Address), OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return err
 		}
-		if err := saveScanners(ctx, queries, labID, input.ScannerIDs); err != nil {
+		if err := saveScanners(ctx, queries, labID, input.ScannerIDs, input.DefaultScannerID); err != nil {
 			return err
 		}
 		view, err = getView(ctx, queries, labID)
@@ -148,7 +176,7 @@ func (service *Service) Update(ctx context.Context, labID uuid.UUID, input Input
 		if _, err := queries.UpdateLab(ctx, gen.UpdateLabParams{ID: labID, Name: name, Address: pointers.TrimmedOrNil(input.Address), OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return shared.NotFoundOr(err, "lab")
 		}
-		if err := saveScanners(ctx, queries, labID, input.ScannerIDs); err != nil {
+		if err := saveScanners(ctx, queries, labID, input.ScannerIDs, input.DefaultScannerID); err != nil {
 			return err
 		}
 		view, err = getView(ctx, queries, labID)

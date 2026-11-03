@@ -76,6 +76,9 @@ func validStockNames(input Input) (brand, name string, err error) {
 	if trimmedBrand == nil || trimmedName == nil {
 		return "", "", apperror.Unprocessable("missing_fields", "brand and name are required")
 	}
+	if !domain.ValidBoxISO(input.BoxISO) {
+		return "", "", apperror.Unprocessable("invalid_box_iso", "boxIso must be a single ISO or a rising range, like 400 or 100-400")
+	}
 	return *trimmedBrand, *trimmedName, nil
 }
 
@@ -92,7 +95,7 @@ func (service *Service) Create(ctx context.Context, stockID uuid.UUID, input Inp
 			return err
 		}
 		saved, err := queries.InsertFilmStock(ctx, gen.InsertFilmStockParams{
-			ID: stockID, Brand: brand, Name: name, Type: input.Type, BoxIso: int32(input.BoxISO),
+			ID: stockID, Brand: brand, Name: name, Type: input.Type, BoxIso: input.BoxISO,
 			Process: input.Process, Packaging: input.Packaging,
 			StockOrigin: pointers.TrimmedOrNil(input.StockOrigin), PackOrigin: pointers.TrimmedOrNil(input.PackOrigin),
 			Description: pointers.TrimmedOrNil(input.Description), BaseStockID: input.BaseStockID,
@@ -126,7 +129,7 @@ func (service *Service) Update(ctx context.Context, stockID uuid.UUID, input Inp
 			return shared.NotFoundOr(err, "film stock")
 		}
 		saved, err := queries.UpdateFilmStock(ctx, gen.UpdateFilmStockParams{
-			ID: stockID, Brand: brand, Name: name, Type: input.Type, BoxIso: int32(input.BoxISO),
+			ID: stockID, Brand: brand, Name: name, Type: input.Type, BoxIso: input.BoxISO,
 			Process: input.Process, Packaging: input.Packaging,
 			StockOrigin: pointers.TrimmedOrNil(input.StockOrigin), PackOrigin: pointers.TrimmedOrNil(input.PackOrigin),
 			Description: pointers.TrimmedOrNil(input.Description), BaseStockID: input.BaseStockID,

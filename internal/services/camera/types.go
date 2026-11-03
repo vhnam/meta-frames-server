@@ -28,7 +28,8 @@ type LoadedRoll struct {
 	StockID    uuid.UUID
 	StockBrand string
 	StockName  string
-	ShotISO    int32
+	// ShotISO is nil when the roll has no shot ISO and its stock has a box ISO range.
+	ShotISO    *int32
 	StartedAt  *time.Time
 	DaysLoaded int32
 }

@@ -52,10 +52,11 @@ func resolveExposures(format int, exposures *int) (int, error) {
 	return 0, apperror.Unprocessable("exposures_required", "exposures are required for formats other than 135")
 }
 
-// normalizeShotISO stores null when a roll is shot at box ISO.
-func normalizeShotISO(shotISO *int, boxISO int32) *int32 {
+// normalizeShotISO stores null when a roll is shot at a single box ISO. A speed within a box ISO
+// range is kept: it says which speed of the range the roll was shot at.
+func normalizeShotISO(shotISO *int, boxISO string) *int32 {
 	converted := pointers.Int32(shotISO)
-	if converted != nil && *converted == boxISO {
+	if single, isSingle := domain.SingleBoxISO(boxISO); converted != nil && isSingle && *converted == single {
 		return nil
 	}
 	return converted
