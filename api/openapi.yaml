@@ -1103,7 +1103,7 @@ paths:
                       brand: Kodak
                       name: Portra 400
                       type: color
-                      boxIso: 400
+                      boxIso: "400"
                       process: C-41
                       packaging: factory
                       stockOrigin: USA
@@ -1113,7 +1113,7 @@ paths:
                       brand: Ilford
                       name: HP5 Plus
                       type: bw
-                      boxIso: 400
+                      boxIso: "400"
                       process: BW
                       packaging: factory
                       createdAt: "2026-09-01T08:30:00Z"
@@ -1122,7 +1122,7 @@ paths:
                       brand: Respool Co.
                       name: HP5 Plus (respooled)
                       type: bw
-                      boxIso: 400
+                      boxIso: "400"
                       process: BW
                       packaging: respooled
                       baseStockId: f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06
@@ -1145,7 +1145,7 @@ paths:
                   brand: Kodak
                   name: Portra 400
                   type: color
-                  boxIso: 400
+                  boxIso: "400"
                   process: C-41
                   packaging: factory
                   stockOrigin: USA
@@ -1156,7 +1156,7 @@ paths:
                   brand: Respool Co.
                   name: HP5 Plus (respooled)
                   type: bw
-                  boxIso: 400
+                  boxIso: "400"
                   process: BW
                   packaging: respooled
                   baseStockId: f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06
@@ -1176,7 +1176,7 @@ paths:
                       brand: Kodak
                       name: Portra 400
                       type: color
-                      boxIso: 400
+                      boxIso: "400"
                       process: C-41
                       packaging: factory
                       stockOrigin: USA
@@ -1193,7 +1193,7 @@ paths:
                       brand: Respool Co.
                       name: HP5 Plus (respooled)
                       type: bw
-                      boxIso: 400
+                      boxIso: "400"
                       process: BW
                       packaging: respooled
                       baseStockId: f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06
@@ -1204,7 +1204,7 @@ paths:
                       brand: Ilford
                       name: HP5 Plus
                       type: bw
-                      boxIso: 400
+                      boxIso: "400"
                       process: BW
                       packaging: factory
                       createdAt: "2026-09-01T08:30:00Z"
@@ -1238,7 +1238,7 @@ paths:
                       brand: Kodak
                       name: Portra 400
                       type: color
-                      boxIso: 400
+                      boxIso: "400"
                       process: C-41
                       packaging: factory
                       stockOrigin: USA
@@ -1255,7 +1255,7 @@ paths:
                       brand: Respool Co.
                       name: HP5 Plus (respooled)
                       type: bw
-                      boxIso: 400
+                      boxIso: "400"
                       process: BW
                       packaging: respooled
                       baseStockId: f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06
@@ -1266,7 +1266,7 @@ paths:
                       brand: Ilford
                       name: HP5 Plus
                       type: bw
-                      boxIso: 400
+                      boxIso: "400"
                       process: BW
                       packaging: factory
                       createdAt: "2026-09-01T08:30:00Z"
@@ -1292,7 +1292,7 @@ paths:
                   brand: Kodak
                   name: Portra 400
                   type: color
-                  boxIso: 400
+                  boxIso: "400"
                   process: C-41
                   packaging: factory
                   stockOrigin: USA
@@ -1303,7 +1303,7 @@ paths:
                   brand: Respool Co.
                   name: HP5 Plus (respooled)
                   type: bw
-                  boxIso: 400
+                  boxIso: "400"
                   process: BW
                   packaging: respooled
                   baseStockId: f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06
@@ -1313,7 +1313,7 @@ paths:
                   brand: Kodak
                   name: Portra 400 NC
                   type: color
-                  boxIso: 400
+                  boxIso: "400"
                   process: C-41
                   packaging: factory
       responses:
@@ -1332,7 +1332,7 @@ paths:
                       brand: Kodak
                       name: Portra 400
                       type: color
-                      boxIso: 400
+                      boxIso: "400"
                       process: C-41
                       packaging: factory
                       stockOrigin: USA
@@ -1355,7 +1355,7 @@ paths:
                       brand: Respool Co.
                       name: HP5 Plus (respooled)
                       type: bw
-                      boxIso: 400
+                      boxIso: "400"
                       process: BW
                       packaging: respooled
                       baseStockId: f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06
@@ -1366,7 +1366,7 @@ paths:
                       brand: Ilford
                       name: HP5 Plus
                       type: bw
-                      boxIso: 400
+                      boxIso: "400"
                       process: BW
                       packaging: factory
                       createdAt: "2026-09-01T08:30:00Z"
@@ -1395,7 +1395,10 @@ paths:
       parameters:
         - { name: type, in: query, schema: { $ref: "#/components/schemas/StockType" } }
         - { name: process, in: query, schema: { $ref: "#/components/schemas/Process" } }
-        - { name: iso, in: query, schema: { type: integer, minimum: 1 } }
+        - name: iso
+          in: query
+          description: A speed; matches stocks with that box ISO, or a box ISO range that includes it
+          schema: { type: integer, minimum: 1 }
       responses:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
@@ -1412,7 +1415,7 @@ paths:
                         brand: Kodak
                         name: Portra 400
                         type: color
-                        boxIso: 400
+                        boxIso: "400"
                         process: C-41
                         packaging: factory
                         stockOrigin: USA
@@ -2123,7 +2126,7 @@ paths:
                       brand: Kodak
                       name: Portra 400
                       type: color
-                      boxIso: 400
+                      boxIso: "400"
                       process: C-41
                       packaging: factory
                       stockOrigin: USA
@@ -2238,7 +2241,7 @@ paths:
                       brand: Kodak
                       name: Portra 400
                       type: color
-                      boxIso: 400
+                      boxIso: "400"
                       process: C-41
                       packaging: factory
                       stockOrigin: USA
@@ -2367,7 +2370,7 @@ paths:
                       brand: Kodak
                       name: Portra 400
                       type: color
-                      boxIso: 400
+                      boxIso: "400"
                       process: C-41
                       packaging: factory
                       stockOrigin: USA
@@ -2526,7 +2529,7 @@ paths:
                       brand: Kodak
                       name: Portra 400
                       type: color
-                      boxIso: 400
+                      boxIso: "400"
                       process: C-41
                       packaging: factory
                       stockOrigin: USA
@@ -3966,7 +3969,10 @@ components:
         brand: { type: string }
         name: { type: string }
         type: { $ref: "#/components/schemas/StockType" }
-        boxIso: { type: integer, minimum: 1 }
+        boxIso:
+          type: string
+          pattern: "^[1-9][0-9]{0,5}(-[1-9][0-9]{0,5})?$"
+          description: The box speed, a single ISO ("400") or a rising range ("100-400")
         process: { $ref: "#/components/schemas/Process" }
         packaging: { $ref: "#/components/schemas/Packaging" }
         stockOrigin: { type: string }
@@ -3977,7 +3983,7 @@ components:
         brand: Kodak
         name: Portra 400
         type: color
-        boxIso: 400
+        boxIso: "400"
         process: C-41
         packaging: factory
         stockOrigin: USA
@@ -3991,7 +3997,9 @@ components:
         brand: { type: string }
         name: { type: string }
         type: { $ref: "#/components/schemas/StockType" }
-        boxIso: { type: integer }
+        boxIso:
+          type: string
+          description: The box speed, a single ISO ("400") or a range ("100-400")
         process: { $ref: "#/components/schemas/Process" }
         packaging: { $ref: "#/components/schemas/Packaging" }
         stockOrigin: { type: string }
@@ -4007,7 +4015,7 @@ components:
         brand: Kodak
         name: Portra 400
         type: color
-        boxIso: 400
+        boxIso: "400"
         process: C-41
         packaging: factory
 
@@ -4034,7 +4042,7 @@ components:
           brand: Respool Co.
           name: Portra 400 (respooled)
           type: color
-          boxIso: 400
+          boxIso: "400"
           process: C-41
           packaging: respooled
           baseStockId: f4c2e9a6-7b13-4d50-8e2a-1a6d3b9c0e06
@@ -4045,7 +4053,7 @@ components:
           brand: Kodak
           name: Portra 400
           type: color
-          boxIso: 400
+          boxIso: "400"
           process: C-41
           packaging: factory
         siblings: []
@@ -4089,7 +4097,7 @@ components:
           brand: Kodak
           name: Portra 400
           type: color
-          boxIso: 400
+          boxIso: "400"
           process: C-41
           packaging: factory
         formats:
@@ -4471,7 +4479,7 @@ components:
           brand: Kodak
           name: Portra 400
           type: color
-          boxIso: 400
+          boxIso: "400"
           process: C-41
           packaging: factory
         lenses:

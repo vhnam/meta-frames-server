@@ -72,7 +72,7 @@ func TestAccountsOnlySeeTheirOwnRecords(test *testing.T) {
 	}
 	bobStock := newID()
 	harness.expect(harness.callAs("bob", "PUT", "/film-stocks/"+bobStock, map[string]any{
-		"brand": "Ilford", "name": "HP5", "type": "bw", "boxIso": 400, "process": "BW", "packaging": "factory",
+		"brand": "Ilford", "name": "HP5", "type": "bw", "boxIso": "400", "process": "BW", "packaging": "factory",
 	}), http.StatusCreated)
 	bobRoll := harness.expect(harness.callAs("bob", "POST", "/rolls/bulk", map[string]any{"filmStockId": bobStock, "format": 135, "quantity": 1}), http.StatusCreated)
 	var bobRolls []map[string]any

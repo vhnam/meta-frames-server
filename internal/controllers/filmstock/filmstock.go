@@ -26,7 +26,7 @@ func New(filmStocks *filmstocksvc.Service) *Controller {
 
 func ToAPIFilmStock(stock gen.FilmStock) api.FilmStock {
 	return api.FilmStock{
-		Id: stock.ID, Brand: stock.Brand, Name: stock.Name, Type: api.StockType(stock.Type), BoxIso: int(stock.BoxIso),
+		Id: stock.ID, Brand: stock.Brand, Name: stock.Name, Type: api.StockType(stock.Type), BoxIso: stock.BoxIso,
 		Process: api.Process(stock.Process), Packaging: api.Packaging(stock.Packaging),
 		StockOrigin: stock.StockOrigin, PackOrigin: stock.PackOrigin, Description: stock.Description,
 		BaseStockId: stock.BaseStockID,

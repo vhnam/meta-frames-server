@@ -34,7 +34,7 @@ func TestDeletingCamerasLensesAndFilmStocks(test *testing.T) {
 	}
 
 	harness.expect(harness.call("PUT", "/film-stocks/"+stockID, map[string]any{
-		"brand": "Kodak", "name": "Gold", "type": "color", "boxIso": 200, "process": "C-41", "packaging": "factory",
+		"brand": "Kodak", "name": "Gold", "type": "color", "boxIso": "200", "process": "C-41", "packaging": "factory",
 	}), http.StatusCreated)
 	rollIDs := harness.addRolls(gear{stockID: stockID}, 2)
 
@@ -48,7 +48,7 @@ func TestDeletingCamerasLensesAndFilmStocks(test *testing.T) {
 	// Film stock: a base stock cannot go while a derived stock points at it; unused stocks can.
 	derivedID := newID()
 	harness.expect(harness.call("PUT", "/film-stocks/"+derivedID, map[string]any{
-		"brand": "Repack", "name": "Gold 200", "type": "color", "boxIso": 200, "process": "C-41", "packaging": "factory", "baseStockId": stockID,
+		"brand": "Repack", "name": "Gold 200", "type": "color", "boxIso": "200", "process": "C-41", "packaging": "factory", "baseStockId": stockID,
 	}), http.StatusCreated)
 	harness.expect(harness.call("DELETE", "/film-stocks/"+derivedID, nil), http.StatusNoContent)
 	harness.expect(harness.call("GET", "/film-stocks/"+derivedID, nil), http.StatusNotFound)

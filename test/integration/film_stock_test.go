@@ -11,7 +11,7 @@ func TestFilmStocksBaseStocksAndInventory(test *testing.T) {
 
 	saveStock := func(stockID string, overrides map[string]any) response {
 		body := map[string]any{
-			"brand": "Kodak", "name": "Vision3 250D", "type": "color", "boxIso": 250,
+			"brand": "Kodak", "name": "Vision3 250D", "type": "color", "boxIso": "250",
 			"process": "ECN-2", "packaging": "factory",
 		}
 		for key, value := range overrides {
@@ -75,5 +75,29 @@ func TestFilmStocksBaseStocksAndInventory(test *testing.T) {
 	empty := harness.expect(harness.call("GET", "/inventory?iso=800", nil), http.StatusOK)
 	if string(bytes.TrimSpace(empty.Raw)) != "[]" {
 		test.Fatalf("iso=800 inventory = %s", empty.Raw)
+	}
+}
+
+func TestFilmStockBoxISOCanBeARange(test *testing.T) {
+	harness := newHarness(test)
+	body := func(boxISO string) map[string]any {
+		return map[string]any{"brand": "Lomography", "name": "Color " + boxISO, "type": "color", "boxIso": boxISO, "process": "C-41", "packaging": "factory"}
+	}
+
+	stockID := newID()
+	stock := harness.expect(harness.call("PUT", "/film-stocks/"+stockID, body("100-400")), http.StatusCreated)
+	if asObject(stock.Body["stock"])["boxIso"] != "100-400" {
+		test.Fatalf("stock = %s", stock.Raw)
+	}
+	harness.expect(harness.call("PUT", "/film-stocks/"+newID(), body("400-100")), http.StatusUnprocessableEntity)
+	harness.expect(harness.call("PUT", "/film-stocks/"+newID(), body("fast")), http.StatusBadRequest)
+
+	// The inventory filter finds a range by any speed inside it, and not by one outside it.
+	harness.expect(harness.postBulk("", map[string]any{"filmStockId": stockID, "format": 135, "quantity": 1}), http.StatusCreated)
+	if items := harness.listOf("/inventory?iso=200"); len(items) != 1 {
+		test.Fatalf("items = %v", items)
+	}
+	if items := harness.listOf("/inventory?iso=800"); len(items) != 0 {
+		test.Fatalf("items = %v", items)
 	}
 }

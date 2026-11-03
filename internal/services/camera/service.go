@@ -10,6 +10,7 @@ import (
 	"meta-frames-server/internal/common/requestctx"
 	"meta-frames-server/internal/db"
 	"meta-frames-server/internal/db/gen"
+	"meta-frames-server/internal/domain"
 	"meta-frames-server/internal/services/lens"
 	"meta-frames-server/internal/services/shared"
 )
@@ -69,9 +70,9 @@ func buildCameraViews(ctx context.Context, queries gen.Querier, cameras []gen.Ca
 	}
 	loadedByCamera := make(map[uuid.UUID]*LoadedRoll, len(loadedRows))
 	for _, row := range loadedRows {
-		shotISO := row.BoxIso
-		if row.ShotIso != nil {
-			shotISO = *row.ShotIso
+		shotISO := row.ShotIso
+		if single, isSingle := domain.SingleBoxISO(row.BoxIso); shotISO == nil && isSingle {
+			shotISO = &single
 		}
 		loadedByCamera[*row.CameraID] = &LoadedRoll{
 			RollID: row.RollID, StockID: row.StockID, StockBrand: row.StockBrand, StockName: row.StockName,

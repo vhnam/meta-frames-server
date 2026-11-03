@@ -66,7 +66,7 @@ type FilmStock struct {
 	Brand       string
 	Name        string
 	Type        string
-	BoxIso      int32
+	BoxIso      string
 	Process     string
 	Packaging   string
 	StockOrigin *string

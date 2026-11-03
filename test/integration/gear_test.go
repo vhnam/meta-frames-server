@@ -62,7 +62,7 @@ func TestCamerasAndLensesFollowTheGearRules(test *testing.T) {
 	// UC-03 and UC-09: a loaded camera cannot be deactivated and shows its roll.
 	stockID, rollID := newID(), newID()
 	harness.expect(harness.call("PUT", "/film-stocks/"+stockID, map[string]any{
-		"brand": "Kodak", "name": "UltraMax 400", "type": "color", "boxIso": 400, "process": "C-41", "packaging": "factory",
+		"brand": "Kodak", "name": "UltraMax 400", "type": "color", "boxIso": "400", "process": "C-41", "packaging": "factory",
 	}), http.StatusCreated)
 	harness.execSQL(`INSERT INTO roll (id, film_stock_id, camera_id, format, exposures, status, started_at, owner_id)
 	                 SELECT $1, $2, $3, 135, 36, 'in_camera', CURRENT_DATE - 3, owner_id FROM film_stock WHERE id = $2`, rollID, stockID, fixedCameraID)

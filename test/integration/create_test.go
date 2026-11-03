@@ -11,7 +11,7 @@ func TestPostCreatesEntitiesWithServerAssignedIDs(test *testing.T) {
 	camera := harness.expect(harness.call("POST", "/cameras", map[string]any{"brand": "Nikon", "model": "FM2", "mount": "F", "hasFixedLens": false}), http.StatusCreated)
 	lens := harness.expect(harness.call("POST", "/lenses", map[string]any{"brand": "Nikon", "model": "50", "mount": "F", "focalLength": 50, "maxAperture": 1.8}), http.StatusCreated)
 	stock := harness.expect(harness.call("POST", "/film-stocks", map[string]any{
-		"brand": "Kodak", "name": "Gold", "type": "color", "boxIso": 200, "process": "C-41", "packaging": "factory",
+		"brand": "Kodak", "name": "Gold", "type": "color", "boxIso": "200", "process": "C-41", "packaging": "factory",
 	}), http.StatusCreated)
 	lab := harness.expect(harness.call("POST", "/labs", map[string]any{"name": "Lab A"}), http.StatusCreated)
 

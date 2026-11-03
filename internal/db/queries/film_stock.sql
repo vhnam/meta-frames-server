@@ -37,7 +37,7 @@ FROM roll r JOIN film_stock fs ON fs.id = r.film_stock_id
 WHERE r.owner_id = @owner_id AND r.status = 'in_stock' AND r.deleted_at IS NULL
   AND (sqlc.narg(type)::text IS NULL OR fs.type = sqlc.narg(type))
   AND (sqlc.narg(process)::text IS NULL OR fs.process = sqlc.narg(process))
-  AND (sqlc.narg(iso)::int IS NULL OR fs.box_iso = sqlc.narg(iso))
+  AND (sqlc.narg(iso)::int IS NULL OR sqlc.narg(iso)::int BETWEEN split_part(fs.box_iso, '-', 1)::int AND substring(fs.box_iso from '[0-9]+$')::int)
 GROUP BY fs.id, r.format
 ORDER BY fs.id, r.format;
 
@@ -51,7 +51,7 @@ FROM roll r JOIN film_stock fs ON fs.id = r.film_stock_id
 WHERE r.owner_id = @owner_id AND r.status = 'in_stock' AND r.deleted_at IS NULL AND r.expiry_year IS NOT NULL
   AND (sqlc.narg(type)::text IS NULL OR fs.type = sqlc.narg(type))
   AND (sqlc.narg(process)::text IS NULL OR fs.process = sqlc.narg(process))
-  AND (sqlc.narg(iso)::int IS NULL OR fs.box_iso = sqlc.narg(iso))
+  AND (sqlc.narg(iso)::int IS NULL OR sqlc.narg(iso)::int BETWEEN split_part(fs.box_iso, '-', 1)::int AND substring(fs.box_iso from '[0-9]+$')::int)
 ORDER BY fs.id, r.expiry_year, COALESCE(r.expiry_month, 12);
 
 -- The stock is checked to belong to the account first; its rolls and derived stocks share the owner.
