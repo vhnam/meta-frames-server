@@ -4237,8 +4237,14 @@ components:
           type: array
           items: { type: string, format: uuid }
           description: |
-            The scanners the lab runs, built-in or the account's own, in order: the first is the default
-            for a job sent there. Replaces the lab's set; omit it to keep the set as it is.
+            The scanners the lab runs, built-in or the account's own, in order. Replaces the lab's set;
+            omit it to keep the set as it is.
+        defaultScannerId:
+          type: string
+          format: uuid
+          description: |
+            The scanner a job sent to the lab starts with: one of scannerIds. Optional, and saved with
+            scannerIds: sending scannerIds without it leaves the lab with no default.
       example:
         name: Saigon Film Lab
         address: 12 Nguyen Hue, District 1, Ho Chi Minh City
@@ -4254,7 +4260,11 @@ components:
         scannerIds:
           type: array
           items: { type: string, format: uuid }
-          description: The scanners the lab runs, the default first; empty when none were given
+          description: The scanners the lab runs, in order; empty when none were given
+        defaultScannerId:
+          type: string
+          format: uuid
+          description: The scanner a job sent to the lab starts with; absent when the lab has no default
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
       example:

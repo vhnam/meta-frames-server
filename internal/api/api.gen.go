@@ -602,12 +602,15 @@ type InventoryItem struct {
 
 // Lab Example: {"address":"12 Nguyen Hue, District 1, Ho Chi Minh City","createdAt":"2026-09-01T08:30:00Z","id":"3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09","name":"Saigon Film Lab","scannerIds":["d177cb3c-a850-4232-a4ca-75189b7b279b"],"updatedAt":"2026-09-20T10:00:00Z"}
 type Lab struct {
-	Address   *string            `json:"address,omitempty"`
-	CreatedAt time.Time          `json:"createdAt"`
-	Id        openapi_types.UUID `json:"id"`
-	Name      string             `json:"name"`
+	Address   *string   `json:"address,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
 
-	// ScannerIds The scanners the lab runs, the default first; empty when none were given
+	// DefaultScannerId The scanner a job sent to the lab starts with; absent when the lab has no default
+	DefaultScannerId *openapi_types.UUID `json:"defaultScannerId,omitempty"`
+	Id               openapi_types.UUID  `json:"id"`
+	Name             string              `json:"name"`
+
+	// ScannerIds The scanners the lab runs, in order; empty when none were given
 	ScannerIds []openapi_types.UUID `json:"scannerIds"`
 	UpdatedAt  time.Time            `json:"updatedAt"`
 }
@@ -615,10 +618,14 @@ type Lab struct {
 // LabInput Example: {"address":"12 Nguyen Hue, District 1, Ho Chi Minh City","name":"Saigon Film Lab","scannerIds":["d177cb3c-a850-4232-a4ca-75189b7b279b"]}
 type LabInput struct {
 	Address *string `json:"address,omitempty"`
-	Name    string  `json:"name"`
 
-	// ScannerIds The scanners the lab runs, built-in or the account's own, in order: the first is the default
-	// for a job sent there. Replaces the lab's set; omit it to keep the set as it is.
+	// DefaultScannerId The scanner a job sent to the lab starts with: one of scannerIds. Optional, and saved with
+	// scannerIds: sending scannerIds without it leaves the lab with no default.
+	DefaultScannerId *openapi_types.UUID `json:"defaultScannerId,omitempty"`
+	Name             string              `json:"name"`
+
+	// ScannerIds The scanners the lab runs, built-in or the account's own, in order. Replaces the lab's set;
+	// omit it to keep the set as it is.
 	ScannerIds *[]openapi_types.UUID `json:"scannerIds,omitempty"`
 }
 
