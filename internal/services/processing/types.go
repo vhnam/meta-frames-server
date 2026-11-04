@@ -18,9 +18,9 @@ type Input struct {
 	// NegativesExpectedAt is when the lab expects to return the negatives of a develop or develop_scan job; nil means unknown.
 	NegativesExpectedAt *time.Time
 	Price               *int
-	// OrderItemID is the order line the job is billed on; nil takes the job off its order.
-	OrderItemID *uuid.UUID
-	Notes       *string
+	// OrderItemIDs replaces the order lines the job is billed on; empty takes it off its order.
+	OrderItemIDs []uuid.UUID
+	Notes        *string
 	// ScanOrders replaces the job's ordered scanners; nil means none.
 	ScanOrders []ScanOrderInput
 }
@@ -44,15 +44,19 @@ type View struct {
 	LabName    string
 	ScanOrders []ScanOrder
 	IsOpen     bool
-	// Price is what the job costs: from its order line when it has one, otherwise its own.
+	// Price is what the job costs: its order lines added up when it has some, otherwise its own.
 	Price *int32
 	Order *OrderLink
 }
 
-// OrderLink names the order line a job is billed on.
+// OrderLink names the order a job is billed on and its lines there.
 type OrderLink struct {
+	ID    uuid.UUID
+	Code  string
+	Items []OrderLinkItem
+}
+
+type OrderLinkItem struct {
 	ID      uuid.UUID
-	Code    string
-	ItemID  uuid.UUID
 	Product string
 }

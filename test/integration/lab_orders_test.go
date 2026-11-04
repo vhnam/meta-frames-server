@@ -42,9 +42,9 @@ func TestLabOrderSetsThePriceOfItsJobs(test *testing.T) {
 	rollID := harness.finishedRoll(seeded)
 	jobID := newID()
 	path := "/rolls/" + rollID + "/processing/" + jobID
-	harness.expect(harness.call("PUT", path, map[string]any{"labId": labID, "type": "develop", "orderItemId": colourLine, "price": 1}), http.StatusUnprocessableEntity)
-	harness.expect(harness.call("PUT", path, map[string]any{"type": "develop", "orderItemId": colourLine}), http.StatusUnprocessableEntity)
-	sent := harness.expect(harness.call("PUT", path, map[string]any{"labId": labID, "type": "develop", "orderItemId": colourLine}), http.StatusCreated)
+	harness.expect(harness.call("PUT", path, map[string]any{"labId": labID, "type": "develop", "orderItemIds": []string{colourLine}, "price": 1}), http.StatusUnprocessableEntity)
+	harness.expect(harness.call("PUT", path, map[string]any{"type": "develop", "orderItemIds": []string{colourLine}}), http.StatusUnprocessableEntity)
+	sent := harness.expect(harness.call("PUT", path, map[string]any{"labId": labID, "type": "develop", "orderItemIds": []string{colourLine}}), http.StatusCreated)
 	if sent.Body["price"] != float64(156600) || asObject(sent.Body["order"])["code"] != "0510006" {
 		test.Fatalf("job = %s", sent.Raw)
 	}
@@ -57,10 +57,10 @@ func TestLabOrderSetsThePriceOfItsJobs(test *testing.T) {
 	otherRoll := harness.finishedRoll(seeded)
 	otherJob := newID()
 	harness.expect(harness.call("PUT", "/rolls/"+otherRoll+"/processing/"+otherJob, map[string]any{"labId": labID, "type": "develop", "price": 7}), http.StatusCreated)
-	if linkable := harness.listOf("/lab-orders/" + orderID + "/linkable-jobs"); len(linkable) != 1 || linkable[0]["id"] != otherJob {
+	if linkable := harness.listOf("/lab-orders/" + orderID + "/linkable-jobs"); len(linkable) != 2 {
 		test.Fatalf("linkable = %v", linkable)
 	}
-	linked := harness.expect(harness.call("PUT", "/processing/"+otherJob+"/order-item", map[string]any{"orderItemId": bwLine}), http.StatusOK)
+	linked := harness.expect(harness.call("PUT", "/processing/"+otherJob+"/order-items", map[string]any{"orderItemIds": []string{bwLine}}), http.StatusOK)
 	if linked.Body["price"] != float64(135000) {
 		test.Fatalf("linked = %s", linked.Raw)
 	}
@@ -68,14 +68,11 @@ func TestLabOrderSetsThePriceOfItsJobs(test *testing.T) {
 	if jobs := asList(asObject(asList(order.Body["items"])[0])["jobs"]); len(jobs) != 1 || asObject(jobs[0])["rollId"] != otherRoll {
 		test.Fatalf("order = %s", order.Raw)
 	}
-	if linkable := harness.listOf("/lab-orders/" + orderID + "/linkable-jobs"); len(linkable) != 0 {
-		test.Fatalf("linkable = %v", linkable)
-	}
 
 	// The line for one roll is full now; saving the job again on its own line is not a new place.
 	thirdJob := sendRoll(harness, harness.finishedRoll(seeded), labID)
-	harness.expect(harness.call("PUT", "/processing/"+thirdJob+"/order-item", map[string]any{"orderItemId": bwLine}), http.StatusConflict)
-	harness.expect(harness.call("PUT", "/processing/"+otherJob+"/order-item", map[string]any{"orderItemId": bwLine}), http.StatusOK)
+	harness.expect(harness.call("PUT", "/processing/"+thirdJob+"/order-items", map[string]any{"orderItemIds": []string{bwLine}}), http.StatusConflict)
+	harness.expect(harness.call("PUT", "/processing/"+otherJob+"/order-items", map[string]any{"orderItemIds": []string{bwLine}}), http.StatusOK)
 
 	// Spending follows the shared-out price: the job with no price yet only marks it incomplete.
 	if spending := harness.listOf("/stats/spending"); len(spending) != 1 || spending[0]["processingCost"] != float64(291600) || spending[0]["incomplete"] != true {
@@ -92,7 +89,7 @@ func TestLabOrderSetsThePriceOfItsJobs(test *testing.T) {
 	dropped["items"] = dropped["items"].([]map[string]any)[1:]
 	harness.expect(harness.call("PUT", "/lab-orders/"+orderID, dropped), http.StatusConflict)
 
-	cleared := harness.expect(harness.call("DELETE", "/processing/"+otherJob+"/order-item", nil), http.StatusOK)
+	cleared := harness.expect(harness.call("PUT", "/processing/"+otherJob+"/order-items", map[string]any{"orderItemIds": []string{}}), http.StatusOK)
 	if _, hasPrice := cleared.Body["price"]; hasPrice || cleared.Body["order"] != nil {
 		test.Fatalf("cleared = %s", cleared.Raw)
 	}
@@ -104,6 +101,65 @@ func TestLabOrderSetsThePriceOfItsJobs(test *testing.T) {
 	harness.expect(harness.call("GET", "/lab-orders/"+orderID, nil), http.StatusNotFound)
 	if orders := harness.listOf("/lab-orders"); len(orders) != 0 {
 		test.Fatalf("orders = %v", orders)
+	}
+}
+
+func TestOneRollOnTwoLinesOfAnOrder(test *testing.T) {
+	harness := newHarness(test)
+	seeded := seedGear(harness)
+	labID, developLine, scanLine, otherLine := newID(), newID(), newID(), newID()
+	harness.expect(harness.call("PUT", "/labs/"+labID, map[string]any{"name": "Lab A"}), http.StatusCreated)
+	orderID := newID()
+	harness.expect(harness.call("PUT", "/lab-orders/"+orderID, map[string]any{
+		"labId": labID, "code": "1", "orderedAt": "2026-10-05T10:03:00+07:00", "vat": 10000,
+		"items": []map[string]any{
+			{"id": developLine, "product": "Develop", "quantity": 1, "unitPrice": 60000},
+			{"id": scanLine, "product": "Scan", "quantity": 1, "unitPrice": 40000},
+		},
+	}), http.StatusCreated)
+	otherOrder := newID()
+	harness.expect(harness.call("PUT", "/lab-orders/"+otherOrder, orderBody(labID, "2", otherLine, newID())), http.StatusCreated)
+
+	// The roll's price adds up its lines; its roll counts once on each.
+	rollID := harness.finishedRoll(seeded)
+	jobID := sendRoll(harness, rollID, labID)
+	harness.expect(harness.call("PUT", "/processing/"+jobID+"/order-items", map[string]any{"orderItemIds": []string{developLine, otherLine}}), http.StatusUnprocessableEntity)
+	linked := harness.expect(harness.call("PUT", "/processing/"+jobID+"/order-items", map[string]any{"orderItemIds": []string{developLine}}), http.StatusOK)
+	if linked.Body["price"] != float64(66000) {
+		test.Fatalf("one line = %s", linked.Raw)
+	}
+	// Already on this order, the job can still take another line; another order does not offer it.
+	if linkable := harness.listOf("/lab-orders/" + orderID + "/linkable-jobs"); len(linkable) != 1 || len(asList(linkable[0]["orderItemIds"])) != 1 {
+		test.Fatalf("linkable = %v", linkable)
+	}
+	if linkable := harness.listOf("/lab-orders/" + otherOrder + "/linkable-jobs"); len(linkable) != 0 {
+		test.Fatalf("other order offers %v", linkable)
+	}
+	both := harness.expect(harness.call("PUT", "/processing/"+jobID+"/order-items", map[string]any{"orderItemIds": []string{developLine, scanLine, scanLine}}), http.StatusOK)
+	if both.Body["price"] != float64(110000) || len(asList(asObject(both.Body["order"])["items"])) != 2 {
+		test.Fatalf("two lines = %s", both.Raw)
+	}
+	detail := harness.expect(harness.call("GET", "/rolls/"+rollID, nil), http.StatusOK)
+	if totals := asObject(detail.Body["totals"]); totals["processingPrice"] != float64(110000) {
+		test.Fatalf("totals = %s", detail.Raw)
+	}
+	if spending := harness.listOf("/stats/spending"); spending[0]["processingCost"] != float64(110000) {
+		test.Fatalf("spending = %v", spending)
+	}
+
+	// Both lines are full; a second roll gets neither, and a job saved again keeps its places.
+	second := sendRoll(harness, harness.finishedRoll(seeded), labID)
+	harness.expect(harness.call("PUT", "/processing/"+second+"/order-items", map[string]any{"orderItemIds": []string{scanLine}}), http.StatusConflict)
+	harness.expect(harness.call("PUT", "/processing/"+jobID+"/order-items", map[string]any{"orderItemIds": []string{developLine, scanLine}}), http.StatusOK)
+
+	// Taking one line off frees that line only; a deleted job frees the rest.
+	harness.expect(harness.call("PUT", "/processing/"+jobID+"/order-items", map[string]any{"orderItemIds": []string{developLine}}), http.StatusOK)
+	harness.expect(harness.call("PUT", "/processing/"+second+"/order-items", map[string]any{"orderItemIds": []string{scanLine}}), http.StatusOK)
+	harness.expect(harness.call("DELETE", "/processing/"+jobID, nil), http.StatusNoContent)
+	harness.expect(harness.call("PUT", "/processing/"+second+"/order-items", map[string]any{"orderItemIds": []string{}}), http.StatusOK)
+	harness.expect(harness.call("DELETE", "/lab-orders/"+orderID, nil), http.StatusNoContent)
+	if trail := harness.auditTrail("entityType=processing_order_item"); len(trail) == 0 {
+		test.Fatal("link changes are not audited")
 	}
 }
 
