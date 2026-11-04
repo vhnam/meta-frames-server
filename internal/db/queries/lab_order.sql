@@ -23,7 +23,9 @@ UPDATE lab_order SET deleted_at = now() WHERE id = $1 AND owner_id = $2 AND dele
 
 -- name: LabOrderHasJobs :one
 SELECT EXISTS (
-  SELECT 1 FROM processing p JOIN lab_order_item item ON item.id = p.order_item_id
+  SELECT 1 FROM processing_order_item link
+  JOIN processing p ON p.id = link.processing_id
+  JOIN lab_order_item item ON item.id = link.order_item_id
   WHERE item.order_id = $1 AND p.owner_id = $2 AND p.deleted_at IS NULL
 );
 
@@ -48,28 +50,49 @@ WHERE lab_order_item.order_id = EXCLUDED.order_id AND lab_order_item.owner_id = 
 DELETE FROM lab_order_item WHERE id = $1 AND owner_id = $2;
 
 -- name: CountLabOrderItemJobs :one
-SELECT count(*)::int FROM processing WHERE order_item_id = $1 AND owner_id = $2 AND deleted_at IS NULL AND id <> sqlc.arg(except_job_id)::uuid;
+SELECT count(*)::int FROM processing_order_item link JOIN processing p ON p.id = link.processing_id
+WHERE link.order_item_id = $1 AND p.owner_id = $2 AND p.deleted_at IS NULL AND p.id <> sqlc.arg(except_job_id)::uuid;
 
 -- name: ListLabOrderJobs :many
-SELECT item.order_id, p.order_item_id::uuid AS order_item_id, p.id, p.roll_id, p.type, p.sent_at, r.format, r.exposures,
+SELECT item.order_id, link.order_item_id, p.id, p.roll_id, p.type, p.sent_at, r.format, r.exposures,
        fs.brand AS stock_brand, fs.name AS stock_name
-FROM processing p
-JOIN lab_order_item item ON item.id = p.order_item_id
+FROM processing_order_item link
+JOIN processing p ON p.id = link.processing_id
+JOIN lab_order_item item ON item.id = link.order_item_id
 JOIN roll r ON r.id = p.roll_id
 JOIN film_stock fs ON fs.id = r.film_stock_id
 WHERE p.owner_id = $1 AND p.deleted_at IS NULL AND item.order_id = ANY(sqlc.arg(order_ids)::uuid[])
 ORDER BY p.sent_at, p.created_at;
 
--- Jobs at a lab that are on no order yet, newest first.
+-- Jobs at a lab that are on no order, or only on this one, each with the lines it already has.
 -- name: ListLinkableJobs :many
-SELECT p.id, p.roll_id, p.type, p.sent_at, r.format, r.exposures, fs.brand AS stock_brand, fs.name AS stock_name
+SELECT p.id, p.roll_id, p.type, p.sent_at, r.format, r.exposures, fs.brand AS stock_brand, fs.name AS stock_name,
+       ARRAY(SELECT link.order_item_id FROM processing_order_item link WHERE link.processing_id = p.id)::uuid[] AS order_item_ids
 FROM processing p
 JOIN roll r ON r.id = p.roll_id
 JOIN film_stock fs ON fs.id = r.film_stock_id
-WHERE p.owner_id = $1 AND p.lab_id = $2 AND p.order_item_id IS NULL AND p.deleted_at IS NULL AND r.deleted_at IS NULL
+WHERE p.owner_id = $1 AND p.lab_id = $2 AND p.deleted_at IS NULL AND r.deleted_at IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM processing_order_item link JOIN lab_order_item item ON item.id = link.order_item_id
+    WHERE link.processing_id = p.id AND item.order_id <> sqlc.arg(order_id)::uuid
+  )
 ORDER BY p.sent_at DESC, p.created_at DESC;
 
--- A job on an order takes its price from the line, so its own price goes.
--- name: SetProcessingOrderItem :one
-UPDATE processing SET order_item_id = $3, price = NULL
-WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL RETURNING *;
+-- name: ListJobOrderItems :many
+SELECT link.processing_id, item.id AS item_id, item.product, o.id AS order_id, o.code AS order_code
+FROM processing_order_item link
+JOIN lab_order_item item ON item.id = link.order_item_id
+JOIN lab_order o ON o.id = item.order_id
+WHERE item.owner_id = $1 AND link.processing_id = ANY(sqlc.arg(processing_ids)::uuid[])
+ORDER BY link.processing_id, item.position;
+
+-- name: AddJobOrderItem :exec
+INSERT INTO processing_order_item (processing_id, order_item_id) VALUES ($1, $2)
+ON CONFLICT (processing_id, order_item_id) DO NOTHING;
+
+-- name: DeleteJobOrderItemsExcept :exec
+DELETE FROM processing_order_item WHERE processing_id = $1 AND NOT (order_item_id = ANY(@keep::uuid[]));
+
+-- A job on an order takes its price from its lines, so its own price goes.
+-- name: ClearProcessingPrice :exec
+UPDATE processing SET price = NULL WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL;

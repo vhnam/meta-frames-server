@@ -13,12 +13,43 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addJobOrderItem = `-- name: AddJobOrderItem :exec
+INSERT INTO processing_order_item (processing_id, order_item_id) VALUES ($1, $2)
+ON CONFLICT (processing_id, order_item_id) DO NOTHING
+`
+
+type AddJobOrderItemParams struct {
+	ProcessingID uuid.UUID
+	OrderItemID  uuid.UUID
+}
+
+func (q *Queries) AddJobOrderItem(ctx context.Context, arg AddJobOrderItemParams) error {
+	_, err := q.db.Exec(ctx, addJobOrderItem, arg.ProcessingID, arg.OrderItemID)
+	return err
+}
+
+const clearProcessingPrice = `-- name: ClearProcessingPrice :exec
+UPDATE processing SET price = NULL WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
+`
+
+type ClearProcessingPriceParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+// A job on an order takes its price from its lines, so its own price goes.
+func (q *Queries) ClearProcessingPrice(ctx context.Context, arg ClearProcessingPriceParams) error {
+	_, err := q.db.Exec(ctx, clearProcessingPrice, arg.ID, arg.OwnerID)
+	return err
+}
+
 const countLabOrderItemJobs = `-- name: CountLabOrderItemJobs :one
-SELECT count(*)::int FROM processing WHERE order_item_id = $1 AND owner_id = $2 AND deleted_at IS NULL AND id <> $3::uuid
+SELECT count(*)::int FROM processing_order_item link JOIN processing p ON p.id = link.processing_id
+WHERE link.order_item_id = $1 AND p.owner_id = $2 AND p.deleted_at IS NULL AND p.id <> $3::uuid
 `
 
 type CountLabOrderItemJobsParams struct {
-	OrderItemID *uuid.UUID
+	OrderItemID uuid.UUID
 	OwnerID     uuid.UUID
 	ExceptJobID uuid.UUID
 }
@@ -28,6 +59,20 @@ func (q *Queries) CountLabOrderItemJobs(ctx context.Context, arg CountLabOrderIt
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const deleteJobOrderItemsExcept = `-- name: DeleteJobOrderItemsExcept :exec
+DELETE FROM processing_order_item WHERE processing_id = $1 AND NOT (order_item_id = ANY($2::uuid[]))
+`
+
+type DeleteJobOrderItemsExceptParams struct {
+	ProcessingID uuid.UUID
+	Keep         []uuid.UUID
+}
+
+func (q *Queries) DeleteJobOrderItemsExcept(ctx context.Context, arg DeleteJobOrderItemsExceptParams) error {
+	_, err := q.db.Exec(ctx, deleteJobOrderItemsExcept, arg.ProcessingID, arg.Keep)
+	return err
 }
 
 const deleteLabOrderItem = `-- name: DeleteLabOrderItem :execrows
@@ -215,7 +260,9 @@ func (q *Queries) InsertLabOrder(ctx context.Context, arg InsertLabOrderParams) 
 
 const labOrderHasJobs = `-- name: LabOrderHasJobs :one
 SELECT EXISTS (
-  SELECT 1 FROM processing p JOIN lab_order_item item ON item.id = p.order_item_id
+  SELECT 1 FROM processing_order_item link
+  JOIN processing p ON p.id = link.processing_id
+  JOIN lab_order_item item ON item.id = link.order_item_id
   WHERE item.order_id = $1 AND p.owner_id = $2 AND p.deleted_at IS NULL
 )
 `
@@ -230,6 +277,54 @@ func (q *Queries) LabOrderHasJobs(ctx context.Context, arg LabOrderHasJobsParams
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const listJobOrderItems = `-- name: ListJobOrderItems :many
+SELECT link.processing_id, item.id AS item_id, item.product, o.id AS order_id, o.code AS order_code
+FROM processing_order_item link
+JOIN lab_order_item item ON item.id = link.order_item_id
+JOIN lab_order o ON o.id = item.order_id
+WHERE item.owner_id = $1 AND link.processing_id = ANY($2::uuid[])
+ORDER BY link.processing_id, item.position
+`
+
+type ListJobOrderItemsParams struct {
+	OwnerID       uuid.UUID
+	ProcessingIds []uuid.UUID
+}
+
+type ListJobOrderItemsRow struct {
+	ProcessingID uuid.UUID
+	ItemID       uuid.UUID
+	Product      string
+	OrderID      uuid.UUID
+	OrderCode    string
+}
+
+func (q *Queries) ListJobOrderItems(ctx context.Context, arg ListJobOrderItemsParams) ([]ListJobOrderItemsRow, error) {
+	rows, err := q.db.Query(ctx, listJobOrderItems, arg.OwnerID, arg.ProcessingIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListJobOrderItemsRow
+	for rows.Next() {
+		var i ListJobOrderItemsRow
+		if err := rows.Scan(
+			&i.ProcessingID,
+			&i.ItemID,
+			&i.Product,
+			&i.OrderID,
+			&i.OrderCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listLabOrderItems = `-- name: ListLabOrderItems :many
@@ -290,10 +385,11 @@ func (q *Queries) ListLabOrderItems(ctx context.Context, arg ListLabOrderItemsPa
 }
 
 const listLabOrderJobs = `-- name: ListLabOrderJobs :many
-SELECT item.order_id, p.order_item_id::uuid AS order_item_id, p.id, p.roll_id, p.type, p.sent_at, r.format, r.exposures,
+SELECT item.order_id, link.order_item_id, p.id, p.roll_id, p.type, p.sent_at, r.format, r.exposures,
        fs.brand AS stock_brand, fs.name AS stock_name
-FROM processing p
-JOIN lab_order_item item ON item.id = p.order_item_id
+FROM processing_order_item link
+JOIN processing p ON p.id = link.processing_id
+JOIN lab_order_item item ON item.id = link.order_item_id
 JOIN roll r ON r.id = p.roll_id
 JOIN film_stock fs ON fs.id = r.film_stock_id
 WHERE p.owner_id = $1 AND p.deleted_at IS NULL AND item.order_id = ANY($2::uuid[])
@@ -411,33 +507,40 @@ func (q *Queries) ListLabOrders(ctx context.Context, arg ListLabOrdersParams) ([
 }
 
 const listLinkableJobs = `-- name: ListLinkableJobs :many
-SELECT p.id, p.roll_id, p.type, p.sent_at, r.format, r.exposures, fs.brand AS stock_brand, fs.name AS stock_name
+SELECT p.id, p.roll_id, p.type, p.sent_at, r.format, r.exposures, fs.brand AS stock_brand, fs.name AS stock_name,
+       ARRAY(SELECT link.order_item_id FROM processing_order_item link WHERE link.processing_id = p.id)::uuid[] AS order_item_ids
 FROM processing p
 JOIN roll r ON r.id = p.roll_id
 JOIN film_stock fs ON fs.id = r.film_stock_id
-WHERE p.owner_id = $1 AND p.lab_id = $2 AND p.order_item_id IS NULL AND p.deleted_at IS NULL AND r.deleted_at IS NULL
+WHERE p.owner_id = $1 AND p.lab_id = $2 AND p.deleted_at IS NULL AND r.deleted_at IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM processing_order_item link JOIN lab_order_item item ON item.id = link.order_item_id
+    WHERE link.processing_id = p.id AND item.order_id <> $3::uuid
+  )
 ORDER BY p.sent_at DESC, p.created_at DESC
 `
 
 type ListLinkableJobsParams struct {
 	OwnerID uuid.UUID
 	LabID   *uuid.UUID
+	OrderID uuid.UUID
 }
 
 type ListLinkableJobsRow struct {
-	ID         uuid.UUID
-	RollID     uuid.UUID
-	Type       string
-	SentAt     time.Time
-	Format     int32
-	Exposures  int32
-	StockBrand string
-	StockName  string
+	ID           uuid.UUID
+	RollID       uuid.UUID
+	Type         string
+	SentAt       time.Time
+	Format       int32
+	Exposures    int32
+	StockBrand   string
+	StockName    string
+	OrderItemIds []uuid.UUID
 }
 
-// Jobs at a lab that are on no order yet, newest first.
+// Jobs at a lab that are on no order, or only on this one, each with the lines it already has.
 func (q *Queries) ListLinkableJobs(ctx context.Context, arg ListLinkableJobsParams) ([]ListLinkableJobsRow, error) {
-	rows, err := q.db.Query(ctx, listLinkableJobs, arg.OwnerID, arg.LabID)
+	rows, err := q.db.Query(ctx, listLinkableJobs, arg.OwnerID, arg.LabID, arg.OrderID)
 	if err != nil {
 		return nil, err
 	}
@@ -454,6 +557,7 @@ func (q *Queries) ListLinkableJobs(ctx context.Context, arg ListLinkableJobsPara
 			&i.Exposures,
 			&i.StockBrand,
 			&i.StockName,
+			&i.OrderItemIds,
 		); err != nil {
 			return nil, err
 		}
@@ -463,43 +567,6 @@ func (q *Queries) ListLinkableJobs(ctx context.Context, arg ListLinkableJobsPara
 		return nil, err
 	}
 	return items, nil
-}
-
-const setProcessingOrderItem = `-- name: SetProcessingOrderItem :one
-UPDATE processing SET order_item_id = $3, price = NULL
-WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at, owner_id, order_item_id
-`
-
-type SetProcessingOrderItemParams struct {
-	ID          uuid.UUID
-	OwnerID     uuid.UUID
-	OrderItemID *uuid.UUID
-}
-
-// A job on an order takes its price from the line, so its own price goes.
-func (q *Queries) SetProcessingOrderItem(ctx context.Context, arg SetProcessingOrderItemParams) (Processing, error) {
-	row := q.db.QueryRow(ctx, setProcessingOrderItem, arg.ID, arg.OwnerID, arg.OrderItemID)
-	var i Processing
-	err := row.Scan(
-		&i.ID,
-		&i.RollID,
-		&i.LabID,
-		&i.Type,
-		&i.Process,
-		&i.SentAt,
-		&i.ScansReceivedAt,
-		&i.NegativesReturnedAt,
-		&i.Price,
-		&i.Notes,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.DeletedAt,
-		&i.ScansExpectedAt,
-		&i.NegativesExpectedAt,
-		&i.OwnerID,
-		&i.OrderItemID,
-	)
-	return i, err
 }
 
 const softDeleteLabOrder = `-- name: SoftDeleteLabOrder :execrows
