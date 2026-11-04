@@ -191,7 +191,7 @@ func (service *Service) Delete(ctx context.Context, labID uuid.UUID) error {
 		if _, err := queries.GetLab(ctx, gen.GetLabParams{ID: labID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return shared.NotFoundOr(err, "lab")
 		}
-		used, err := queries.LabHasProcessing(ctx, gen.LabHasProcessingParams{LabID: &labID, OwnerID: requestctx.Owner(ctx)})
+		used, err := queries.LabHasProcessing(ctx, gen.LabHasProcessingParams{LabID: labID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return err
 		}

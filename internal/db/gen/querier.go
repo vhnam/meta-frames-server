@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	AddJobOrderItem(ctx context.Context, arg AddJobOrderItemParams) error
 	BuiltInScannerNamed(ctx context.Context, arg BuiltInScannerNamedParams) (bool, error)
 	CameraIsLoaded(ctx context.Context, arg CameraIsLoadedParams) (bool, error)
 	ClaimIdempotencyKey(ctx context.Context, arg ClaimIdempotencyKeyParams) (int64, error)
@@ -18,9 +19,14 @@ type Querier interface {
 	ClaimUnownedData(ctx context.Context, newOwner uuid.UUID) error
 	// Runs before the upserts, so the new default cannot collide with the old one.
 	ClearLabDefaultScanner(ctx context.Context, labID uuid.UUID) error
+	// A job on an order takes its price from its lines, so its own price goes.
+	ClearProcessingPrice(ctx context.Context, arg ClearProcessingPriceParams) error
 	CountCameraRolls(ctx context.Context, arg CountCameraRollsParams) (int64, error)
+	CountLabOrderItemJobs(ctx context.Context, arg CountLabOrderItemJobsParams) (int32, error)
 	DeleteCameraLensesExcept(ctx context.Context, arg DeleteCameraLensesExceptParams) error
 	DeleteExpiredSessions(ctx context.Context) error
+	DeleteJobOrderItemsExcept(ctx context.Context, arg DeleteJobOrderItemsExceptParams) error
+	DeleteLabOrderItem(ctx context.Context, arg DeleteLabOrderItemParams) (int64, error)
 	DeleteLabScannersExcept(ctx context.Context, arg DeleteLabScannersExceptParams) error
 	DeleteRollLensesExcept(ctx context.Context, arg DeleteRollLensesExceptParams) error
 	DeleteScanOrder(ctx context.Context, arg DeleteScanOrderParams) (int64, error)
@@ -41,6 +47,9 @@ type Querier interface {
 	GetFrameByNumber(ctx context.Context, arg GetFrameByNumberParams) (Frame, error)
 	GetIdempotencyKey(ctx context.Context, arg GetIdempotencyKeyParams) (IdempotencyKey, error)
 	GetLab(ctx context.Context, arg GetLabParams) (Lab, error)
+	GetLabOrder(ctx context.Context, arg GetLabOrderParams) (GetLabOrderRow, error)
+	GetLabOrderForUpdate(ctx context.Context, arg GetLabOrderForUpdateParams) (LabOrder, error)
+	GetLabOrderItemForUpdate(ctx context.Context, arg GetLabOrderItemForUpdateParams) (GetLabOrderItemForUpdateRow, error)
 	GetLens(ctx context.Context, arg GetLensParams) (Lens, error)
 	GetLensForUpdate(ctx context.Context, arg GetLensForUpdateParams) (Lens, error)
 	GetLensesByIDs(ctx context.Context, arg GetLensesByIDsParams) ([]Lens, error)
@@ -61,6 +70,7 @@ type Querier interface {
 	InsertCameraLens(ctx context.Context, arg InsertCameraLensParams) error
 	InsertFilmStock(ctx context.Context, arg InsertFilmStockParams) (FilmStock, error)
 	InsertLab(ctx context.Context, arg InsertLabParams) (Lab, error)
+	InsertLabOrder(ctx context.Context, arg InsertLabOrderParams) (LabOrder, error)
 	InsertLens(ctx context.Context, arg InsertLensParams) (Lens, error)
 	InsertProcessing(ctx context.Context, arg InsertProcessingParams) (Processing, error)
 	InsertRoll(ctx context.Context, arg InsertRollParams) (Roll, error)
@@ -72,6 +82,7 @@ type Querier interface {
 	InsertUser(ctx context.Context, arg InsertUserParams) (AppUser, error)
 	InventoryRows(ctx context.Context, arg InventoryRowsParams) ([]InventoryRowsRow, error)
 	LabHasProcessing(ctx context.Context, arg LabHasProcessingParams) (bool, error)
+	LabOrderHasJobs(ctx context.Context, arg LabOrderHasJobsParams) (bool, error)
 	// The lens is checked to belong to the account first.
 	LensIsOnRolls(ctx context.Context, lensID uuid.UUID) (bool, error)
 	ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error)
@@ -82,10 +93,16 @@ type Querier interface {
 	ListFilmStocks(ctx context.Context, arg ListFilmStocksParams) ([]FilmStock, error)
 	ListFrames(ctx context.Context, arg ListFramesParams) ([]Frame, error)
 	ListJobFrameNumbers(ctx context.Context, arg ListJobFrameNumbersParams) ([]int32, error)
+	ListJobOrderItems(ctx context.Context, arg ListJobOrderItemsParams) ([]ListJobOrderItemsRow, error)
+	ListLabOrderItems(ctx context.Context, arg ListLabOrderItemsParams) ([]ListLabOrderItemsRow, error)
+	ListLabOrderJobs(ctx context.Context, arg ListLabOrderJobsParams) ([]ListLabOrderJobsRow, error)
+	ListLabOrders(ctx context.Context, arg ListLabOrdersParams) ([]ListLabOrdersRow, error)
 	// Scanners of the account's labs, each lab's in the order they were given.
 	ListLabScanners(ctx context.Context, ownerID uuid.UUID) ([]ListLabScannersRow, error)
 	ListLabs(ctx context.Context, ownerID uuid.UUID) ([]Lab, error)
 	ListLenses(ctx context.Context, arg ListLensesParams) ([]Lens, error)
+	// Jobs at a lab that are on no order, or only on this one, each with the lines it already has.
+	ListLinkableJobs(ctx context.Context, arg ListLinkableJobsParams) ([]ListLinkableJobsRow, error)
 	ListLoadedRolls(ctx context.Context, ownerID uuid.UUID) ([]ListLoadedRollsRow, error)
 	ListProcessingScans(ctx context.Context, arg ListProcessingScansParams) ([]ListProcessingScansRow, error)
 	ListRollLenses(ctx context.Context, arg ListRollLensesParams) ([]Lens, error)
@@ -120,6 +137,7 @@ type Querier interface {
 	SoftDeleteCamera(ctx context.Context, arg SoftDeleteCameraParams) (int64, error)
 	SoftDeleteFilmStock(ctx context.Context, arg SoftDeleteFilmStockParams) (int64, error)
 	SoftDeleteLab(ctx context.Context, arg SoftDeleteLabParams) (int64, error)
+	SoftDeleteLabOrder(ctx context.Context, arg SoftDeleteLabOrderParams) (int64, error)
 	SoftDeleteLens(ctx context.Context, arg SoftDeleteLensParams) (int64, error)
 	SoftDeleteProcessing(ctx context.Context, arg SoftDeleteProcessingParams) (int64, error)
 	SoftDeleteRoll(ctx context.Context, arg SoftDeleteRollParams) (int64, error)
@@ -139,6 +157,7 @@ type Querier interface {
 	UpdateCamera(ctx context.Context, arg UpdateCameraParams) (Camera, error)
 	UpdateFilmStock(ctx context.Context, arg UpdateFilmStockParams) (FilmStock, error)
 	UpdateLab(ctx context.Context, arg UpdateLabParams) (Lab, error)
+	UpdateLabOrder(ctx context.Context, arg UpdateLabOrderParams) (LabOrder, error)
 	UpdateLens(ctx context.Context, arg UpdateLensParams) (Lens, error)
 	UpdateProcessing(ctx context.Context, arg UpdateProcessingParams) (Processing, error)
 	UpdateRoll(ctx context.Context, arg UpdateRollParams) (Roll, error)
@@ -147,6 +166,8 @@ type Querier interface {
 	// The roll is checked to belong to the account first; the composite foreign key refuses a frame
 	// whose owner differs from its roll's.
 	UpsertFrame(ctx context.Context, arg UpsertFrameParams) (Frame, error)
+	// A line's id is chosen by the client, so one that names a line of another order changes nothing.
+	UpsertLabOrderItem(ctx context.Context, arg UpsertLabOrderItemParams) (int64, error)
 	UpsertLabScanner(ctx context.Context, arg UpsertLabScannerParams) error
 	UpsertScanOrder(ctx context.Context, arg UpsertScanOrderParams) error
 }

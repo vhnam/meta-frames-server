@@ -322,11 +322,15 @@ func (q *Queries) InsertScan(ctx context.Context, arg InsertScanParams) (Scan, e
 }
 
 const labHasProcessing = `-- name: LabHasProcessing :one
-SELECT EXISTS (SELECT 1 FROM processing WHERE lab_id = $1 AND owner_id = $2)
+SELECT EXISTS (
+  SELECT 1 FROM processing p WHERE p.lab_id = $1::uuid AND p.owner_id = $2::uuid
+  UNION ALL
+  SELECT 1 FROM lab_order o WHERE o.lab_id = $1::uuid AND o.owner_id = $2::uuid AND o.deleted_at IS NULL
+)
 `
 
 type LabHasProcessingParams struct {
-	LabID   *uuid.UUID
+	LabID   uuid.UUID
 	OwnerID uuid.UUID
 }
 
@@ -468,8 +472,9 @@ func (q *Queries) ListProcessingScans(ctx context.Context, arg ListProcessingSca
 }
 
 const listRollProcessing = `-- name: ListRollProcessing :many
-SELECT p.id, p.roll_id, p.lab_id, p.type, p.process, p.sent_at, p.scans_received_at, p.negatives_returned_at, p.price, p.notes, p.created_at, p.updated_at, p.deleted_at, p.scans_expected_at, p.negatives_expected_at, p.owner_id, COALESCE(l.name, '') AS lab_name
+SELECT p.id, p.roll_id, p.lab_id, p.type, p.process, p.sent_at, p.scans_received_at, p.negatives_returned_at, p.price, p.notes, p.created_at, p.updated_at, p.deleted_at, p.scans_expected_at, p.negatives_expected_at, p.owner_id, COALESCE(l.name, '') AS lab_name, cost.cost AS order_cost
 FROM processing p LEFT JOIN lab l ON l.id = p.lab_id
+LEFT JOIN processing_order_cost cost ON cost.processing_id = p.id
 WHERE p.roll_id = $1 AND p.owner_id = $2 AND p.deleted_at IS NULL ORDER BY p.sent_at, p.created_at
 `
 
@@ -496,6 +501,7 @@ type ListRollProcessingRow struct {
 	NegativesExpectedAt *time.Time
 	OwnerID             uuid.UUID
 	LabName             string
+	OrderCost           *int32
 }
 
 func (q *Queries) ListRollProcessing(ctx context.Context, arg ListRollProcessingParams) ([]ListRollProcessingRow, error) {
@@ -525,6 +531,7 @@ func (q *Queries) ListRollProcessing(ctx context.Context, arg ListRollProcessing
 			&i.NegativesExpectedAt,
 			&i.OwnerID,
 			&i.LabName,
+			&i.OrderCost,
 		); err != nil {
 			return nil, err
 		}

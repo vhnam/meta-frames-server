@@ -35,6 +35,9 @@ Settings come from environment variables. See [configs/.env.example](configs/.en
 |---|---|
 | `make dev` | Run with live reload (air) |
 | `make run-prod` | Run locally against the database in `.env.prod` |
+| `make migrate-prod-status` | List applied and pending migrations on the production database |
+| `make migrate-prod` | Apply pending migrations to the production database, after a confirmation |
+| `make deploy` | Test, build, push and deploy the committed code to Cloud Run, after a confirmation |
 | `make gen` | Regenerate server and query code after editing the spec or SQL |
 | `make test-unit` | Unit tests, no Docker |
 | `make test` | Unit and integration tests (needs Docker) |

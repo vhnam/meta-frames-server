@@ -14,7 +14,11 @@ UPDATE lab SET name = $2, address = $3 WHERE id = $1 AND owner_id = $4 AND delet
 UPDATE lab SET deleted_at = now() WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL;
 
 -- name: LabHasProcessing :one
-SELECT EXISTS (SELECT 1 FROM processing WHERE lab_id = $1 AND owner_id = $2);
+SELECT EXISTS (
+  SELECT 1 FROM processing p WHERE p.lab_id = sqlc.arg(lab_id)::uuid AND p.owner_id = sqlc.arg(owner_id)::uuid
+  UNION ALL
+  SELECT 1 FROM lab_order o WHERE o.lab_id = sqlc.arg(lab_id)::uuid AND o.owner_id = sqlc.arg(owner_id)::uuid AND o.deleted_at IS NULL
+);
 
 -- name: GetProcessing :one
 SELECT * FROM processing WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL;
@@ -23,8 +27,9 @@ SELECT * FROM processing WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL;
 SELECT * FROM processing WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL FOR UPDATE;
 
 -- name: ListRollProcessing :many
-SELECT p.*, COALESCE(l.name, '') AS lab_name
+SELECT p.*, COALESCE(l.name, '') AS lab_name, cost.cost AS order_cost
 FROM processing p LEFT JOIN lab l ON l.id = p.lab_id
+LEFT JOIN processing_order_cost cost ON cost.processing_id = p.id
 WHERE p.roll_id = $1 AND p.owner_id = $2 AND p.deleted_at IS NULL ORDER BY p.sent_at, p.created_at;
 
 -- name: InsertProcessing :one
