@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Lab orders record what a lab bills: `GET /lab-orders`, `GET|PUT|DELETE /lab-orders/{id}`. An order has a code (unique per lab, `409 order_code_taken`), an order date, a due date, VAT and discount as amounts, and lines with a product, options, quantity and unit price. An order with jobs cannot be deleted or change lab (`409 order_has_jobs`). A line with jobs cannot be removed (`409 order_item_in_use`) or take fewer rolls than it has (`409 order_item_over_quantity`). A lab with orders counts as in use. Migration `00016` adds the `lab_order` and `lab_order_item` tables.
 - A job goes on one or more lines of an order, such as one for developing and one for scanning, with `orderItemIds` on `PUT /rolls/{id}/processing/{jobId}`, or with `PUT /processing/{id}/order-items`. The lines must be on one order (`422 order_items_on_two_orders`) from the job's lab (`422 order_lab_mismatch`), and each must have room (`409 order_item_full`). `GET /lab-orders/{id}/linkable-jobs` lists the jobs on no order or only on this one, with the lines they already have. Migration `00017` moves the link to the `processing_order_item` table.
+- `make deploy` tests, builds and deploys the committed code to Cloud Run. `make migrate-prod` and `make migrate-prod-status` apply and list migrations on the production database. Each refuses uncommitted changes where they would reach production.
 
 ### Changed
 
