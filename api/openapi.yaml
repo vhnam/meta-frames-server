@@ -1882,7 +1882,7 @@ paths:
     get:
       tags: [Lab orders]
       operationId: listLinkableJobs
-      summary: Jobs at the order's lab that are on no order yet
+      summary: "Jobs at the order's lab that are on no order, or only on this one"
       responses:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
@@ -1892,19 +1892,21 @@ paths:
               schema: { type: array, items: { $ref: "#/components/schemas/LabOrderJob" } }
         "404": { $ref: "#/components/responses/NotFound" }
 
-  /processing/{id}/order-item:
+  /processing/{id}/order-items:
     parameters:
       - $ref: "#/components/parameters/Id"
     put:
       tags: [Processing]
-      operationId: setProcessingOrderItem
-      summary: Put a job on an order line
-      description: The job's own price goes; the line sets it from now on.
+      operationId: setProcessingOrderItems
+      summary: Set the order lines a job is billed on
+      description: >-
+        Lines given replace the job's own price; they set it from now on. An empty list takes the
+        job off its order, and the job then has no price until one is set.
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/SetProcessingOrderItemInput" }
+            schema: { $ref: "#/components/schemas/SetProcessingOrderItemsInput" }
       responses:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
@@ -1916,18 +1918,6 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/Unprocessable" }
-    delete:
-      tags: [Processing]
-      operationId: clearProcessingOrderItem
-      summary: Take a job off its order; the job then has no price until one is set
-      responses:
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "200":
-          description: Job
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Processing" }
-        "404": { $ref: "#/components/responses/NotFound" }
 
   /audit-logs:
     get:
@@ -4402,26 +4392,36 @@ components:
 
     ProcessingOrder:
       type: object
-      required: [id, code, itemId, product]
-      description: The order line a job is billed on
+      required: [id, code, items]
+      description: The order a job is billed on, and its lines there
       properties:
         id: { type: string, format: uuid }
         code: { type: string }
-        itemId: { type: string, format: uuid }
-        product: { type: string }
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, product]
+            properties:
+              id: { type: string, format: uuid }
+              product: { type: string }
       example:
         id: 7b1f0c52-3d94-4e16-9a70-2c5e8d1f4a10
         code: "0510006"
-        itemId: 8c2a1d63-4ea5-4f27-ab81-3d6f9e2a5b21
-        product: 35mm Colour film
+        items:
+          - id: 8c2a1d63-4ea5-4f27-ab81-3d6f9e2a5b21
+            product: 35mm Colour film
 
-    SetProcessingOrderItemInput:
+    SetProcessingOrderItemsInput:
       type: object
-      required: [orderItemId]
+      required: [orderItemIds]
       properties:
-        orderItemId: { type: string, format: uuid }
+        orderItemIds:
+          type: array
+          items: { type: string, format: uuid }
+          description: Replaces the job's lines; empty takes the job off its order
       example:
-        orderItemId: 8c2a1d63-4ea5-4f27-ab81-3d6f9e2a5b21
+        orderItemIds: [8c2a1d63-4ea5-4f27-ab81-3d6f9e2a5b21]
 
     LabOrderItemInput:
       type: object
@@ -4483,6 +4483,10 @@ components:
         stockName: { type: string }
         format: { type: integer }
         exposures: { type: integer }
+        orderItemIds:
+          type: array
+          items: { type: string, format: uuid }
+          description: Only in linkable-jobs. The lines of this order the job is already on
       example:
         id: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
         rollId: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
@@ -4852,14 +4856,15 @@ components:
         price:
           type: integer
           minimum: 0
-          description: The job's own price. Not allowed with orderItemId, where the order line sets it (`422 price_from_order`).
-        orderItemId:
-          type: string
-          format: uuid
+          description: The job's own price. Not allowed with orderItemIds, where the order lines set it (`422 price_from_order`).
+        orderItemIds:
+          type: array
+          items: { type: string, format: uuid }
           description: >-
-            The order line this job is billed on. The line's order must be from the job's lab
-            (`422 order_lab_mismatch`) and the line must have room (`409 order_item_full`). Replaces
-            the current link; absent takes the job off its order.
+            The order lines this job is billed on, such as one for developing and one for scanning.
+            They must be on one order (`422 order_items_on_two_orders`) from the job's lab
+            (`422 order_lab_mismatch`), and each must have room (`409 order_item_full`). Replaces
+            the current set; absent or empty takes the job off its order.
         notes: { type: string }
         scanOrders:
           type: array
@@ -4935,7 +4940,7 @@ components:
         negativesReturnedAt: { type: string, format: date }
         price:
           type: integer
-          description: From the order line, with the order's VAT and discount shared out, when the job is on an order; otherwise the job's own price
+          description: From its order lines added up, with the order's VAT and discount shared out, when the job is on an order; otherwise the job's own price
         order: { $ref: "#/components/schemas/ProcessingOrder" }
         notes: { type: string }
         scanOrders: { type: array, items: { $ref: "#/components/schemas/ScanOrder" } }
@@ -5236,7 +5241,7 @@ components:
 
     AuditEntityType:
       type: string
-      enum: [camera, lens, film_stock, lab, lab_order, lab_order_item, scanner, roll, processing, frame, scan, camera_lens, roll_lens, processing_scan_order]
+      enum: [camera, lens, film_stock, lab, lab_order, lab_order_item, scanner, roll, processing, frame, scan, camera_lens, roll_lens, processing_scan_order, processing_order_item]
 
     AuditAction: { type: string, enum: [create, update, delete] }
 

@@ -18,10 +18,14 @@ type Controller struct {
 func New(orders *laborderservice.Service) *Controller { return &Controller{orders: orders} }
 
 func toAPIJob(job laborderservice.Job) api.LabOrderJob {
-	return api.LabOrderJob{
+	mapped := api.LabOrderJob{
 		Id: job.ID, RollId: job.RollID, Type: api.ProcessingType(job.Type), SentAt: convert.APIDate(job.SentAt),
 		StockName: job.StockName, Format: int(job.Format), Exposures: int(job.Exposures),
 	}
+	if job.OrderItemIDs != nil {
+		mapped.OrderItemIds = &job.OrderItemIDs
+	}
+	return mapped
 }
 
 func toAPIOrder(view laborderservice.View) api.LabOrder {

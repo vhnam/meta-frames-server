@@ -40,7 +40,7 @@ type ItemView struct {
 	Jobs     []Job
 }
 
-// Job is a processing job on an order, or one that could go on it, with the roll it works on.
+// Job is a processing job on an order line, or one that could go on one, with the roll it works on.
 type Job struct {
 	ID        uuid.UUID
 	RollID    uuid.UUID
@@ -49,6 +49,8 @@ type Job struct {
 	StockName string
 	Format    int32
 	Exposures int32
+	// OrderItemIDs are the lines of the order the job is already on; only set on a linkable job.
+	OrderItemIDs []uuid.UUID
 }
 
 func (item ItemView) LineTotal() int { return int(item.Item.Quantity) * int(item.Item.UnitPrice) }

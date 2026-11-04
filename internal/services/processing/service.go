@@ -1,7 +1,9 @@
 package processing
 
 import (
+	"bytes"
 	"context"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -171,16 +173,28 @@ func BuildViews(ctx context.Context, queries gen.Querier, rollID uuid.UUID) ([]V
 				Settings: domain.DecodeScanSettings(order.Settings), ScanCount: int(order.ScanCount),
 			})
 	}
+	itemRows, err := queries.ListJobOrderItems(ctx, gen.ListJobOrderItemsParams{OwnerID: requestctx.Owner(ctx), ProcessingIds: ids})
+	if err != nil {
+		return nil, err
+	}
+	linksByJob := make(map[uuid.UUID]*OrderLink, len(itemRows))
+	for _, item := range itemRows {
+		link := linksByJob[item.ProcessingID]
+		if link == nil {
+			link = &OrderLink{ID: item.OrderID, Code: item.OrderCode}
+			linksByJob[item.ProcessingID] = link
+		}
+		link.Items = append(link.Items, OrderLinkItem{ID: item.ItemID, Product: item.Product})
+	}
 	views := make([]View, len(rows))
 	for index, row := range rows {
 		job := gen.Processing{
 			ID: row.ID, RollID: row.RollID, LabID: row.LabID, Type: row.Type, Process: row.Process, SentAt: row.SentAt,
-			ScansReceivedAt: row.ScansReceivedAt, ScansExpectedAt: row.ScansExpectedAt, NegativesExpectedAt: row.NegativesExpectedAt, NegativesReturnedAt: row.NegativesReturnedAt, Price: row.Price, OrderItemID: row.OrderItemID, Notes: row.Notes,
+			ScansReceivedAt: row.ScansReceivedAt, ScansExpectedAt: row.ScansExpectedAt, NegativesExpectedAt: row.NegativesExpectedAt, NegativesReturnedAt: row.NegativesReturnedAt, Price: row.Price, Notes: row.Notes,
 		}
 		views[index] = View{Job: job, LabName: row.LabName, ScanOrders: ordersByJob[row.ID], IsOpen: isJobOpen(job), Price: row.Price}
-		if row.OrderItemID != nil && row.OrderID != nil && row.OrderCode != nil && row.OrderProduct != nil {
-			views[index].Price = row.OrderUnitCost
-			views[index].Order = &OrderLink{ID: *row.OrderID, Code: *row.OrderCode, ItemID: *row.OrderItemID, Product: *row.OrderProduct}
+		if link := linksByJob[row.ID]; link != nil {
+			views[index].Price, views[index].Order = row.OrderCost, link
 		}
 	}
 	return views, nil
@@ -279,13 +293,8 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 			return apperror.Unprocessable("invalid_scans_expected_at", "scansExpectedAt cannot be before sentAt")
 		}
 
-		if input.OrderItemID != nil {
-			if input.Price != nil {
-				return apperror.Unprocessable("price_from_order", "a job on an order takes its price from the order line")
-			}
-			if err := checkOrderItem(ctx, queries, *input.OrderItemID, input.LabID, jobID); err != nil {
-				return err
-			}
+		if len(input.OrderItemIDs) > 0 && input.Price != nil {
+			return apperror.Unprocessable("price_from_order", "a job on an order takes its price from its order lines")
 		}
 
 		existing, lookupErr := queries.GetProcessingForUpdate(ctx, gen.GetProcessingForUpdateParams{ID: jobID, OwnerID: requestctx.Owner(ctx)})
@@ -306,7 +315,7 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 			}
 			if _, err := queries.UpdateProcessing(ctx, gen.UpdateProcessingParams{
 				ID: jobID, LabID: input.LabID, SentAt: sentAt, ScansExpectedAt: input.ScansExpectedAt, NegativesExpectedAt: input.NegativesExpectedAt, Price: pointers.Int32(input.Price), Notes: pointers.TrimmedOrNil(input.Notes),
-				Process: process, OwnerID: requestctx.Owner(ctx), OrderItemID: input.OrderItemID,
+				Process: process, OwnerID: requestctx.Owner(ctx),
 			}); err != nil {
 				return err
 			}
@@ -328,7 +337,7 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 			if _, err := queries.InsertProcessing(ctx, gen.InsertProcessingParams{
 				ID: jobID, RollID: rollID, LabID: input.LabID, Type: input.Type, Process: process,
 				SentAt: sentAt, ScansExpectedAt: input.ScansExpectedAt, NegativesExpectedAt: input.NegativesExpectedAt, Price: pointers.Int32(input.Price), Notes: pointers.TrimmedOrNil(input.Notes),
-				OwnerID: requestctx.Owner(ctx), OrderItemID: input.OrderItemID,
+				OwnerID: requestctx.Owner(ctx),
 			}); err != nil {
 				return err
 			}
@@ -339,38 +348,58 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 				return err
 			}
 		}
+		if err := syncOrderItems(ctx, queries, jobID, input.LabID, input.OrderItemIDs); err != nil {
+			return err
+		}
 		view, err = BuildView(ctx, queries, jobID)
 		return err
 	})
 	return view, created, err
 }
 
-// checkOrderItem decides whether a job at a lab may go on an order line: the order must be from
-// that lab, and the line must have room. The row lock keeps two jobs from taking its last place.
-func checkOrderItem(ctx context.Context, queries gen.Querier, itemID uuid.UUID, labID *uuid.UUID, jobID uuid.UUID) error {
+// syncOrderItems makes the job's order lines equal to the given ones. They must be on one order from
+// the job's lab, and each must have room. The row locks keep two jobs from taking a line's last place.
+func syncOrderItems(ctx context.Context, queries gen.Querier, jobID uuid.UUID, labID *uuid.UUID, itemIDs []uuid.UUID) error {
 	owner := requestctx.Owner(ctx)
-	item, err := queries.GetLabOrderItemForUpdate(ctx, gen.GetLabOrderItemForUpdateParams{ID: itemID, OwnerID: owner})
-	if err != nil {
-		if db.IsNoRows(err) {
-			return apperror.Unprocessable("unknown_order_item", "order line does not exist")
+	keep := shared.RemoveDuplicates(itemIDs)
+	slices.SortFunc(keep, func(left, right uuid.UUID) int { return bytes.Compare(left[:], right[:]) })
+	var orderID uuid.UUID
+	for _, itemID := range keep {
+		item, err := queries.GetLabOrderItemForUpdate(ctx, gen.GetLabOrderItemForUpdateParams{ID: itemID, OwnerID: owner})
+		if err != nil {
+			if db.IsNoRows(err) {
+				return apperror.Unprocessable("unknown_order_item", "order line does not exist")
+			}
+			return err
 		}
+		if labID == nil || *labID != item.LabID {
+			return apperror.Unprocessable("order_lab_mismatch", "the job and the order must be from the same lab")
+		}
+		if orderID != uuid.Nil && orderID != item.OrderID {
+			return apperror.Unprocessable("order_items_on_two_orders", "a job's order lines must be on one order")
+		}
+		orderID = item.OrderID
+		taken, err := queries.CountLabOrderItemJobs(ctx, gen.CountLabOrderItemJobsParams{OrderItemID: itemID, OwnerID: owner, ExceptJobID: jobID})
+		if err != nil {
+			return err
+		}
+		if taken >= item.Quantity {
+			return apperror.Conflict("order_item_full", "this order line already has as many rolls as its quantity")
+		}
+	}
+	if err := queries.DeleteJobOrderItemsExcept(ctx, gen.DeleteJobOrderItemsExceptParams{ProcessingID: jobID, Keep: keep}); err != nil {
 		return err
 	}
-	if labID == nil || *labID != item.LabID {
-		return apperror.Unprocessable("order_lab_mismatch", "the job and the order must be from the same lab")
-	}
-	taken, err := queries.CountLabOrderItemJobs(ctx, gen.CountLabOrderItemJobsParams{OrderItemID: &itemID, OwnerID: owner, ExceptJobID: jobID})
-	if err != nil {
-		return err
-	}
-	if taken >= item.Quantity {
-		return apperror.Conflict("order_item_full", "this order line already has as many rolls as its quantity")
+	for _, itemID := range keep {
+		if err := queries.AddJobOrderItem(ctx, gen.AddJobOrderItemParams{ProcessingID: jobID, OrderItemID: itemID}); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-// SetOrderItem puts a job on an order line, or takes it off with a nil line.
-func (service *Service) SetOrderItem(ctx context.Context, jobID uuid.UUID, itemID *uuid.UUID) (View, error) {
+// SetOrderItems replaces the order lines a job is billed on; none takes it off its order.
+func (service *Service) SetOrderItems(ctx context.Context, jobID uuid.UUID, itemIDs []uuid.UUID) (View, error) {
 	var view View
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
 		owner := requestctx.Owner(ctx)
@@ -378,14 +407,11 @@ func (service *Service) SetOrderItem(ctx context.Context, jobID uuid.UUID, itemI
 		if err != nil {
 			return shared.NotFoundOr(err, "processing job")
 		}
-		if itemID != nil {
-			if err := checkOrderItem(ctx, queries, *itemID, job.LabID, jobID); err != nil {
-				return err
-			}
+		if err := syncOrderItems(ctx, queries, jobID, job.LabID, itemIDs); err != nil {
+			return err
 		}
-		// A job on no order keeps its own price when there is nothing to take it off.
-		if itemID != nil || job.OrderItemID != nil {
-			if _, err := queries.SetProcessingOrderItem(ctx, gen.SetProcessingOrderItemParams{ID: jobID, OwnerID: owner, OrderItemID: itemID}); err != nil {
+		if len(itemIDs) > 0 {
+			if err := queries.ClearProcessingPrice(ctx, gen.ClearProcessingPriceParams{ID: jobID, OwnerID: owner}); err != nil {
 				return err
 			}
 		}
@@ -478,6 +504,10 @@ func (service *Service) Delete(ctx context.Context, jobID uuid.UUID) error {
 			return apperror.Conflict("job_has_scans", "a job with scans cannot be deleted; delete its scans first")
 		}
 		if _, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: job.RollID, OwnerID: requestctx.Owner(ctx)}); err != nil {
+			return err
+		}
+		// a deleted job lets go of its order lines
+		if err := queries.DeleteJobOrderItemsExcept(ctx, gen.DeleteJobOrderItemsExceptParams{ProcessingID: jobID, Keep: []uuid.UUID{}}); err != nil {
 			return err
 		}
 		if _, err := queries.SoftDeleteProcessing(ctx, gen.SoftDeleteProcessingParams{ID: jobID, OwnerID: requestctx.Owner(ctx)}); err != nil {

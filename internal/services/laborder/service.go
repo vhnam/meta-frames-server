@@ -241,7 +241,7 @@ func (service *Service) Delete(ctx context.Context, orderID uuid.UUID) error {
 	})
 }
 
-// LinkableJobs lists the jobs at the order's lab that are on no order yet.
+// LinkableJobs lists the jobs at the order's lab that are on no order, or only on this one.
 func (service *Service) LinkableJobs(ctx context.Context, orderID uuid.UUID) ([]Job, error) {
 	queries := service.store.Queries()
 	owner := requestctx.Owner(ctx)
@@ -249,7 +249,7 @@ func (service *Service) LinkableJobs(ctx context.Context, orderID uuid.UUID) ([]
 	if err != nil {
 		return nil, shared.NotFoundOr(err, "lab order")
 	}
-	rows, err := queries.ListLinkableJobs(ctx, gen.ListLinkableJobsParams{OwnerID: owner, LabID: &order.LabID})
+	rows, err := queries.ListLinkableJobs(ctx, gen.ListLinkableJobsParams{OwnerID: owner, LabID: &order.LabID, OrderID: orderID})
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +257,7 @@ func (service *Service) LinkableJobs(ctx context.Context, orderID uuid.UUID) ([]
 	for index, row := range rows {
 		jobs[index] = Job{
 			ID: row.ID, RollID: row.RollID, Type: row.Type, SentAt: row.SentAt,
-			StockName: row.StockBrand + " " + row.StockName, Format: row.Format, Exposures: row.Exposures,
+			StockName: row.StockBrand + " " + row.StockName, Format: row.Format, Exposures: row.Exposures, OrderItemIDs: row.OrderItemIds,
 		}
 	}
 	return jobs, nil

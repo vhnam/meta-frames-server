@@ -319,11 +319,19 @@ func (queries *Memory) ListRollProcessing(_ context.Context, arg gen.ListRollPro
 		if job.RollID == rollID && !job.DeletedAt.Valid {
 			rows = append(rows, gen.ListRollProcessingRow{
 				ID: job.ID, RollID: job.RollID, LabID: job.LabID, Type: job.Type, Process: job.Process, SentAt: job.SentAt,
-				ScansReceivedAt: job.ScansReceivedAt, ScansExpectedAt: job.ScansExpectedAt, NegativesExpectedAt: job.NegativesExpectedAt, NegativesReturnedAt: job.NegativesReturnedAt, Price: job.Price, OrderItemID: job.OrderItemID, Notes: job.Notes,
+				ScansReceivedAt: job.ScansReceivedAt, ScansExpectedAt: job.ScansExpectedAt, NegativesExpectedAt: job.NegativesExpectedAt, NegativesReturnedAt: job.NegativesReturnedAt, Price: job.Price, Notes: job.Notes,
 			})
 		}
 	}
 	return rows, nil
+}
+
+func (queries *Memory) ListJobOrderItems(context.Context, gen.ListJobOrderItemsParams) ([]gen.ListJobOrderItemsRow, error) {
+	return nil, nil
+}
+
+func (queries *Memory) DeleteJobOrderItemsExcept(context.Context, gen.DeleteJobOrderItemsExceptParams) error {
+	return nil
 }
 
 func (queries *Memory) UpsertFrame(_ context.Context, arg gen.UpsertFrameParams) (gen.Frame, error) {
@@ -661,7 +669,7 @@ func (queries *Memory) UpdateLab(_ context.Context, arg gen.UpdateLabParams) (ge
 }
 
 func (queries *Memory) InsertProcessing(_ context.Context, arg gen.InsertProcessingParams) (gen.Processing, error) {
-	job := gen.Processing{ID: arg.ID, RollID: arg.RollID, LabID: arg.LabID, Type: arg.Type, Process: arg.Process, SentAt: arg.SentAt, ScansExpectedAt: arg.ScansExpectedAt, NegativesExpectedAt: arg.NegativesExpectedAt, Price: arg.Price, OrderItemID: arg.OrderItemID, Notes: arg.Notes}
+	job := gen.Processing{ID: arg.ID, RollID: arg.RollID, LabID: arg.LabID, Type: arg.Type, Process: arg.Process, SentAt: arg.SentAt, ScansExpectedAt: arg.ScansExpectedAt, NegativesExpectedAt: arg.NegativesExpectedAt, Price: arg.Price, Notes: arg.Notes}
 	queries.Jobs[arg.ID] = job
 	return job, nil
 }
@@ -669,7 +677,7 @@ func (queries *Memory) InsertProcessing(_ context.Context, arg gen.InsertProcess
 func (queries *Memory) UpdateProcessing(_ context.Context, arg gen.UpdateProcessingParams) (gen.Processing, error) {
 	job := queries.Jobs[arg.ID]
 	job.LabID, job.SentAt, job.ScansExpectedAt, job.NegativesExpectedAt, job.Price, job.Notes = arg.LabID, arg.SentAt, arg.ScansExpectedAt, arg.NegativesExpectedAt, arg.Price, arg.Notes
-	job.Process, job.OrderItemID = arg.Process, arg.OrderItemID
+	job.Process = arg.Process
 	queries.Jobs[arg.ID] = job
 	return job, nil
 }

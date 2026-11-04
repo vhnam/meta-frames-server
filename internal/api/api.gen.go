@@ -51,6 +51,7 @@ const (
 	AuditEntityTypeLabOrderItem        AuditEntityType = "lab_order_item"
 	AuditEntityTypeLens                AuditEntityType = "lens"
 	AuditEntityTypeProcessing          AuditEntityType = "processing"
+	AuditEntityTypeProcessingOrderItem AuditEntityType = "processing_order_item"
 	AuditEntityTypeProcessingScanOrder AuditEntityType = "processing_scan_order"
 	AuditEntityTypeRoll                AuditEntityType = "roll"
 	AuditEntityTypeRollLens            AuditEntityType = "roll_lens"
@@ -78,6 +79,8 @@ func (e AuditEntityType) Valid() bool {
 	case AuditEntityTypeLens:
 		return true
 	case AuditEntityTypeProcessing:
+		return true
+	case AuditEntityTypeProcessingOrderItem:
 		return true
 	case AuditEntityTypeProcessingScanOrder:
 		return true
@@ -693,7 +696,7 @@ type LabOrderItem struct {
 	Product   string  `json:"product"`
 	Quantity  int     `json:"quantity"`
 
-	// UnitCost What a job on this line costs
+	// UnitCost What a job on this line costs, with the order's VAT and discount shared out by price
 	UnitCost  int `json:"unitCost"`
 	UnitPrice int `json:"unitPrice"`
 }
@@ -717,10 +720,13 @@ type LabOrderJob struct {
 	Exposures int                `json:"exposures"`
 	Format    int                `json:"format"`
 	Id        openapi_types.UUID `json:"id"`
-	RollId    openapi_types.UUID `json:"rollId"`
-	SentAt    openapi_types.Date `json:"sentAt"`
-	StockName string             `json:"stockName"`
-	Type      ProcessingType     `json:"type"`
+
+	// OrderItemIds Only in linkable-jobs. The lines of this order the job is already on
+	OrderItemIds *[]openapi_types.UUID `json:"orderItemIds,omitempty"`
+	RollId       openapi_types.UUID    `json:"rollId"`
+	SentAt       openapi_types.Date    `json:"sentAt"`
+	StockName    string                `json:"stockName"`
+	Type         ProcessingType        `json:"type"`
 }
 
 // Lens Example: {"brand":"Nikon","createdAt":"2026-09-01T08:30:00Z","focalLength":50,"id":"a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03","isActive":true,"isBuiltIn":false,"maxAperture":1.4,"model":"Nikkor 50mm f/1.4 AI-S","mount":"F","updatedAt":"2026-09-20T10:00:00Z"}
@@ -816,12 +822,12 @@ type Processing struct {
 	NegativesReturnedAt *openapi_types.Date `json:"negativesReturnedAt,omitempty"`
 	Notes               *string             `json:"notes,omitempty"`
 
-	// Order The order line a job is billed on
+	// Order The order a job is billed on, and its lines there
 	//
-	// Example: {"code":"0510006","id":"7b1f0c52-3d94-4e16-9a70-2c5e8d1f4a10","itemId":"8c2a1d63-4ea5-4f27-ab81-3d6f9e2a5b21","product":"35mm Colour film"}
+	// Example: {"code":"0510006","id":"7b1f0c52-3d94-4e16-9a70-2c5e8d1f4a10","items":[{"id":"8c2a1d63-4ea5-4f27-ab81-3d6f9e2a5b21","product":"35mm Colour film"}]}
 	Order *ProcessingOrder `json:"order,omitempty"`
 
-	// Price From the order line, with the order's VAT and discount shared out, when the job is on an order; otherwise the job's own price
+	// Price From its order lines added up, with the order's VAT and discount shared out, when the job is on an order; otherwise the job's own price
 	Price           *int                `json:"price,omitempty"`
 	Process         Process             `json:"process"`
 	RollId          openapi_types.UUID  `json:"rollId"`
@@ -841,10 +847,10 @@ type ProcessingInput struct {
 	NegativesExpectedAt *openapi_types.Date `json:"negativesExpectedAt,omitempty"`
 	Notes               *string             `json:"notes,omitempty"`
 
-	// OrderItemId The order line this job is billed on. The line's order must be from the job's lab (`422 order_lab_mismatch`) and the line must have room (`409 order_item_full`). Replaces the current link; absent takes the job off its order.
-	OrderItemId *openapi_types.UUID `json:"orderItemId,omitempty"`
+	// OrderItemIds The order lines this job is billed on, such as one for developing and one for scanning. They must be on one order (`422 order_items_on_two_orders`) from the job's lab (`422 order_lab_mismatch`), and each must have room (`409 order_item_full`). Replaces the current set; absent or empty takes the job off its order.
+	OrderItemIds *[]openapi_types.UUID `json:"orderItemIds,omitempty"`
 
-	// Price The job's own price. Not allowed with orderItemId, where the order line sets it (`422 price_from_order`).
+	// Price The job's own price. Not allowed with orderItemIds, where the order lines set it (`422 price_from_order`).
 	Price *int `json:"price,omitempty"`
 
 	// Process Defaults to the film stock's process for a new job. On an existing job it replaces the process; absent keeps the current one.
@@ -861,14 +867,16 @@ type ProcessingInput struct {
 	Type   ProcessingType      `json:"type"`
 }
 
-// ProcessingOrder The order line a job is billed on
+// ProcessingOrder The order a job is billed on, and its lines there
 //
-// Example: {"code":"0510006","id":"7b1f0c52-3d94-4e16-9a70-2c5e8d1f4a10","itemId":"8c2a1d63-4ea5-4f27-ab81-3d6f9e2a5b21","product":"35mm Colour film"}
+// Example: {"code":"0510006","id":"7b1f0c52-3d94-4e16-9a70-2c5e8d1f4a10","items":[{"id":"8c2a1d63-4ea5-4f27-ab81-3d6f9e2a5b21","product":"35mm Colour film"}]}
 type ProcessingOrder struct {
-	Code    string             `json:"code"`
-	Id      openapi_types.UUID `json:"id"`
-	ItemId  openapi_types.UUID `json:"itemId"`
-	Product string             `json:"product"`
+	Code  string             `json:"code"`
+	Id    openapi_types.UUID `json:"id"`
+	Items []struct {
+		Id      openapi_types.UUID `json:"id"`
+		Product string             `json:"product"`
+	} `json:"items"`
 }
 
 // ProcessingType defines model for ProcessingType.
@@ -1152,9 +1160,10 @@ type SearchResult struct {
 	Scans []ScanRef   `json:"scans"`
 }
 
-// SetProcessingOrderItemInput Example: {"orderItemId":"8c2a1d63-4ea5-4f27-ab81-3d6f9e2a5b21"}
-type SetProcessingOrderItemInput struct {
-	OrderItemId openapi_types.UUID `json:"orderItemId"`
+// SetProcessingOrderItemsInput Example: {"orderItemIds":["8c2a1d63-4ea5-4f27-ab81-3d6f9e2a5b21"]}
+type SetProcessingOrderItemsInput struct {
+	// OrderItemIds Replaces the job's lines; empty takes the job off its order
+	OrderItemIds []openapi_types.UUID `json:"orderItemIds"`
 }
 
 // SpendBucket Example: {"filmCost":750000,"incomplete":false,"processingCost":450000}
@@ -1355,8 +1364,8 @@ type SetLensActiveJSONRequestBody = ActiveInput
 // RecordNegativesReturnedJSONRequestBody defines body for RecordNegativesReturned for application/json ContentType.
 type RecordNegativesReturnedJSONRequestBody = DateInput
 
-// SetProcessingOrderItemJSONRequestBody defines body for SetProcessingOrderItem for application/json ContentType.
-type SetProcessingOrderItemJSONRequestBody = SetProcessingOrderItemInput
+// SetProcessingOrderItemsJSONRequestBody defines body for SetProcessingOrderItems for application/json ContentType.
+type SetProcessingOrderItemsJSONRequestBody = SetProcessingOrderItemsInput
 
 // ImportScansMultipartRequestBody defines body for ImportScans for multipart/form-data ContentType.
 type ImportScansMultipartRequestBody ImportScansMultipartBody
@@ -1465,7 +1474,7 @@ type ServerInterface interface {
 	// PutLabOrder Create the order at this id, or replace it and its lines
 	// (PUT /lab-orders/{id})
 	PutLabOrder(c *gin.Context, id Id)
-	// ListLinkableJobs Jobs at the order's lab that are on no order yet
+	// ListLinkableJobs Jobs at the order's lab that are on no order, or only on this one
 	// (GET /lab-orders/{id}/linkable-jobs)
 	ListLinkableJobs(c *gin.Context, id Id)
 
@@ -1516,12 +1525,9 @@ type ServerInterface interface {
 	// RecordNegativesReturned Record that negatives came back from the lab (UC-26)
 	// (PUT /processing/{id}/negatives-returned)
 	RecordNegativesReturned(c *gin.Context, id Id)
-	// ClearProcessingOrderItem Take a job off its order; the job then has no price until one is set
-	// (DELETE /processing/{id}/order-item)
-	ClearProcessingOrderItem(c *gin.Context, id Id)
-	// SetProcessingOrderItem Put a job on an order line
-	// (PUT /processing/{id}/order-item)
-	SetProcessingOrderItem(c *gin.Context, id Id)
+	// SetProcessingOrderItems Set the order lines a job is billed on
+	// (PUT /processing/{id}/order-items)
+	SetProcessingOrderItems(c *gin.Context, id Id)
 	// ListProcessingScans Scan grid of a job, ordered by frame number (UC-32)
 	// (GET /processing/{id}/scans)
 	ListProcessingScans(c *gin.Context, id Id, params ListProcessingScansParams)
@@ -2596,8 +2602,8 @@ func (siw *ServerInterfaceWrapper) RecordNegativesReturned(c *gin.Context) {
 	siw.Handler.RecordNegativesReturned(c, id)
 }
 
-// ClearProcessingOrderItem operation middleware
-func (siw *ServerInterfaceWrapper) ClearProcessingOrderItem(c *gin.Context) {
+// SetProcessingOrderItems operation middleware
+func (siw *ServerInterfaceWrapper) SetProcessingOrderItems(c *gin.Context) {
 
 	var err error
 	_ = err
@@ -2618,32 +2624,7 @@ func (siw *ServerInterfaceWrapper) ClearProcessingOrderItem(c *gin.Context) {
 		}
 	}
 
-	siw.Handler.ClearProcessingOrderItem(c, id)
-}
-
-// SetProcessingOrderItem operation middleware
-func (siw *ServerInterfaceWrapper) SetProcessingOrderItem(c *gin.Context) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id Id
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.SetProcessingOrderItem(c, id)
+	siw.Handler.SetProcessingOrderItems(c, id)
 }
 
 // ListProcessingScans operation middleware
@@ -3543,8 +3524,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/lab-orders/:id", wrapper.GetLabOrder)
 	router.PUT(options.BaseURL+"/lab-orders/:id", wrapper.PutLabOrder)
 	router.GET(options.BaseURL+"/lab-orders/:id/linkable-jobs", wrapper.ListLinkableJobs)
-	router.DELETE(options.BaseURL+"/processing/:id/order-item", wrapper.ClearProcessingOrderItem)
-	router.PUT(options.BaseURL+"/processing/:id/order-item", wrapper.SetProcessingOrderItem)
+	router.PUT(options.BaseURL+"/processing/:id/order-items", wrapper.SetProcessingOrderItems)
 	router.GET(options.BaseURL+"/audit-logs", wrapper.ListAuditLogs)
 	router.GET(options.BaseURL+"/audit-logs/:id", wrapper.GetAuditLog)
 	router.GET(options.BaseURL+"/rolls", wrapper.ListRolls)
@@ -6079,68 +6059,18 @@ func (response RecordNegativesReturned409JSONResponse) VisitRecordNegativesRetur
 	return err
 }
 
-type ClearProcessingOrderItemRequestObject struct {
-	Id Id `json:"id"`
-}
-
-type ClearProcessingOrderItemResponseObject interface {
-	VisitClearProcessingOrderItemResponse(w http.ResponseWriter) error
-}
-
-type ClearProcessingOrderItem200JSONResponse Processing
-
-func (response ClearProcessingOrderItem200JSONResponse) VisitClearProcessingOrderItemResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ClearProcessingOrderItem401JSONResponse struct{ UnauthorizedJSONResponse }
-
-func (response ClearProcessingOrderItem401JSONResponse) VisitClearProcessingOrderItemResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ClearProcessingOrderItem404JSONResponse struct{ NotFoundJSONResponse }
-
-func (response ClearProcessingOrderItem404JSONResponse) VisitClearProcessingOrderItemResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type SetProcessingOrderItemRequestObject struct {
+type SetProcessingOrderItemsRequestObject struct {
 	Id   Id `json:"id"`
-	Body *SetProcessingOrderItemJSONRequestBody
+	Body *SetProcessingOrderItemsJSONRequestBody
 }
 
-type SetProcessingOrderItemResponseObject interface {
-	VisitSetProcessingOrderItemResponse(w http.ResponseWriter) error
+type SetProcessingOrderItemsResponseObject interface {
+	VisitSetProcessingOrderItemsResponse(w http.ResponseWriter) error
 }
 
-type SetProcessingOrderItem200JSONResponse Processing
+type SetProcessingOrderItems200JSONResponse Processing
 
-func (response SetProcessingOrderItem200JSONResponse) VisitSetProcessingOrderItemResponse(w http.ResponseWriter) error {
+func (response SetProcessingOrderItems200JSONResponse) VisitSetProcessingOrderItemsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -6152,9 +6082,9 @@ func (response SetProcessingOrderItem200JSONResponse) VisitSetProcessingOrderIte
 	return err
 }
 
-type SetProcessingOrderItem400JSONResponse struct{ BadRequestJSONResponse }
+type SetProcessingOrderItems400JSONResponse struct{ BadRequestJSONResponse }
 
-func (response SetProcessingOrderItem400JSONResponse) VisitSetProcessingOrderItemResponse(w http.ResponseWriter) error {
+func (response SetProcessingOrderItems400JSONResponse) VisitSetProcessingOrderItemsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -6166,9 +6096,9 @@ func (response SetProcessingOrderItem400JSONResponse) VisitSetProcessingOrderIte
 	return err
 }
 
-type SetProcessingOrderItem401JSONResponse struct{ UnauthorizedJSONResponse }
+type SetProcessingOrderItems401JSONResponse struct{ UnauthorizedJSONResponse }
 
-func (response SetProcessingOrderItem401JSONResponse) VisitSetProcessingOrderItemResponse(w http.ResponseWriter) error {
+func (response SetProcessingOrderItems401JSONResponse) VisitSetProcessingOrderItemsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -6180,9 +6110,9 @@ func (response SetProcessingOrderItem401JSONResponse) VisitSetProcessingOrderIte
 	return err
 }
 
-type SetProcessingOrderItem404JSONResponse struct{ NotFoundJSONResponse }
+type SetProcessingOrderItems404JSONResponse struct{ NotFoundJSONResponse }
 
-func (response SetProcessingOrderItem404JSONResponse) VisitSetProcessingOrderItemResponse(w http.ResponseWriter) error {
+func (response SetProcessingOrderItems404JSONResponse) VisitSetProcessingOrderItemsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -6194,9 +6124,9 @@ func (response SetProcessingOrderItem404JSONResponse) VisitSetProcessingOrderIte
 	return err
 }
 
-type SetProcessingOrderItem409JSONResponse struct{ ConflictJSONResponse }
+type SetProcessingOrderItems409JSONResponse struct{ ConflictJSONResponse }
 
-func (response SetProcessingOrderItem409JSONResponse) VisitSetProcessingOrderItemResponse(w http.ResponseWriter) error {
+func (response SetProcessingOrderItems409JSONResponse) VisitSetProcessingOrderItemsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -6208,9 +6138,9 @@ func (response SetProcessingOrderItem409JSONResponse) VisitSetProcessingOrderIte
 	return err
 }
 
-type SetProcessingOrderItem422JSONResponse struct{ UnprocessableJSONResponse }
+type SetProcessingOrderItems422JSONResponse struct{ UnprocessableJSONResponse }
 
-func (response SetProcessingOrderItem422JSONResponse) VisitSetProcessingOrderItemResponse(w http.ResponseWriter) error {
+func (response SetProcessingOrderItems422JSONResponse) VisitSetProcessingOrderItemsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -8374,7 +8304,7 @@ type StrictServerInterface interface {
 	// PutLabOrder Create the order at this id, or replace it and its lines
 	// (PUT /lab-orders/{id})
 	PutLabOrder(ctx context.Context, request PutLabOrderRequestObject) (PutLabOrderResponseObject, error)
-	// ListLinkableJobs Jobs at the order's lab that are on no order yet
+	// ListLinkableJobs Jobs at the order's lab that are on no order, or only on this one
 	// (GET /lab-orders/{id}/linkable-jobs)
 	ListLinkableJobs(ctx context.Context, request ListLinkableJobsRequestObject) (ListLinkableJobsResponseObject, error)
 
@@ -8425,12 +8355,9 @@ type StrictServerInterface interface {
 	// RecordNegativesReturned Record that negatives came back from the lab (UC-26)
 	// (PUT /processing/{id}/negatives-returned)
 	RecordNegativesReturned(ctx context.Context, request RecordNegativesReturnedRequestObject) (RecordNegativesReturnedResponseObject, error)
-	// ClearProcessingOrderItem Take a job off its order; the job then has no price until one is set
-	// (DELETE /processing/{id}/order-item)
-	ClearProcessingOrderItem(ctx context.Context, request ClearProcessingOrderItemRequestObject) (ClearProcessingOrderItemResponseObject, error)
-	// SetProcessingOrderItem Put a job on an order line
-	// (PUT /processing/{id}/order-item)
-	SetProcessingOrderItem(ctx context.Context, request SetProcessingOrderItemRequestObject) (SetProcessingOrderItemResponseObject, error)
+	// SetProcessingOrderItems Set the order lines a job is billed on
+	// (PUT /processing/{id}/order-items)
+	SetProcessingOrderItems(ctx context.Context, request SetProcessingOrderItemsRequestObject) (SetProcessingOrderItemsResponseObject, error)
 	// ListProcessingScans Scan grid of a job, ordered by frame number (UC-32)
 	// (GET /processing/{id}/scans)
 	ListProcessingScans(ctx context.Context, request ListProcessingScansRequestObject) (ListProcessingScansResponseObject, error)
@@ -9701,39 +9628,13 @@ func (sh *strictHandler) RecordNegativesReturned(ctx *gin.Context, id Id) {
 	}
 }
 
-// ClearProcessingOrderItem operation middleware
-func (sh *strictHandler) ClearProcessingOrderItem(ctx *gin.Context, id Id) {
-	var request ClearProcessingOrderItemRequestObject
+// SetProcessingOrderItems operation middleware
+func (sh *strictHandler) SetProcessingOrderItems(ctx *gin.Context, id Id) {
+	var request SetProcessingOrderItemsRequestObject
 
 	request.Id = id
 
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.ClearProcessingOrderItem(ctx, request.(ClearProcessingOrderItemRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ClearProcessingOrderItem")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		sh.options.HandlerErrorFunc(ctx, err)
-	} else if validResponse, ok := response.(ClearProcessingOrderItemResponseObject); ok {
-		if err := validResponse.VisitClearProcessingOrderItemResponse(ctx.Writer); err != nil {
-			sh.options.ResponseErrorHandlerFunc(ctx, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// SetProcessingOrderItem operation middleware
-func (sh *strictHandler) SetProcessingOrderItem(ctx *gin.Context, id Id) {
-	var request SetProcessingOrderItemRequestObject
-
-	request.Id = id
-
-	var body SetProcessingOrderItemJSONRequestBody
+	var body SetProcessingOrderItemsJSONRequestBody
 	if err := ctx.ShouldBindJSON(&body); err != nil {
 		sh.options.RequestErrorHandlerFunc(ctx, err)
 		return
@@ -9741,18 +9642,18 @@ func (sh *strictHandler) SetProcessingOrderItem(ctx *gin.Context, id Id) {
 	request.Body = &body
 
 	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.SetProcessingOrderItem(ctx, request.(SetProcessingOrderItemRequestObject))
+		return sh.ssi.SetProcessingOrderItems(ctx, request.(SetProcessingOrderItemsRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "SetProcessingOrderItem")
+		handler = middleware(handler, "SetProcessingOrderItems")
 	}
 
 	response, err := handler(ctx, request)
 
 	if err != nil {
 		sh.options.HandlerErrorFunc(ctx, err)
-	} else if validResponse, ok := response.(SetProcessingOrderItemResponseObject); ok {
-		if err := validResponse.VisitSetProcessingOrderItemResponse(ctx.Writer); err != nil {
+	} else if validResponse, ok := response.(SetProcessingOrderItemsResponseObject); ok {
+		if err := validResponse.VisitSetProcessingOrderItemsResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {
