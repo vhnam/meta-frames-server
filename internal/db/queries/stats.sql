@@ -40,6 +40,7 @@ SELECT EXTRACT(YEAR FROM created_at)::int AS year, EXTRACT(MONTH FROM created_at
 FROM roll WHERE owner_id = $1 AND deleted_at IS NULL GROUP BY 1, 2;
 
 -- name: StatsProcessingSpend :many
-SELECT EXTRACT(YEAR FROM sent_at)::int AS year, EXTRACT(MONTH FROM sent_at)::int AS month,
-       COALESCE(sum(price), 0)::int AS cost, (count(*) FILTER (WHERE price IS NULL))::int AS missing
-FROM processing WHERE owner_id = $1 AND deleted_at IS NULL GROUP BY 1, 2;
+SELECT EXTRACT(YEAR FROM p.sent_at)::int AS year, EXTRACT(MONTH FROM p.sent_at)::int AS month,
+       COALESCE(sum(COALESCE(cost.cost, p.price)), 0)::int AS cost, (count(*) FILTER (WHERE COALESCE(cost.cost, p.price) IS NULL))::int AS missing
+FROM processing p LEFT JOIN processing_order_cost cost ON cost.processing_id = p.id
+WHERE p.owner_id = $1 AND p.deleted_at IS NULL GROUP BY 1, 2;

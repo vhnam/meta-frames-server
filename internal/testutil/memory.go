@@ -326,6 +326,14 @@ func (queries *Memory) ListRollProcessing(_ context.Context, arg gen.ListRollPro
 	return rows, nil
 }
 
+func (queries *Memory) ListJobOrderItems(context.Context, gen.ListJobOrderItemsParams) ([]gen.ListJobOrderItemsRow, error) {
+	return nil, nil
+}
+
+func (queries *Memory) DeleteJobOrderItemsExcept(context.Context, gen.DeleteJobOrderItemsExceptParams) error {
+	return nil
+}
+
 func (queries *Memory) UpsertFrame(_ context.Context, arg gen.UpsertFrameParams) (gen.Frame, error) {
 	for _, frame := range queries.Frames {
 		if frame.RollID == arg.RollID && frame.Number == arg.Number {

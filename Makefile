@@ -1,4 +1,4 @@
-.PHONY: gen run run-prod dev test test-unit cover lint docker-build db-up db-down db-reset
+.PHONY: gen run run-prod migrate-prod-status migrate-prod deploy dev test test-unit cover lint docker-build db-up db-down db-reset
 
 # Exports the settings in .env (if present) to the server. The shell reads the file, so
 # "KEY=value   # comment" lines work; values in .env win over the current environment.
@@ -21,6 +21,15 @@ run-prod:
 	test -n "$$DATABASE_URL" || { echo "DATABASE_URL is empty in .env.prod" >&2; exit 1; }; \
 	export DATABASE_URL; \
 	go run ./cmd/api
+
+migrate-prod-status:
+	scripts/migrate-prod.sh status
+
+migrate-prod:
+	scripts/migrate-prod.sh up
+
+deploy:
+	scripts/deploy.sh
 
 dev:
 	$(LOAD_ENV) go tool air -c configs/air.toml 2>/dev/null || air -c configs/air.toml

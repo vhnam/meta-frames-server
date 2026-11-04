@@ -3,6 +3,8 @@ package processing
 import (
 	"context"
 
+	openapi_types "github.com/oapi-codegen/runtime/types"
+
 	"meta-frames-server/internal/api"
 	"meta-frames-server/internal/common/convert"
 	"meta-frames-server/internal/common/pointers"
@@ -29,11 +31,20 @@ func ToAPIProcessing(view processingsvc.View) api.Processing {
 		SentAt: convert.APIDate(job.SentAt), ScansReceivedAt: convert.ToAPIDate(job.ScansReceivedAt),
 		ScansExpectedAt:     convert.ToAPIDate(job.ScansExpectedAt),
 		NegativesExpectedAt: convert.ToAPIDate(job.NegativesExpectedAt),
-		NegativesReturnedAt: convert.ToAPIDate(job.NegativesReturnedAt), Price: pointers.Int(job.Price), Notes: job.Notes,
+		NegativesReturnedAt: convert.ToAPIDate(job.NegativesReturnedAt), Price: pointers.Int(view.Price), Notes: job.Notes,
 		ScanOrders: make([]api.ScanOrder, len(view.ScanOrders)), IsOpen: view.IsOpen,
 	}
 	if view.LabName != "" {
 		mapped.LabName = pointers.To(view.LabName)
+	}
+	if view.Order != nil {
+		mapped.Order = &api.ProcessingOrder{Id: view.Order.ID, Code: view.Order.Code}
+		for _, item := range view.Order.Items {
+			mapped.Order.Items = append(mapped.Order.Items, struct {
+				Id      openapi_types.UUID `json:"id"`
+				Product string             `json:"product"`
+			}{Id: item.ID, Product: item.Product})
+		}
 	}
 	for index, order := range view.ScanOrders {
 		mapped.ScanOrders[index] = api.ScanOrder{
@@ -83,7 +94,7 @@ func (controller *Controller) PutProcessing(ctx context.Context, request api.Put
 	body := request.Body
 	input := processingsvc.Input{
 		LabID: body.LabId, Type: string(body.Type), SentAt: convert.FromAPIDate(body.SentAt),
-		ScansExpectedAt: convert.FromAPIDate(body.ScansExpectedAt), NegativesExpectedAt: convert.FromAPIDate(body.NegativesExpectedAt), Price: body.Price, Notes: body.Notes,
+		ScansExpectedAt: convert.FromAPIDate(body.ScansExpectedAt), NegativesExpectedAt: convert.FromAPIDate(body.NegativesExpectedAt), Price: body.Price, OrderItemIDs: pointers.Value(body.OrderItemIds), Notes: body.Notes,
 	}
 	if body.Process != nil {
 		input.Process = pointers.To(string(*body.Process))
@@ -109,6 +120,14 @@ func (controller *Controller) PutProcessing(ctx context.Context, request api.Put
 		return api.PutProcessing201JSONResponse(ToAPIProcessing(view)), nil
 	}
 	return api.PutProcessing200JSONResponse(ToAPIProcessing(view)), nil
+}
+
+func (controller *Controller) SetProcessingOrderItems(ctx context.Context, request api.SetProcessingOrderItemsRequestObject) (api.SetProcessingOrderItemsResponseObject, error) {
+	view, err := controller.processing.SetOrderItems(ctx, request.Id, request.Body.OrderItemIds)
+	if err != nil {
+		return nil, err
+	}
+	return api.SetProcessingOrderItems200JSONResponse(ToAPIProcessing(view)), nil
 }
 
 func (controller *Controller) RecordScansReceived(ctx context.Context, request api.RecordScansReceivedRequestObject) (api.RecordScansReceivedResponseObject, error) {
