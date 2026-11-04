@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	AddJobOrderItem(ctx context.Context, arg AddJobOrderItemParams) error
 	BuiltInScannerNamed(ctx context.Context, arg BuiltInScannerNamedParams) (bool, error)
 	CameraIsLoaded(ctx context.Context, arg CameraIsLoadedParams) (bool, error)
 	ClaimIdempotencyKey(ctx context.Context, arg ClaimIdempotencyKeyParams) (int64, error)
@@ -18,10 +19,13 @@ type Querier interface {
 	ClaimUnownedData(ctx context.Context, newOwner uuid.UUID) error
 	// Runs before the upserts, so the new default cannot collide with the old one.
 	ClearLabDefaultScanner(ctx context.Context, labID uuid.UUID) error
+	// A job on an order takes its price from its lines, so its own price goes.
+	ClearProcessingPrice(ctx context.Context, arg ClearProcessingPriceParams) error
 	CountCameraRolls(ctx context.Context, arg CountCameraRollsParams) (int64, error)
 	CountLabOrderItemJobs(ctx context.Context, arg CountLabOrderItemJobsParams) (int32, error)
 	DeleteCameraLensesExcept(ctx context.Context, arg DeleteCameraLensesExceptParams) error
 	DeleteExpiredSessions(ctx context.Context) error
+	DeleteJobOrderItemsExcept(ctx context.Context, arg DeleteJobOrderItemsExceptParams) error
 	DeleteLabOrderItem(ctx context.Context, arg DeleteLabOrderItemParams) (int64, error)
 	DeleteLabScannersExcept(ctx context.Context, arg DeleteLabScannersExceptParams) error
 	DeleteRollLensesExcept(ctx context.Context, arg DeleteRollLensesExceptParams) error
@@ -89,6 +93,7 @@ type Querier interface {
 	ListFilmStocks(ctx context.Context, arg ListFilmStocksParams) ([]FilmStock, error)
 	ListFrames(ctx context.Context, arg ListFramesParams) ([]Frame, error)
 	ListJobFrameNumbers(ctx context.Context, arg ListJobFrameNumbersParams) ([]int32, error)
+	ListJobOrderItems(ctx context.Context, arg ListJobOrderItemsParams) ([]ListJobOrderItemsRow, error)
 	ListLabOrderItems(ctx context.Context, arg ListLabOrderItemsParams) ([]ListLabOrderItemsRow, error)
 	ListLabOrderJobs(ctx context.Context, arg ListLabOrderJobsParams) ([]ListLabOrderJobsRow, error)
 	ListLabOrders(ctx context.Context, arg ListLabOrdersParams) ([]ListLabOrdersRow, error)
@@ -96,7 +101,7 @@ type Querier interface {
 	ListLabScanners(ctx context.Context, ownerID uuid.UUID) ([]ListLabScannersRow, error)
 	ListLabs(ctx context.Context, ownerID uuid.UUID) ([]Lab, error)
 	ListLenses(ctx context.Context, arg ListLensesParams) ([]Lens, error)
-	// Jobs at a lab that are on no order yet, newest first.
+	// Jobs at a lab that are on no order, or only on this one, each with the lines it already has.
 	ListLinkableJobs(ctx context.Context, arg ListLinkableJobsParams) ([]ListLinkableJobsRow, error)
 	ListLoadedRolls(ctx context.Context, ownerID uuid.UUID) ([]ListLoadedRollsRow, error)
 	ListProcessingScans(ctx context.Context, arg ListProcessingScansParams) ([]ListProcessingScansRow, error)
@@ -126,8 +131,6 @@ type Querier interface {
 	SetFrameNotes(ctx context.Context, arg SetFrameNotesParams) (Frame, error)
 	SetLensActive(ctx context.Context, arg SetLensActiveParams) (Lens, error)
 	SetNegativesReturned(ctx context.Context, arg SetNegativesReturnedParams) (Processing, error)
-	// A job on an order takes its price from the line, so its own price goes.
-	SetProcessingOrderItem(ctx context.Context, arg SetProcessingOrderItemParams) (Processing, error)
 	SetRollStatus(ctx context.Context, arg SetRollStatusParams) error
 	SetScansReceived(ctx context.Context, arg SetScansReceivedParams) (Processing, error)
 	SoftDeleteBuiltInLenses(ctx context.Context, arg SoftDeleteBuiltInLensesParams) error

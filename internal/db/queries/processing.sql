@@ -27,21 +27,18 @@ SELECT * FROM processing WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL;
 SELECT * FROM processing WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL FOR UPDATE;
 
 -- name: ListRollProcessing :many
-SELECT p.*, COALESCE(l.name, '') AS lab_name, cost.unit_cost AS order_unit_cost, item.product AS order_product,
-       o.id AS order_id, o.code AS order_code
+SELECT p.*, COALESCE(l.name, '') AS lab_name, cost.cost AS order_cost
 FROM processing p LEFT JOIN lab l ON l.id = p.lab_id
-LEFT JOIN lab_order_item item ON item.id = p.order_item_id
-LEFT JOIN lab_order_item_cost cost ON cost.item_id = item.id
-LEFT JOIN lab_order o ON o.id = item.order_id
+LEFT JOIN processing_order_cost cost ON cost.processing_id = p.id
 WHERE p.roll_id = $1 AND p.owner_id = $2 AND p.deleted_at IS NULL ORDER BY p.sent_at, p.created_at;
 
 -- name: InsertProcessing :one
-INSERT INTO processing (id, roll_id, lab_id, type, process, sent_at, scans_expected_at, negatives_expected_at, price, notes, owner_id, order_item_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+INSERT INTO processing (id, roll_id, lab_id, type, process, sent_at, scans_expected_at, negatives_expected_at, price, notes, owner_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING *;
 
 -- name: UpdateProcessing :one
-UPDATE processing SET lab_id = $2, sent_at = $3, scans_expected_at = $4, negatives_expected_at = $5, price = $6, notes = $7, process = $9, order_item_id = $10
+UPDATE processing SET lab_id = $2, sent_at = $3, scans_expected_at = $4, negatives_expected_at = $5, price = $6, notes = $7, process = $9
 WHERE id = $1 AND owner_id = $8 AND deleted_at IS NULL RETURNING *;
 
 -- name: SetScansReceived :one
@@ -51,7 +48,7 @@ UPDATE processing SET scans_received_at = $2 WHERE id = $1 AND owner_id = $3 AND
 UPDATE processing SET negatives_returned_at = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL RETURNING *;
 
 -- name: SoftDeleteProcessing :execrows
-UPDATE processing SET deleted_at = now(), order_item_id = NULL WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL;
+UPDATE processing SET deleted_at = now() WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL;
 
 -- name: ProcessingHasScans :one
 SELECT EXISTS (SELECT 1 FROM scan WHERE processing_id = $1 AND owner_id = $2 AND deleted_at IS NULL);

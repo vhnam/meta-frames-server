@@ -657,10 +657,10 @@ func (q *Queries) RollHasScansReceived(ctx context.Context, arg RollHasScansRece
 
 const rollSpend = `-- name: RollSpend :one
 SELECT COALESCE(r.price, 0)::int AS roll_price, (r.price IS NULL)::bool AS roll_price_missing,
-       (SELECT COALESCE(sum(COALESCE(cost.unit_cost, p.price)), 0) FROM processing p LEFT JOIN lab_order_item_cost cost ON cost.item_id = p.order_item_id
+       (SELECT COALESCE(sum(COALESCE(cost.cost, p.price)), 0) FROM processing p LEFT JOIN processing_order_cost cost ON cost.processing_id = p.id
         WHERE p.roll_id = r.id AND p.deleted_at IS NULL)::int AS processing_price,
-       EXISTS (SELECT 1 FROM processing p LEFT JOIN lab_order_item_cost cost ON cost.item_id = p.order_item_id
-               WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND COALESCE(cost.unit_cost, p.price) IS NULL)::bool AS processing_price_missing
+       EXISTS (SELECT 1 FROM processing p LEFT JOIN processing_order_cost cost ON cost.processing_id = p.id
+               WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND COALESCE(cost.cost, p.price) IS NULL)::bool AS processing_price_missing
 FROM roll r WHERE r.id = $1 AND r.owner_id = $2 AND r.deleted_at IS NULL
 `
 

@@ -182,7 +182,17 @@ type Processing struct {
 	ScansExpectedAt     *time.Time
 	NegativesExpectedAt *time.Time
 	OwnerID             uuid.UUID
-	OrderItemID         *uuid.UUID
+}
+
+type ProcessingOrderCost struct {
+	ProcessingID uuid.UUID
+	Cost         int32
+}
+
+type ProcessingOrderItem struct {
+	ProcessingID uuid.UUID
+	OrderItemID  uuid.UUID
+	CreatedAt    pgtype.Timestamptz
 }
 
 type ProcessingScanOrder struct {
