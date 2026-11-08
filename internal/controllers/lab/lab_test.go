@@ -7,8 +7,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"meta-frames-server/internal/api"
+	"meta-frames-server/internal/common/apperror"
 	"meta-frames-server/internal/db/gen"
 	labsvc "meta-frames-server/internal/services/lab"
 	"meta-frames-server/internal/testutil"
@@ -35,6 +37,9 @@ func (stub *queries) ListLabs(_ context.Context, _ uuid.UUID) ([]gen.Lab, error)
 }
 
 func (stub *queries) InsertLab(_ context.Context, arg gen.InsertLabParams) (gen.Lab, error) {
+	if _, taken := stub.labs[arg.ID]; taken {
+		return gen.Lab{}, &pgconn.PgError{Code: "23505"}
+	}
 	lab := gen.Lab{ID: arg.ID, Name: arg.Name, Address: arg.Address}
 	stub.labs[arg.ID] = lab
 	return lab, nil
@@ -155,4 +160,27 @@ func TestCreateLabAssignsAFreshID(test *testing.T) {
 	if _, err := controller.CreateLab(context.Background(), api.CreateLabRequestObject{Body: &api.LabInput{Name: " "}}); err == nil {
 		test.Fatal("expected a validation error")
 	}
+}
+
+func TestPutLabWithIfNoneMatchOnlyCreates(test *testing.T) {
+	controller, stub := newController()
+	ctx := context.Background()
+	id := uuid.New()
+	createOnly := api.PutLabParamsIfNoneMatchAsterisk
+	request := api.PutLabRequestObject{Id: id, Params: api.PutLabParams{IfNoneMatch: &createOnly}, Body: &api.LabInput{Name: "Lab A"}}
+
+	if first, err := controller.PutLab(ctx, request); err != nil {
+		test.Fatal(err)
+	} else if _, ok := first.(api.PutLab201JSONResponse); !ok {
+		test.Fatalf("first = %#v", first)
+	}
+	request.Body = &api.LabInput{Name: "Renamed"}
+	_, err := controller.PutLab(ctx, request)
+	testutil.AssertAppError(test, err, apperror.KindPreconditionFailed, "already_exists")
+	if stub.labs[id].Name != "Lab A" {
+		test.Fatal("a create-only PUT must not update the existing lab")
+	}
+	invalid := api.PutLabParamsIfNoneMatch("W/*")
+	_, err = controller.PutLab(ctx, api.PutLabRequestObject{Id: uuid.New(), Params: api.PutLabParams{IfNoneMatch: &invalid}, Body: &api.LabInput{Name: "Lab B"}})
+	testutil.AssertAppError(test, err, apperror.KindBadRequest, "invalid_precondition")
 }

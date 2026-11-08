@@ -12,9 +12,11 @@ import (
 
 // statusByKind maps business error kinds to HTTP statuses.
 var statusByKind = map[apperror.Kind]int{
-	apperror.KindNotFound:      http.StatusNotFound,
-	apperror.KindConflict:      http.StatusConflict,
-	apperror.KindUnprocessable: http.StatusUnprocessableEntity,
+	apperror.KindNotFound:           http.StatusNotFound,
+	apperror.KindConflict:           http.StatusConflict,
+	apperror.KindUnprocessable:      http.StatusUnprocessableEntity,
+	apperror.KindBadRequest:         http.StatusBadRequest,
+	apperror.KindPreconditionFailed: http.StatusPreconditionFailed,
 }
 
 // WriteProblem renders the standard {code, message} error body and stops the handler chain.

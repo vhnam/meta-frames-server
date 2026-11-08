@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"meta-frames-server/internal/api"
+	"meta-frames-server/internal/common/apperror"
 	"meta-frames-server/internal/common/clock"
 	"meta-frames-server/internal/common/pointers"
 	"meta-frames-server/internal/db/gen"
@@ -122,4 +123,28 @@ func TestCreateFilmStockAssignsAFreshID(test *testing.T) {
 	if _, err := controller.CreateFilmStock(context.Background(), api.CreateFilmStockRequestObject{Body: blank}); err == nil {
 		test.Fatal("expected a validation error")
 	}
+}
+
+func TestPutFilmStockWithIfNoneMatchOnlyCreates(test *testing.T) {
+	controller, memory := newController()
+	ctx := context.Background()
+	id := uuid.New()
+	createOnly := api.PutFilmStockParamsIfNoneMatchAsterisk
+	request := api.PutFilmStockRequestObject{Id: id, Params: api.PutFilmStockParams{IfNoneMatch: &createOnly}, Body: stockInput()}
+
+	if first, err := controller.PutFilmStock(ctx, request); err != nil {
+		test.Fatal(err)
+	} else if _, ok := first.(api.PutFilmStock201JSONResponse); !ok {
+		test.Fatalf("first = %#v", first)
+	}
+	request.Body = stockInput()
+	request.Body.Name = "Ultramax"
+	_, err := controller.PutFilmStock(ctx, request)
+	testutil.AssertAppError(test, err, apperror.KindPreconditionFailed, "already_exists")
+	if memory.Stocks[id].Name != "Gold" {
+		test.Fatal("a create-only PUT must not update the existing stock")
+	}
+	invalid := api.PutFilmStockParamsIfNoneMatch("**")
+	_, err = controller.PutFilmStock(ctx, api.PutFilmStockRequestObject{Id: uuid.New(), Params: api.PutFilmStockParams{IfNoneMatch: &invalid}, Body: stockInput()})
+	testutil.AssertAppError(test, err, apperror.KindBadRequest, "invalid_precondition")
 }

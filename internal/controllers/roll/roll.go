@@ -2,8 +2,11 @@ package roll
 
 import (
 	"context"
+	"strconv"
+	"strings"
 
 	"meta-frames-server/internal/api"
+	"meta-frames-server/internal/common/apperror"
 	"meta-frames-server/internal/common/convert"
 	"meta-frames-server/internal/common/pointers"
 	"meta-frames-server/internal/controllers/filmstock"
@@ -34,7 +37,7 @@ func ToAPIRollSummary(summary rollsvc.Summary) api.RollSummary {
 		CameraId: summary.CameraID, Format: int(summary.Format), Exposures: int(summary.Exposures),
 		Status: api.RollStatus(summary.Status), ShotIso: pointers.Int(summary.ShotIso), Price: pointers.Int(summary.Price),
 		Description: summary.Description, StartedAt: convert.ToAPIDate(summary.StartedAt), FinishedAt: convert.ToAPIDate(summary.FinishedAt),
-		NegativesAtLab: summary.ShowsNegativesAtLab(),
+		NegativesAtLab: summary.ShowsNegativesAtLab(), Version: summary.Version,
 	}
 	if summary.CameraBrand != nil && summary.CameraModel != nil {
 		mapped.CameraName = pointers.To(*summary.CameraBrand + " " + *summary.CameraModel)
@@ -116,18 +119,59 @@ func (controller *Controller) AddRolls(ctx context.Context, request api.AddRolls
 	return api.AddRolls201JSONResponse(toAPIRollSummaries(summaries)), nil
 }
 
+// parseIfMatch reads an If-Match header: `*`, or a comma-separated list of strong entity tags
+// holding a roll version ("3"). Anything else, weak tags included, is refused so that a client
+// that meant to send a precondition never overwrites unconditionally.
+func parseIfMatch(header *string) (*rollsvc.VersionCondition, error) {
+	if header == nil {
+		return nil, nil
+	}
+	invalid := apperror.BadRequest("invalid_precondition", `If-Match must be "*" or quoted roll versions such as "3"`)
+	value := strings.TrimSpace(*header)
+	if value == "*" {
+		return &rollsvc.VersionCondition{Any: true}, nil
+	}
+	condition := rollsvc.VersionCondition{}
+	for _, tag := range strings.Split(value, ",") {
+		digits, quoted := strings.CutPrefix(strings.TrimSpace(tag), `"`)
+		digits, closed := strings.CutSuffix(digits, `"`)
+		if !quoted || !closed || digits == "" || strings.Trim(digits, "0123456789") != "" {
+			return nil, invalid
+		}
+		version, err := strconv.ParseInt(digits, 10, 64)
+		if err != nil {
+			return nil, invalid
+		}
+		condition.Versions = append(condition.Versions, version)
+	}
+	return &condition, nil
+}
+
 func (controller *Controller) PutRoll(ctx context.Context, request api.PutRollRequestObject) (api.PutRollResponseObject, error) {
 	body := request.Body
+	ifMatch, err := parseIfMatch(request.Params.IfMatch)
+	if err != nil {
+		return nil, err
+	}
 	expiryYear, expiryMonth := expiryInput(body.Expiry)
 	detail, err := controller.rolls.Update(ctx, request.Id, rollsvc.Input{
 		FilmStockID: body.FilmStockId, Format: body.Format, Exposures: body.Exposures, Price: body.Price,
 		ExpiryYear: expiryYear, ExpiryMonth: expiryMonth, ShotISO: body.ShotIso,
 		StartedAt: convert.FromAPIDate(body.StartedAt), FinishedAt: convert.FromAPIDate(body.FinishedAt), Description: body.Description,
+		IfMatch: ifMatch,
 	})
 	if err != nil {
 		return nil, err
 	}
 	return api.PutRoll200JSONResponse(toAPIRollDetail(detail)), nil
+}
+
+func (controller *Controller) PutRollNotes(ctx context.Context, request api.PutRollNotesRequestObject) (api.PutRollNotesResponseObject, error) {
+	detail, err := controller.rolls.SetNotes(ctx, request.Id, request.Body.Description, request.Body.BaseDescription)
+	if err != nil {
+		return nil, err
+	}
+	return api.PutRollNotes200JSONResponse(toAPIRollDetail(detail)), nil
 }
 
 func (controller *Controller) LoadRoll(ctx context.Context, request api.LoadRollRequestObject) (api.LoadRollResponseObject, error) {

@@ -304,6 +304,81 @@ func (e StockType) Valid() bool {
 	}
 }
 
+// Defines values for IfNoneMatchCreateOnly.
+const (
+	IfNoneMatchCreateOnlyAsterisk IfNoneMatchCreateOnly = "*"
+)
+
+// Valid indicates whether the value is a known member of the IfNoneMatchCreateOnly enum.
+func (e IfNoneMatchCreateOnly) Valid() bool {
+	switch e {
+	case IfNoneMatchCreateOnlyAsterisk:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PutCameraParamsIfNoneMatch.
+const (
+	PutCameraParamsIfNoneMatchAsterisk PutCameraParamsIfNoneMatch = "*"
+)
+
+// Valid indicates whether the value is a known member of the PutCameraParamsIfNoneMatch enum.
+func (e PutCameraParamsIfNoneMatch) Valid() bool {
+	switch e {
+	case PutCameraParamsIfNoneMatchAsterisk:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PutFilmStockParamsIfNoneMatch.
+const (
+	PutFilmStockParamsIfNoneMatchAsterisk PutFilmStockParamsIfNoneMatch = "*"
+)
+
+// Valid indicates whether the value is a known member of the PutFilmStockParamsIfNoneMatch enum.
+func (e PutFilmStockParamsIfNoneMatch) Valid() bool {
+	switch e {
+	case PutFilmStockParamsIfNoneMatchAsterisk:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PutLabParamsIfNoneMatch.
+const (
+	PutLabParamsIfNoneMatchAsterisk PutLabParamsIfNoneMatch = "*"
+)
+
+// Valid indicates whether the value is a known member of the PutLabParamsIfNoneMatch enum.
+func (e PutLabParamsIfNoneMatch) Valid() bool {
+	switch e {
+	case PutLabParamsIfNoneMatchAsterisk:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PutLensParamsIfNoneMatch.
+const (
+	PutLensParamsIfNoneMatchAsterisk PutLensParamsIfNoneMatch = "*"
+)
+
+// Valid indicates whether the value is a known member of the PutLensParamsIfNoneMatch enum.
+func (e PutLensParamsIfNoneMatch) Valid() bool {
+	switch e {
+	case PutLensParamsIfNoneMatchAsterisk:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ImportScansMultipartBodyOnConflict.
 const (
 	Replace ImportScansMultipartBodyOnConflict = "replace"
@@ -428,16 +503,16 @@ type ExpiryMonth struct {
 	Year  int  `json:"year"`
 }
 
-// ExpiryRoll Example: {"expired":false,"expiresOn":"2027-06-30","roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400"}}
+// ExpiryRoll Example: {"expired":false,"expiresOn":"2027-06-30","roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}}
 type ExpiryRoll struct {
 	Expired   bool               `json:"expired"`
 	ExpiresOn openapi_types.Date `json:"expiresOn"`
 
-	// Roll Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400"}
+	// Roll Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}
 	Roll RollSummary `json:"roll"`
 }
 
-// ExpiryView Example: {"expiring":[{"expired":false,"expiresOn":"2027-06-30","roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400"}}],"noExpiry":[]}
+// ExpiryView Example: {"expiring":[{"expired":false,"expiresOn":"2027-06-30","roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}}],"noExpiry":[]}
 type ExpiryView struct {
 	Expiring []ExpiryRoll  `json:"expiring"`
 	NoExpiry []RollSummary `json:"noExpiry"`
@@ -533,9 +608,11 @@ type FrameComparison struct {
 	Scans []Scan `json:"scans"`
 }
 
-// FrameInput Example: {"notes":"Golden hour on the bridge"}
+// FrameInput Example: {"baseNotes":"","notes":"Golden hour on the bridge"}
 type FrameInput struct {
-	Notes *string `json:"notes,omitempty"`
+	// BaseNotes The notes this edit was based on ("" when the frame had none). When sent, the server compares trimmed text: if the frame already holds `notes`, nothing is written (200); if it still holds `baseNotes`, `notes` is saved; otherwise `409 frame_notes_conflict` and nothing changes. Leave it out to overwrite whatever is stored.
+	BaseNotes *string `json:"baseNotes,omitempty"`
+	Notes     *string `json:"notes,omitempty"`
 }
 
 // GearStats Example: {"cameras":[{"id":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","label":"Nikon FM2","rolls":12}],"lenses":[{"id":"a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03","label":"Nikon Nikkor 50mm f/1.4 AI-S","rolls":9}]}
@@ -907,7 +984,7 @@ type ResetPasswordInput struct {
 	Token    string `json:"token"`
 }
 
-// RollDetail Example: {"frames":[],"lenses":[{"brand":"Nikon","createdAt":"2026-09-01T08:30:00Z","focalLength":50,"id":"a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03","isActive":true,"isBuiltIn":false,"maxAperture":1.4,"model":"Nikkor 50mm f/1.4 AI-S","mount":"F","updatedAt":"2026-09-20T10:00:00Z"}],"processing":[],"roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400"},"stock":{"boxIso":"400","brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"},"totals":{"incomplete":false,"processingPrice":90000,"rollPrice":150000,"total":240000},"warnings":[]}
+// RollDetail Example: {"frames":[],"lenses":[{"brand":"Nikon","createdAt":"2026-09-01T08:30:00Z","focalLength":50,"id":"a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03","isActive":true,"isBuiltIn":false,"maxAperture":1.4,"model":"Nikkor 50mm f/1.4 AI-S","mount":"F","updatedAt":"2026-09-20T10:00:00Z"}],"processing":[],"roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3},"stock":{"boxIso":"400","brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"},"totals":{"incomplete":false,"processingPrice":90000,"rollPrice":150000,"total":240000},"warnings":[]}
 type RollDetail struct {
 	// BaseStock Example: {"boxIso":"400","brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"}
 	BaseStock  *FilmStock   `json:"baseStock,omitempty"`
@@ -915,7 +992,7 @@ type RollDetail struct {
 	Lenses     []Lens       `json:"lenses"`
 	Processing []Processing `json:"processing"`
 
-	// Roll Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400"}
+	// Roll Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}
 	Roll RollSummary `json:"roll"`
 
 	// Stock Example: {"boxIso":"400","brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"}
@@ -941,10 +1018,19 @@ type RollInput struct {
 	StartedAt   *openapi_types.Date `json:"startedAt,omitempty"`
 }
 
+// RollNotesInput Example: {"baseDescription":"Hanoi street trip","description":"Hanoi street trip, overcast, roll jammed at 30"}
+type RollNotesInput struct {
+	// BaseDescription The notes this edit was based on ("" when the roll had none). Same rules as `FrameInput.baseNotes`, with `409 roll_notes_conflict`. Leave it out to overwrite.
+	BaseDescription *string `json:"baseDescription,omitempty"`
+
+	// Description The roll's notes. Blank clears them.
+	Description string `json:"description"`
+}
+
 // RollStatus defines model for RollStatus.
 type RollStatus string
 
-// RollSummary Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400"}
+// RollSummary Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}
 type RollSummary struct {
 	CameraId    *openapi_types.UUID `json:"cameraId,omitempty"`
 	CameraName  *string             `json:"cameraName,omitempty"`
@@ -964,6 +1050,9 @@ type RollSummary struct {
 	Status         RollStatus          `json:"status"`
 	StockBrand     string              `json:"stockBrand"`
 	StockName      string              `json:"stockName"`
+
+	// Version Grows by one on every change to the roll record (details, load, finish, notes, status changes from its jobs, delete). Send it back as `If-Match: "<version>"` on `PUT /rolls/{id}` so a stale form cannot overwrite a newer change. Frame notes and the roll's lens set are separate records and do not move it.
+	Version int64 `json:"version"`
 }
 
 // RollTotals Example: {"incomplete":false,"processingPrice":90000,"rollPrice":150000,"total":240000}
@@ -1153,9 +1242,9 @@ type ScannerKindOptions struct {
 	Options []ScanOption `json:"options"`
 }
 
-// SearchResult Example: {"roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400"},"scans":[{"frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu","scannerId":"d177cb3c-a850-4232-a4ca-75189b7b279b","scannerName":"Noritsu HS-1800"}]}
+// SearchResult Example: {"roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3},"scans":[{"frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu","scannerId":"d177cb3c-a850-4232-a4ca-75189b7b279b","scannerName":"Noritsu HS-1800"}]}
 type SearchResult struct {
-	// Roll Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400"}
+	// Roll Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}
 	Roll  RollSummary `json:"roll"`
 	Scans []ScanRef   `json:"scans"`
 }
@@ -1207,6 +1296,12 @@ type YearTimeline struct {
 // Id defines model for Id.
 type Id = openapi_types.UUID
 
+// IfMatchRollVersion Example: "3"
+type IfMatchRollVersion = string
+
+// IfNoneMatchCreateOnly defines model for IfNoneMatchCreateOnly.
+type IfNoneMatchCreateOnly string
+
 // AuthBadRequest Example: {"code":"not_found","message":"camera not found"}
 type AuthBadRequest = Problem
 
@@ -1218,6 +1313,9 @@ type Conflict = Problem
 
 // NotFound Example: {"code":"not_found","message":"camera not found"}
 type NotFound = Problem
+
+// PreconditionFailed Example: {"code":"not_found","message":"camera not found"}
+type PreconditionFailed = Problem
 
 // Unauthorized Example: {"code":"not_found","message":"camera not found"}
 type Unauthorized = Problem
@@ -1239,11 +1337,29 @@ type ListCamerasParams struct {
 	ActiveOnly *bool `form:"activeOnly,omitempty" json:"activeOnly,omitempty"`
 }
 
+// PutCameraParams defines parameters for PutCamera.
+type PutCameraParams struct {
+	// IfNoneMatch `*` makes the PUT create-only: the record is created at this id, or, if any record already holds the id (yours, deleted, or another account's), `412 already_exists` and nothing is changed. Any other value is refused with `400`. Without the header the PUT creates or updates.
+	IfNoneMatch *PutCameraParamsIfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// PutCameraParamsIfNoneMatch defines parameters for PutCamera.
+type PutCameraParamsIfNoneMatch string
+
 // ListFilmStocksParams defines parameters for ListFilmStocks.
 type ListFilmStocksParams struct {
 	// Q Match brand or name
 	Q *string `form:"q,omitempty" json:"q,omitempty"`
 }
+
+// PutFilmStockParams defines parameters for PutFilmStock.
+type PutFilmStockParams struct {
+	// IfNoneMatch `*` makes the PUT create-only: the record is created at this id, or, if any record already holds the id (yours, deleted, or another account's), `412 already_exists` and nothing is changed. Any other value is refused with `400`. Without the header the PUT creates or updates.
+	IfNoneMatch *PutFilmStockParamsIfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// PutFilmStockParamsIfNoneMatch defines parameters for PutFilmStock.
+type PutFilmStockParamsIfNoneMatch string
 
 // GetInventoryParams defines parameters for GetInventory.
 type GetInventoryParams struct {
@@ -1260,6 +1376,15 @@ type ListLabOrdersParams struct {
 	LabId *openapi_types.UUID `form:"labId,omitempty" json:"labId,omitempty"`
 }
 
+// PutLabParams defines parameters for PutLab.
+type PutLabParams struct {
+	// IfNoneMatch `*` makes the PUT create-only: the record is created at this id, or, if any record already holds the id (yours, deleted, or another account's), `412 already_exists` and nothing is changed. Any other value is refused with `400`. Without the header the PUT creates or updates.
+	IfNoneMatch *PutLabParamsIfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// PutLabParamsIfNoneMatch defines parameters for PutLab.
+type PutLabParamsIfNoneMatch string
+
 // ListLensesParams defines parameters for ListLenses.
 type ListLensesParams struct {
 	ActiveOnly *bool `form:"activeOnly,omitempty" json:"activeOnly,omitempty"`
@@ -1267,6 +1392,15 @@ type ListLensesParams struct {
 	// PreferMount Lenses with this mount are listed first
 	PreferMount *string `form:"preferMount,omitempty" json:"preferMount,omitempty"`
 }
+
+// PutLensParams defines parameters for PutLens.
+type PutLensParams struct {
+	// IfNoneMatch `*` makes the PUT create-only: the record is created at this id, or, if any record already holds the id (yours, deleted, or another account's), `412 already_exists` and nothing is changed. Any other value is refused with `400`. Without the header the PUT creates or updates.
+	IfNoneMatch *PutLensParamsIfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// PutLensParamsIfNoneMatch defines parameters for PutLens.
+type PutLensParamsIfNoneMatch string
 
 // ListProcessingScansParams defines parameters for ListProcessingScans.
 type ListProcessingScansParams struct {
@@ -1308,6 +1442,12 @@ type ListRollsParams struct {
 // AddRollsParams defines parameters for AddRolls.
 type AddRollsParams struct {
 	IdempotencyKey *string `json:"Idempotency-Key,omitempty"`
+}
+
+// PutRollParams defines parameters for PutRoll.
+type PutRollParams struct {
+	// IfMatch Write only if the roll is still at this version: `"<version>"` (a strong entity tag holding `RollSummary.version`), several comma-separated, or `*` for any version. A different version gets `412 roll_changed` and nothing is written. Weak tags (`W/"…"`) and anything else malformed are refused with `400 invalid_precondition`. Without the header the edit overwrites whatever is stored.
+	IfMatch *IfMatchRollVersion `json:"If-Match,omitempty"`
 }
 
 // SearchRollsParams defines parameters for SearchRolls.
@@ -1394,6 +1534,9 @@ type SetRollLensesJSONRequestBody = CameraLensesInput
 // LoadRollJSONRequestBody defines body for LoadRoll for application/json ContentType.
 type LoadRollJSONRequestBody = LoadRollInput
 
+// PutRollNotesJSONRequestBody defines body for PutRollNotes for application/json ContentType.
+type PutRollNotesJSONRequestBody = RollNotesInput
+
 // PutProcessingJSONRequestBody defines body for PutProcessing for application/json ContentType.
 type PutProcessingJSONRequestBody = ProcessingInput
 
@@ -1428,7 +1571,7 @@ type ServerInterface interface {
 	GetCamera(c *gin.Context, id Id)
 	// PutCamera Create or update a camera (UC-01, UC-02, UC-07). Idempotent upsert.
 	// (PUT /cameras/{id})
-	PutCamera(c *gin.Context, id Id)
+	PutCamera(c *gin.Context, id Id, params PutCameraParams)
 	// SetCameraActive Activate or deactivate a camera (UC-03)
 	// (PUT /cameras/{id}/active)
 	SetCameraActive(c *gin.Context, id Id)
@@ -1455,7 +1598,7 @@ type ServerInterface interface {
 	GetFilmStock(c *gin.Context, id Id)
 	// PutFilmStock Create or update a film stock, including its base stock (UC-10, UC-11, UC-12)
 	// (PUT /film-stocks/{id})
-	PutFilmStock(c *gin.Context, id Id)
+	PutFilmStock(c *gin.Context, id Id, params PutFilmStockParams)
 	// GetHealth Liveness check (does not touch the database)
 	// (GET /health)
 	GetHealth(c *gin.Context)
@@ -1491,7 +1634,7 @@ type ServerInterface interface {
 	GetLab(c *gin.Context, id Id)
 	// PutLab Add or edit a lab (UC-23)
 	// (PUT /labs/{id})
-	PutLab(c *gin.Context, id Id)
+	PutLab(c *gin.Context, id Id, params PutLabParams)
 
 	// (GET /lenses)
 	ListLenses(c *gin.Context, params ListLensesParams)
@@ -1506,7 +1649,7 @@ type ServerInterface interface {
 	GetLens(c *gin.Context, id Id)
 	// PutLens Create or update a lens (UC-04, UC-05). Idempotent upsert.
 	// (PUT /lenses/{id})
-	PutLens(c *gin.Context, id Id)
+	PutLens(c *gin.Context, id Id, params PutLensParams)
 	// SetLensActive Activate or deactivate a lens (UC-06)
 	// (PUT /lenses/{id}/active)
 	SetLensActive(c *gin.Context, id Id)
@@ -1553,9 +1696,9 @@ type ServerInterface interface {
 	// GetRoll Roll details (UC-22)
 	// (GET /rolls/{id})
 	GetRoll(c *gin.Context, id Id)
-	// PutRoll Edit a roll (UC-16)
+	// PutRoll Edit a roll (UC-16). Send If-Match with the version you loaded so a newer change is not overwritten.
 	// (PUT /rolls/{id})
-	PutRoll(c *gin.Context, id Id)
+	PutRoll(c *gin.Context, id Id, params PutRollParams)
 	// FinishRoll Mark a roll as finished shooting (UC-19)
 	// (PUT /rolls/{id}/finish)
 	FinishRoll(c *gin.Context, id Id)
@@ -1574,6 +1717,9 @@ type ServerInterface interface {
 	// LoadRoll Load an in-stock roll into a camera (UC-17). Repeating the same load is a no-op.
 	// (PUT /rolls/{id}/load)
 	LoadRoll(c *gin.Context, id Id)
+	// PutRollNotes Set a roll's notes, and nothing else
+	// (PUT /rolls/{id}/notes)
+	PutRollNotes(c *gin.Context, id Id)
 	// ListRollProcessing Processing history of a roll (UC-29)
 	// (GET /rolls/{id}/processing)
 	ListRollProcessing(c *gin.Context, id Id)
@@ -1835,6 +1981,30 @@ func (siw *ServerInterfaceWrapper) PutCamera(c *gin.Context) {
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PutCameraParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch PutCameraParamsIfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for If-None-Match, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter If-None-Match: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
 	for _, middleware := range siw.HandlerMiddlewares {
 		middleware(c)
 		if c.IsAborted() {
@@ -1842,7 +2012,7 @@ func (siw *ServerInterfaceWrapper) PutCamera(c *gin.Context) {
 		}
 	}
 
-	siw.Handler.PutCamera(c, id)
+	siw.Handler.PutCamera(c, id, params)
 }
 
 // SetCameraActive operation middleware
@@ -2038,6 +2208,30 @@ func (siw *ServerInterfaceWrapper) PutFilmStock(c *gin.Context) {
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PutFilmStockParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch PutFilmStockParamsIfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for If-None-Match, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter If-None-Match: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
 	for _, middleware := range siw.HandlerMiddlewares {
 		middleware(c)
 		if c.IsAborted() {
@@ -2045,7 +2239,7 @@ func (siw *ServerInterfaceWrapper) PutFilmStock(c *gin.Context) {
 		}
 	}
 
-	siw.Handler.PutFilmStock(c, id)
+	siw.Handler.PutFilmStock(c, id, params)
 }
 
 // GetHealth operation middleware
@@ -2322,6 +2516,30 @@ func (siw *ServerInterfaceWrapper) PutLab(c *gin.Context) {
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PutLabParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch PutLabParamsIfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for If-None-Match, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter If-None-Match: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
 	for _, middleware := range siw.HandlerMiddlewares {
 		middleware(c)
 		if c.IsAborted() {
@@ -2329,7 +2547,7 @@ func (siw *ServerInterfaceWrapper) PutLab(c *gin.Context) {
 		}
 	}
 
-	siw.Handler.PutLab(c, id)
+	siw.Handler.PutLab(c, id, params)
 }
 
 // ListLenses operation middleware
@@ -2445,6 +2663,30 @@ func (siw *ServerInterfaceWrapper) PutLens(c *gin.Context) {
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PutLensParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch PutLensParamsIfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for If-None-Match, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter If-None-Match: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
 	for _, middleware := range siw.HandlerMiddlewares {
 		middleware(c)
 		if c.IsAborted() {
@@ -2452,7 +2694,7 @@ func (siw *ServerInterfaceWrapper) PutLens(c *gin.Context) {
 		}
 	}
 
-	siw.Handler.PutLens(c, id)
+	siw.Handler.PutLens(c, id, params)
 }
 
 // SetLensActive operation middleware
@@ -2926,6 +3168,30 @@ func (siw *ServerInterfaceWrapper) PutRoll(c *gin.Context) {
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PutRollParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatchRollVersion
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for If-Match, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter If-Match: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
 	for _, middleware := range siw.HandlerMiddlewares {
 		middleware(c)
 		if c.IsAborted() {
@@ -2933,7 +3199,7 @@ func (siw *ServerInterfaceWrapper) PutRoll(c *gin.Context) {
 		}
 	}
 
-	siw.Handler.PutRoll(c, id)
+	siw.Handler.PutRoll(c, id, params)
 }
 
 // FinishRoll operation middleware
@@ -3102,6 +3368,31 @@ func (siw *ServerInterfaceWrapper) LoadRoll(c *gin.Context) {
 	}
 
 	siw.Handler.LoadRoll(c, id)
+}
+
+// PutRollNotes operation middleware
+func (siw *ServerInterfaceWrapper) PutRollNotes(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PutRollNotes(c, id)
 }
 
 // ListRollProcessing operation middleware
@@ -3536,6 +3827,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PUT(options.BaseURL+"/rolls/:id/load", wrapper.LoadRoll)
 	router.PUT(options.BaseURL+"/rolls/:id/lenses", wrapper.SetRollLenses)
 	router.PUT(options.BaseURL+"/rolls/:id/finish", wrapper.FinishRoll)
+	router.PUT(options.BaseURL+"/rolls/:id/notes", wrapper.PutRollNotes)
 	router.GET(options.BaseURL+"/rolls/:id/processing", wrapper.ListRollProcessing)
 	router.PUT(options.BaseURL+"/rolls/:id/processing/:jobId", wrapper.PutProcessing)
 	router.GET(options.BaseURL+"/rolls/:id/frames", wrapper.ListRollFrames)
@@ -3567,6 +3859,8 @@ type BadRequestJSONResponse Problem
 type ConflictJSONResponse Problem
 
 type NotFoundJSONResponse Problem
+
+type PreconditionFailedJSONResponse Problem
 
 type UnauthorizedJSONResponse Problem
 
@@ -3972,8 +4266,9 @@ func (response GetCamera404JSONResponse) VisitGetCameraResponse(w http.ResponseW
 }
 
 type PutCameraRequestObject struct {
-	Id   Id `json:"id"`
-	Body *PutCameraJSONRequestBody
+	Id     Id `json:"id"`
+	Params PutCameraParams
+	Body   *PutCameraJSONRequestBody
 }
 
 type PutCameraResponseObject interface {
@@ -4046,6 +4341,20 @@ func (response PutCamera409JSONResponse) VisitPutCameraResponse(w http.ResponseW
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutCamera412JSONResponse struct{ PreconditionFailedJSONResponse }
+
+func (response PutCamera412JSONResponse) VisitPutCameraResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(412)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4586,8 +4895,9 @@ func (response GetFilmStock404JSONResponse) VisitGetFilmStockResponse(w http.Res
 }
 
 type PutFilmStockRequestObject struct {
-	Id   Id `json:"id"`
-	Body *PutFilmStockJSONRequestBody
+	Id     Id `json:"id"`
+	Params PutFilmStockParams
+	Body   *PutFilmStockJSONRequestBody
 }
 
 type PutFilmStockResponseObject interface {
@@ -4646,6 +4956,20 @@ func (response PutFilmStock401JSONResponse) VisitPutFilmStockResponse(w http.Res
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutFilmStock412JSONResponse struct{ PreconditionFailedJSONResponse }
+
+func (response PutFilmStock412JSONResponse) VisitPutFilmStockResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(412)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -5258,8 +5582,9 @@ func (response GetLab404JSONResponse) VisitGetLabResponse(w http.ResponseWriter)
 }
 
 type PutLabRequestObject struct {
-	Id   Id `json:"id"`
-	Body *PutLabJSONRequestBody
+	Id     Id `json:"id"`
+	Params PutLabParams
+	Body   *PutLabJSONRequestBody
 }
 
 type PutLabResponseObject interface {
@@ -5318,6 +5643,20 @@ func (response PutLab401JSONResponse) VisitPutLabResponse(w http.ResponseWriter)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutLab412JSONResponse struct{ PreconditionFailedJSONResponse }
+
+func (response PutLab412JSONResponse) VisitPutLabResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(412)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -5587,8 +5926,9 @@ func (response GetLens404JSONResponse) VisitGetLensResponse(w http.ResponseWrite
 }
 
 type PutLensRequestObject struct {
-	Id   Id `json:"id"`
-	Body *PutLensJSONRequestBody
+	Id     Id `json:"id"`
+	Params PutLensParams
+	Body   *PutLensJSONRequestBody
 }
 
 type PutLensResponseObject interface {
@@ -5647,6 +5987,20 @@ func (response PutLens401JSONResponse) VisitPutLensResponse(w http.ResponseWrite
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutLens412JSONResponse struct{ PreconditionFailedJSONResponse }
+
+func (response PutLens412JSONResponse) VisitPutLensResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(412)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -6720,8 +7074,9 @@ func (response GetRoll404JSONResponse) VisitGetRollResponse(w http.ResponseWrite
 }
 
 type PutRollRequestObject struct {
-	Id   Id `json:"id"`
-	Body *PutRollJSONRequestBody
+	Id     Id `json:"id"`
+	Params PutRollParams
+	Body   *PutRollJSONRequestBody
 }
 
 type PutRollResponseObject interface {
@@ -6794,6 +7149,20 @@ func (response PutRoll409JSONResponse) VisitPutRollResponse(w http.ResponseWrite
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutRoll412JSONResponse struct{ PreconditionFailedJSONResponse }
+
+func (response PutRoll412JSONResponse) VisitPutRollResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(412)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -7086,6 +7455,20 @@ func (response PutFrame404JSONResponse) VisitPutFrameResponse(w http.ResponseWri
 	return err
 }
 
+type PutFrame409JSONResponse struct{ ConflictJSONResponse }
+
+func (response PutFrame409JSONResponse) VisitPutFrameResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type SetRollLensesRequestObject struct {
 	Id   Id `json:"id"`
 	Body *SetRollLensesJSONRequestBody
@@ -7268,6 +7651,85 @@ func (response LoadRoll422JSONResponse) VisitLoadRollResponse(w http.ResponseWri
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutRollNotesRequestObject struct {
+	Id   Id `json:"id"`
+	Body *PutRollNotesJSONRequestBody
+}
+
+type PutRollNotesResponseObject interface {
+	VisitPutRollNotesResponse(w http.ResponseWriter) error
+}
+
+type PutRollNotes200JSONResponse RollDetail
+
+func (response PutRollNotes200JSONResponse) VisitPutRollNotesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutRollNotes400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response PutRollNotes400JSONResponse) VisitPutRollNotesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutRollNotes401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response PutRollNotes401JSONResponse) VisitPutRollNotesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutRollNotes404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response PutRollNotes404JSONResponse) VisitPutRollNotesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutRollNotes409JSONResponse struct{ ConflictJSONResponse }
+
+func (response PutRollNotes409JSONResponse) VisitPutRollNotesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -8383,7 +8845,7 @@ type StrictServerInterface interface {
 	// GetRoll Roll details (UC-22)
 	// (GET /rolls/{id})
 	GetRoll(ctx context.Context, request GetRollRequestObject) (GetRollResponseObject, error)
-	// PutRoll Edit a roll (UC-16)
+	// PutRoll Edit a roll (UC-16). Send If-Match with the version you loaded so a newer change is not overwritten.
 	// (PUT /rolls/{id})
 	PutRoll(ctx context.Context, request PutRollRequestObject) (PutRollResponseObject, error)
 	// FinishRoll Mark a roll as finished shooting (UC-19)
@@ -8404,6 +8866,9 @@ type StrictServerInterface interface {
 	// LoadRoll Load an in-stock roll into a camera (UC-17). Repeating the same load is a no-op.
 	// (PUT /rolls/{id}/load)
 	LoadRoll(ctx context.Context, request LoadRollRequestObject) (LoadRollResponseObject, error)
+	// PutRollNotes Set a roll's notes, and nothing else
+	// (PUT /rolls/{id}/notes)
+	PutRollNotes(ctx context.Context, request PutRollNotesRequestObject) (PutRollNotesResponseObject, error)
 	// ListRollProcessing Processing history of a roll (UC-29)
 	// (GET /rolls/{id}/processing)
 	ListRollProcessing(ctx context.Context, request ListRollProcessingRequestObject) (ListRollProcessingResponseObject, error)
@@ -8697,10 +9162,11 @@ func (sh *strictHandler) GetCamera(ctx *gin.Context, id Id) {
 }
 
 // PutCamera operation middleware
-func (sh *strictHandler) PutCamera(ctx *gin.Context, id Id) {
+func (sh *strictHandler) PutCamera(ctx *gin.Context, id Id, params PutCameraParams) {
 	var request PutCameraRequestObject
 
 	request.Id = id
+	request.Params = params
 
 	var body PutCameraJSONRequestBody
 	if err := ctx.ShouldBindJSON(&body); err != nil {
@@ -8955,10 +9421,11 @@ func (sh *strictHandler) GetFilmStock(ctx *gin.Context, id Id) {
 }
 
 // PutFilmStock operation middleware
-func (sh *strictHandler) PutFilmStock(ctx *gin.Context, id Id) {
+func (sh *strictHandler) PutFilmStock(ctx *gin.Context, id Id, params PutFilmStockParams) {
 	var request PutFilmStockRequestObject
 
 	request.Id = id
+	request.Params = params
 
 	var body PutFilmStockJSONRequestBody
 	if err := ctx.ShouldBindJSON(&body); err != nil {
@@ -9282,10 +9749,11 @@ func (sh *strictHandler) GetLab(ctx *gin.Context, id Id) {
 }
 
 // PutLab operation middleware
-func (sh *strictHandler) PutLab(ctx *gin.Context, id Id) {
+func (sh *strictHandler) PutLab(ctx *gin.Context, id Id, params PutLabParams) {
 	var request PutLabRequestObject
 
 	request.Id = id
+	request.Params = params
 
 	var body PutLabJSONRequestBody
 	if err := ctx.ShouldBindJSON(&body); err != nil {
@@ -9424,10 +9892,11 @@ func (sh *strictHandler) GetLens(ctx *gin.Context, id Id) {
 }
 
 // PutLens operation middleware
-func (sh *strictHandler) PutLens(ctx *gin.Context, id Id) {
+func (sh *strictHandler) PutLens(ctx *gin.Context, id Id, params PutLensParams) {
 	var request PutLensRequestObject
 
 	request.Id = id
+	request.Params = params
 
 	var body PutLensJSONRequestBody
 	if err := ctx.ShouldBindJSON(&body); err != nil {
@@ -9902,10 +10371,11 @@ func (sh *strictHandler) GetRoll(ctx *gin.Context, id Id) {
 }
 
 // PutRoll operation middleware
-func (sh *strictHandler) PutRoll(ctx *gin.Context, id Id) {
+func (sh *strictHandler) PutRoll(ctx *gin.Context, id Id, params PutRollParams) {
 	var request PutRollRequestObject
 
 	request.Id = id
+	request.Params = params
 
 	var body PutRollJSONRequestBody
 	if err := ctx.ShouldBindJSON(&body); err != nil {
@@ -10116,6 +10586,39 @@ func (sh *strictHandler) LoadRoll(ctx *gin.Context, id Id) {
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(LoadRollResponseObject); ok {
 		if err := validResponse.VisitLoadRollResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PutRollNotes operation middleware
+func (sh *strictHandler) PutRollNotes(ctx *gin.Context, id Id) {
+	var request PutRollNotesRequestObject
+
+	request.Id = id
+
+	var body PutRollNotesJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.PutRollNotes(ctx, request.(PutRollNotesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PutRollNotes")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(PutRollNotesResponseObject); ok {
+		if err := validResponse.VisitPutRollNotesResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {

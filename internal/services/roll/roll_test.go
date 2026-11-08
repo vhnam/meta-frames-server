@@ -215,9 +215,269 @@ func TestLoadPutsTheRollInTheCameraAndIsRepeatable(test *testing.T) {
 	if !detail.Summary.StartedAt.Equal(day(2026, time.October, 2)) {
 		test.Fatalf("StartedAt = %v, want today", detail.Summary.StartedAt)
 	}
-	again, err := fixture.service.Load(ctx, fixture.rollID, LoadInput{CameraID: fixture.cameraID})
+	again, err := fixture.service.Load(ctx, fixture.rollID, LoadInput{CameraID: fixture.cameraID, LensIDs: &lenses})
 	if err != nil || again.Summary.Status != domain.RollStatusInCamera || len(again.Warnings) != 0 {
 		test.Fatalf("repeat load = %+v err=%v", again, err)
+	}
+}
+
+func TestRepeatedLoadMustMatchEveryRequestedField(test *testing.T) {
+	ctx := context.Background()
+	started := day(2026, time.September, 30)
+	first, second := uuid.New(), uuid.New()
+	request := func() LoadInput {
+		lenses := []uuid.UUID{first, second}
+		return LoadInput{StartedAt: &started, ShotISO: intRef(800), LensIDs: &lenses}
+	}
+	loaded := func(test *testing.T) loadFixture {
+		test.Helper()
+		fixture := newLoadFixture()
+		fixture.queries.Lenses[first] = gen.Lens{ID: first, IsActive: true}
+		fixture.queries.Lenses[second] = gen.Lens{ID: second, IsActive: true}
+		input := request()
+		input.CameraID = fixture.cameraID
+		if _, err := fixture.service.Load(ctx, fixture.rollID, input); err != nil {
+			test.Fatal(err)
+		}
+		return fixture
+	}
+
+	test.Run("identical repeat writes nothing", func(test *testing.T) {
+		fixture := loaded(test)
+		before := fixture.queries.Rolls[fixture.rollID]
+		input := request()
+		input.CameraID = fixture.cameraID
+		reordered := []uuid.UUID{second, first, second}
+		input.LensIDs = &reordered
+		if _, err := fixture.service.Load(ctx, fixture.rollID, input); err != nil {
+			test.Fatal(err)
+		}
+		if fixture.queries.Rolls[fixture.rollID] != before {
+			test.Fatal("an identical repeat must not write")
+		}
+	})
+	mismatches := []struct {
+		name   string
+		change func(input *LoadInput)
+	}{
+		{"start date", func(input *LoadInput) { input.StartedAt = pointers.To(day(2026, time.October, 1)) }},
+		{"start date left out means today", func(input *LoadInput) { input.StartedAt = nil }},
+		{"shot ISO", func(input *LoadInput) { input.ShotISO = intRef(1600) }},
+		{"shot ISO left out", func(input *LoadInput) { input.ShotISO = nil }},
+		{"one lens fewer", func(input *LoadInput) { input.LensIDs = &[]uuid.UUID{first} }},
+		{"no lenses", func(input *LoadInput) { input.LensIDs = nil }},
+		{"another lens", func(input *LoadInput) { input.LensIDs = &[]uuid.UUID{first, uuid.New()} }},
+	}
+	for _, mismatch := range mismatches {
+		test.Run(mismatch.name, func(test *testing.T) {
+			fixture := loaded(test)
+			before := fixture.queries.Rolls[fixture.rollID]
+			input := request()
+			input.CameraID = fixture.cameraID
+			mismatch.change(&input)
+			_, err := fixture.service.Load(ctx, fixture.rollID, input)
+			assertAppError(test, err, apperror.KindConflict, "roll_loaded_differently")
+			if fixture.queries.Rolls[fixture.rollID] != before || len(fixture.queries.RollLenses) != 2 {
+				test.Fatal("a refused repeat must not write")
+			}
+		})
+	}
+	test.Run("box speed and an empty ISO are the same stored value", func(test *testing.T) {
+		fixture := newLoadFixture()
+		if _, err := fixture.service.Load(ctx, fixture.rollID, LoadInput{CameraID: fixture.cameraID, StartedAt: &started}); err != nil {
+			test.Fatal(err)
+		}
+		if _, err := fixture.service.Load(ctx, fixture.rollID, LoadInput{CameraID: fixture.cameraID, StartedAt: &started, ShotISO: intRef(400)}); err != nil {
+			test.Fatalf("box speed 400 is stored as no shot ISO: %v", err)
+		}
+	})
+}
+
+func TestRepeatedLoadIntoAFixedLensCameraIgnoresRequestedLenses(test *testing.T) {
+	fixture := newLoadFixture()
+	ctx := context.Background()
+	builtIn := uuid.New()
+	camera := fixture.queries.Cameras[fixture.cameraID]
+	camera.HasFixedLens = true
+	fixture.queries.Cameras[fixture.cameraID] = camera
+	fixture.queries.Lenses[builtIn] = gen.Lens{ID: builtIn, IsActive: true, IsBuiltIn: true}
+	fixture.queries.Links = append(fixture.queries.Links, gen.CameraLens{CameraID: fixture.cameraID, LensID: builtIn})
+
+	if _, err := fixture.service.Load(ctx, fixture.rollID, LoadInput{CameraID: fixture.cameraID}); err != nil {
+		test.Fatal(err)
+	}
+	ignored := []uuid.UUID{uuid.New()}
+	if _, err := fixture.service.Load(ctx, fixture.rollID, LoadInput{CameraID: fixture.cameraID, LensIDs: &ignored}); err != nil {
+		test.Fatalf("a fixed-lens camera always has its built-in lens: %v", err)
+	}
+	_, err := fixture.service.Load(ctx, fixture.rollID, LoadInput{CameraID: fixture.cameraID, ShotISO: intRef(1600)})
+	assertAppError(test, err, apperror.KindConflict, "roll_loaded_differently")
+}
+
+func TestFinishRepeatedWithTheSameDateIsANoOp(test *testing.T) {
+	fixture := newLoadFixture()
+	ctx := context.Background()
+	roll := fixture.queries.Rolls[fixture.rollID]
+	roll.Status = domain.RollStatusInCamera
+	fixture.queries.Rolls[fixture.rollID] = roll
+	finished := day(2026, time.September, 28)
+
+	if _, err := fixture.service.Finish(ctx, fixture.rollID, &finished); err != nil {
+		test.Fatal(err)
+	}
+	before := fixture.queries.Rolls[fixture.rollID]
+	detail, err := fixture.service.Finish(ctx, fixture.rollID, &finished)
+	if err != nil || detail.Summary.Status != domain.RollStatusDoneShooting {
+		test.Fatalf("replay: detail=%+v err=%v", detail, err)
+	}
+	if fixture.queries.Rolls[fixture.rollID] != before {
+		test.Fatal("a replayed finish must not write")
+	}
+	other := day(2026, time.September, 29)
+	_, err = fixture.service.Finish(ctx, fixture.rollID, &other)
+	assertAppError(test, err, apperror.KindConflict, "roll_not_in_camera")
+	_, err = fixture.service.Finish(ctx, fixture.rollID, nil)
+	assertAppError(test, err, apperror.KindConflict, "roll_not_in_camera")
+
+	// Once the roll has moved on (sent to a lab), the same finish is a visible conflict.
+	roll = fixture.queries.Rolls[fixture.rollID]
+	roll.Status = domain.RollStatusAtLab
+	fixture.queries.Rolls[fixture.rollID] = roll
+	_, err = fixture.service.Finish(ctx, fixture.rollID, &finished)
+	assertAppError(test, err, apperror.KindConflict, "roll_not_in_camera")
+}
+
+func TestSetNotesIsACompareAndSetOnTheDescriptionOnly(test *testing.T) {
+	fixture := newLoadFixture()
+	ctx := context.Background()
+	roll := fixture.queries.Rolls[fixture.rollID]
+	roll.Price, roll.Description = int32Ref(150000), stringRef("Hanoi")
+	fixture.queries.Rolls[fixture.rollID] = roll
+	description := func() *string { return fixture.queries.Rolls[fixture.rollID].Description }
+
+	detail, err := fixture.service.SetNotes(ctx, fixture.rollID, " Hanoi, overcast ", stringRef("Hanoi"))
+	if err != nil || *description() != "Hanoi, overcast" || *detail.Summary.Description != "Hanoi, overcast" {
+		test.Fatalf("apply: description=%v err=%v", description(), err)
+	}
+	if price := fixture.queries.Rolls[fixture.rollID].Price; price == nil || *price != 150000 {
+		test.Fatal("notes must not touch other fields")
+	}
+	before := fixture.queries.Rolls[fixture.rollID]
+	if _, err := fixture.service.SetNotes(ctx, fixture.rollID, "Hanoi, overcast", stringRef("Hanoi")); err != nil {
+		test.Fatalf("replay: %v", err)
+	}
+	if fixture.queries.Rolls[fixture.rollID] != before {
+		test.Fatal("a replay must not write")
+	}
+	_, err = fixture.service.SetNotes(ctx, fixture.rollID, "mine", stringRef("Hanoi"))
+	assertAppError(test, err, apperror.KindConflict, "roll_notes_conflict")
+	if *description() != "Hanoi, overcast" {
+		test.Fatal("a conflict must not write")
+	}
+	if _, err := fixture.service.SetNotes(ctx, fixture.rollID, "  ", stringRef("Hanoi, overcast")); err != nil || description() != nil {
+		test.Fatalf("clear: description=%v err=%v", description(), err)
+	}
+	if _, err := fixture.service.SetNotes(ctx, fixture.rollID, "fresh", stringRef("")); err != nil || *description() != "fresh" {
+		test.Fatalf("empty base after clear: description=%v err=%v", description(), err)
+	}
+	if _, err := fixture.service.SetNotes(ctx, fixture.rollID, "overwrite", nil); err != nil || *description() != "overwrite" {
+		test.Fatalf("no base: description=%v err=%v", description(), err)
+	}
+	_, err = fixture.service.SetNotes(ctx, uuid.New(), "x", nil)
+	assertAppError(test, err, apperror.KindNotFound, "not_found")
+}
+
+func TestUpdateHonoursIfMatchAgainstTheRollVersion(test *testing.T) {
+	ctx := context.Background()
+	edit := func(fixture loadFixture, condition *VersionCondition, description string) error {
+		roll := fixture.queries.Rolls[fixture.rollID]
+		_, err := fixture.service.Update(ctx, fixture.rollID, Input{
+			FilmStockID: roll.FilmStockID, Format: 135, Exposures: 36, Description: &description, IfMatch: condition,
+		})
+		return err
+	}
+	at := func(version int64) *VersionCondition { return &VersionCondition{Versions: []int64{version}} }
+
+	test.Run("mobile note first, then a dashboard edit from the old version", func(test *testing.T) {
+		fixture := newLoadFixture()
+		loaded := fixture.queries.Rolls[fixture.rollID].Version
+		if _, err := fixture.service.SetNotes(ctx, fixture.rollID, "from the phone", stringRef("")); err != nil {
+			test.Fatal(err)
+		}
+		assertAppError(test, edit(fixture, at(loaded), "stale form"), apperror.KindPreconditionFailed, "roll_changed")
+		if *fixture.queries.Rolls[fixture.rollID].Description != "from the phone" {
+			test.Fatal("the stale edit must not overwrite the note")
+		}
+	})
+	test.Run("dashboard edit changing the notes first, then the mobile note from the old base", func(test *testing.T) {
+		fixture := newLoadFixture()
+		loaded := fixture.queries.Rolls[fixture.rollID].Version
+		if err := edit(fixture, at(loaded), "from the dashboard"); err != nil {
+			test.Fatal(err)
+		}
+		_, err := fixture.service.SetNotes(ctx, fixture.rollID, "from the phone", stringRef(""))
+		assertAppError(test, err, apperror.KindConflict, "roll_notes_conflict")
+		if *fixture.queries.Rolls[fixture.rollID].Description != "from the dashboard" {
+			test.Fatal("the dashboard text must stay")
+		}
+	})
+	test.Run("dashboard edit leaving the notes alone does not block the mobile note", func(test *testing.T) {
+		fixture := newLoadFixture()
+		roll := fixture.queries.Rolls[fixture.rollID]
+		_, err := fixture.service.Update(ctx, fixture.rollID, Input{
+			FilmStockID: roll.FilmStockID, Format: 135, Exposures: 36, Price: intRef(90000), IfMatch: at(roll.Version),
+		})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := fixture.service.SetNotes(ctx, fixture.rollID, "from the phone", stringRef("")); err != nil {
+			test.Fatalf("no false conflict: %v", err)
+		}
+	})
+	test.Run("matching, any and absent conditions write", func(test *testing.T) {
+		fixture := newLoadFixture()
+		version := fixture.queries.Rolls[fixture.rollID].Version
+		if err := edit(fixture, &VersionCondition{Versions: []int64{version + 7, version}}, "listed"); err != nil {
+			test.Fatal(err)
+		}
+		if after := fixture.queries.Rolls[fixture.rollID].Version; after != version+1 {
+			test.Fatalf("version = %d, want %d", after, version+1)
+		}
+		if err := edit(fixture, &VersionCondition{Any: true}, "any"); err != nil {
+			test.Fatal(err)
+		}
+		if err := edit(fixture, nil, "legacy client"); err != nil {
+			test.Fatal(err)
+		}
+	})
+}
+
+func TestEveryRollWriterMovesTheVersion(test *testing.T) {
+	fixture := newLoadFixture()
+	ctx := context.Background()
+	versions := []int64{fixture.queries.Rolls[fixture.rollID].Version}
+	record := func(step string, err error) {
+		test.Helper()
+		if err != nil {
+			test.Fatalf("%s: %v", step, err)
+		}
+		versions = append(versions, fixture.queries.Rolls[fixture.rollID].Version)
+	}
+	_, err := fixture.service.Load(ctx, fixture.rollID, LoadInput{CameraID: fixture.cameraID})
+	record("load", err)
+	_, err = fixture.service.SetNotes(ctx, fixture.rollID, "note", nil)
+	record("notes", err)
+	_, err = fixture.service.Finish(ctx, fixture.rollID, nil)
+	record("finish", err)
+	for index := 1; index < len(versions); index++ {
+		if versions[index] <= versions[index-1] {
+			test.Fatalf("versions must grow with every write: %v", versions)
+		}
+	}
+	unchanged := fixture.queries.Rolls[fixture.rollID].Version
+	_, err = fixture.service.SetNotes(ctx, fixture.rollID, "note", nil)
+	if err != nil || fixture.queries.Rolls[fixture.rollID].Version != unchanged {
+		test.Fatal("rewriting the same notes must keep the version")
 	}
 }
 

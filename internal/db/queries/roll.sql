@@ -24,6 +24,9 @@ RETURNING *;
 -- name: FinishRoll :one
 UPDATE roll SET status = 'done_shooting', finished_at = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL RETURNING *;
 
+-- name: SetRollDescription :one
+UPDATE roll SET description = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL RETURNING *;
+
 -- name: SetRollStatus :exec
 UPDATE roll SET status = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL;
 

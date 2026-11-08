@@ -4,6 +4,7 @@ package testutil
 import (
 	"context"
 	"io"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -86,6 +87,9 @@ func (queries *Memory) GetCameraForUpdate(ctx context.Context, arg gen.GetCamera
 }
 
 func (queries *Memory) InsertCamera(_ context.Context, arg gen.InsertCameraParams) (gen.Camera, error) {
+	if _, taken := queries.Cameras[arg.ID]; taken {
+		return gen.Camera{}, &pgconn.PgError{Code: "23505"}
+	}
 	camera := gen.Camera{ID: arg.ID, Brand: arg.Brand, Model: arg.Model, Mount: arg.Mount, Description: arg.Description, HasFixedLens: arg.HasFixedLens, IsActive: true}
 	queries.Cameras[arg.ID] = camera
 	return camera, nil
@@ -150,6 +154,9 @@ func (queries *Memory) GetLensForUpdate(ctx context.Context, arg gen.GetLensForU
 }
 
 func (queries *Memory) InsertLens(_ context.Context, arg gen.InsertLensParams) (gen.Lens, error) {
+	if _, taken := queries.Lenses[arg.ID]; taken {
+		return gen.Lens{}, &pgconn.PgError{Code: "23505"}
+	}
 	lens := gen.Lens{
 		ID: arg.ID, Brand: arg.Brand, Model: arg.Model, Mount: arg.Mount, Description: arg.Description,
 		FocalLength: arg.FocalLength, MaxAperture: arg.MaxAperture, IsBuiltIn: arg.IsBuiltIn, IsActive: true,
@@ -217,6 +224,9 @@ func (queries *Memory) GetFilmStockForUpdate(ctx context.Context, arg gen.GetFil
 }
 
 func (queries *Memory) InsertFilmStock(_ context.Context, arg gen.InsertFilmStockParams) (gen.FilmStock, error) {
+	if _, taken := queries.Stocks[arg.ID]; taken {
+		return gen.FilmStock{}, &pgconn.PgError{Code: "23505"}
+	}
 	stock := gen.FilmStock{
 		ID: arg.ID, Brand: arg.Brand, Name: arg.Name, Type: arg.Type, BoxIso: arg.BoxIso, Process: arg.Process,
 		Packaging: arg.Packaging, StockOrigin: arg.StockOrigin, PackOrigin: arg.PackOrigin, Description: arg.Description,
@@ -273,8 +283,20 @@ func (queries *Memory) GetRollForUpdate(ctx context.Context, arg gen.GetRollForU
 func (queries *Memory) SetRollStatus(_ context.Context, arg gen.SetRollStatusParams) error {
 	roll := queries.Rolls[arg.ID]
 	roll.Status = arg.Status
-	queries.Rolls[arg.ID] = roll
+	queries.saveRoll(roll)
 	return nil
+}
+
+// saveRoll stores a changed roll and, like the roll_bump_version trigger, moves its version on
+// only when something besides the version changed.
+func (queries *Memory) saveRoll(roll gen.Roll) gen.Roll {
+	stored := queries.Rolls[roll.ID]
+	roll.Version = stored.Version
+	if !reflect.DeepEqual(roll, stored) {
+		roll.Version++
+	}
+	queries.Rolls[roll.ID] = roll
+	return roll
 }
 
 func (queries *Memory) RollHasOpenJob(_ context.Context, arg gen.RollHasOpenJobParams) (bool, error) {
@@ -447,22 +469,25 @@ func (queries *Memory) UpdateRoll(_ context.Context, arg gen.UpdateRollParams) (
 	roll.FilmStockID, roll.Format, roll.Exposures, roll.Price = arg.FilmStockID, arg.Format, arg.Exposures, arg.Price
 	roll.ExpiryYear, roll.ExpiryMonth, roll.ShotIso = arg.ExpiryYear, arg.ExpiryMonth, arg.ShotIso
 	roll.StartedAt, roll.FinishedAt, roll.Description = arg.StartedAt, arg.FinishedAt, arg.Description
-	queries.Rolls[arg.ID] = roll
-	return roll, nil
+	return queries.saveRoll(roll), nil
+}
+
+func (queries *Memory) SetRollDescription(_ context.Context, arg gen.SetRollDescriptionParams) (gen.Roll, error) {
+	roll := queries.Rolls[arg.ID]
+	roll.Description = arg.Description
+	return queries.saveRoll(roll), nil
 }
 
 func (queries *Memory) LoadRoll(_ context.Context, arg gen.LoadRollParams) (gen.Roll, error) {
 	roll := queries.Rolls[arg.ID]
 	roll.Status, roll.CameraID, roll.StartedAt, roll.ShotIso = "in_camera", arg.CameraID, arg.StartedAt, arg.ShotIso
-	queries.Rolls[arg.ID] = roll
-	return roll, nil
+	return queries.saveRoll(roll), nil
 }
 
 func (queries *Memory) FinishRoll(_ context.Context, arg gen.FinishRollParams) (gen.Roll, error) {
 	roll := queries.Rolls[arg.ID]
 	roll.Status, roll.FinishedAt = "done_shooting", arg.FinishedAt
-	queries.Rolls[arg.ID] = roll
-	return roll, nil
+	return queries.saveRoll(roll), nil
 }
 
 func (queries *Memory) ListRollSummaries(_ context.Context, arg gen.ListRollSummariesParams) ([]gen.ListRollSummariesRow, error) {
@@ -479,6 +504,7 @@ func (queries *Memory) ListRollSummaries(_ context.Context, arg gen.ListRollSumm
 			ID: roll.ID, FilmStockID: roll.FilmStockID, CameraID: roll.CameraID, Format: roll.Format, Exposures: roll.Exposures,
 			Status: roll.Status, ShotIso: roll.ShotIso, ExpiryYear: roll.ExpiryYear, ExpiryMonth: roll.ExpiryMonth, Price: roll.Price,
 			StartedAt: roll.StartedAt, FinishedAt: roll.FinishedAt, StockBrand: stock.Brand, StockName: stock.Name, BoxIso: stock.BoxIso,
+			Description: roll.Description, Version: roll.Version,
 		})
 	}
 	sort.Slice(rows, func(left, right int) bool { return rows[left].ID.String() < rows[right].ID.String() })
@@ -550,6 +576,15 @@ func (queries *Memory) ListFrames(_ context.Context, arg gen.ListFramesParams) (
 	}
 	sort.Slice(frames, func(left, right int) bool { return frames[left].Number < frames[right].Number })
 	return frames, nil
+}
+
+func (queries *Memory) GetFrameByNumber(_ context.Context, arg gen.GetFrameByNumberParams) (gen.Frame, error) {
+	for _, frame := range queries.Frames {
+		if frame.RollID == arg.RollID && frame.Number == arg.Number {
+			return frame, nil
+		}
+	}
+	return gen.Frame{}, pgx.ErrNoRows
 }
 
 func (queries *Memory) SetFrameNotes(_ context.Context, arg gen.SetFrameNotesParams) (gen.Frame, error) {

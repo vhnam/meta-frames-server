@@ -71,6 +71,16 @@ func (controller *Controller) CreateLens(ctx context.Context, request api.Create
 
 func (controller *Controller) PutLens(ctx context.Context, request api.PutLensRequestObject) (api.PutLensResponseObject, error) {
 	input := toLensInput(request.Body)
+	if request.Params.IfNoneMatch != nil {
+		if !request.Params.IfNoneMatch.Valid() {
+			return nil, apperror.InvalidCreateOnly()
+		}
+		lens, err := controller.lenses.Create(ctx, request.Id, input)
+		if err != nil {
+			return nil, apperror.CreateOnly(err)
+		}
+		return api.PutLens201JSONResponse(toAPILens(lens)), nil
+	}
 	lens, err := controller.lenses.Update(ctx, request.Id, input)
 	if apperror.IsNotFound(err) {
 		if lens, err = controller.lenses.Create(ctx, request.Id, input); err != nil {

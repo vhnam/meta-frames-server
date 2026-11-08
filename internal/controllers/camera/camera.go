@@ -82,6 +82,16 @@ func (controller *Controller) CreateCamera(ctx context.Context, request api.Crea
 
 func (controller *Controller) PutCamera(ctx context.Context, request api.PutCameraRequestObject) (api.PutCameraResponseObject, error) {
 	input := toCameraInput(request.Body)
+	if request.Params.IfNoneMatch != nil {
+		if !request.Params.IfNoneMatch.Valid() {
+			return nil, apperror.InvalidCreateOnly()
+		}
+		view, err := controller.cameras.Create(ctx, request.Id, input)
+		if err != nil {
+			return nil, apperror.CreateOnly(err)
+		}
+		return api.PutCamera201JSONResponse(toAPICamera(view)), nil
+	}
 	view, err := controller.cameras.Update(ctx, request.Id, input)
 	if apperror.IsNotFound(err) {
 		if view, err = controller.cameras.Create(ctx, request.Id, input); err != nil {
