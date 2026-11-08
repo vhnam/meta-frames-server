@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"meta-frames-server/internal/api"
+	"meta-frames-server/internal/common/apperror"
 	"meta-frames-server/internal/common/clock"
 	"meta-frames-server/internal/common/pointers"
 	"meta-frames-server/internal/db/gen"
@@ -129,4 +130,28 @@ func TestCreateCameraAssignsAFreshID(test *testing.T) {
 	if _, err := controller.CreateCamera(ctx, api.CreateCameraRequestObject{Body: &api.CameraInput{Brand: " "}}); err == nil {
 		test.Fatal("expected a validation error")
 	}
+}
+
+func TestPutCameraWithIfNoneMatchOnlyCreates(test *testing.T) {
+	controller, memory := newController()
+	ctx := context.Background()
+	id := uuid.New()
+	createOnly := api.PutCameraParamsIfNoneMatchAsterisk
+	request := api.PutCameraRequestObject{Id: id, Params: api.PutCameraParams{IfNoneMatch: &createOnly}, Body: interchangeable()}
+
+	if first, err := controller.PutCamera(ctx, request); err != nil {
+		test.Fatal(err)
+	} else if _, ok := first.(api.PutCamera201JSONResponse); !ok {
+		test.Fatalf("first = %#v", first)
+	}
+	request.Body = interchangeable()
+	request.Body.Model = "F3"
+	_, err := controller.PutCamera(ctx, request)
+	testutil.AssertAppError(test, err, apperror.KindPreconditionFailed, "already_exists")
+	if memory.Cameras[id].Model == "F3" {
+		test.Fatal("a create-only PUT must not update the existing camera")
+	}
+	invalid := api.PutCameraParamsIfNoneMatch(`"1"`)
+	_, err = controller.PutCamera(ctx, api.PutCameraRequestObject{Id: uuid.New(), Params: api.PutCameraParams{IfNoneMatch: &invalid}, Body: interchangeable()})
+	testutil.AssertAppError(test, err, apperror.KindBadRequest, "invalid_precondition")
 }

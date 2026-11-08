@@ -60,6 +60,16 @@ func (controller *Controller) CreateLab(ctx context.Context, request api.CreateL
 }
 
 func (controller *Controller) PutLab(ctx context.Context, request api.PutLabRequestObject) (api.PutLabResponseObject, error) {
+	if request.Params.IfNoneMatch != nil {
+		if !request.Params.IfNoneMatch.Valid() {
+			return nil, apperror.InvalidCreateOnly()
+		}
+		lab, err := controller.labs.Create(ctx, request.Id, toInput(request.Body))
+		if err != nil {
+			return nil, apperror.CreateOnly(err)
+		}
+		return api.PutLab201JSONResponse(toAPILab(lab)), nil
+	}
 	lab, err := controller.labs.Update(ctx, request.Id, toInput(request.Body))
 	if apperror.IsNotFound(err) {
 		if lab, err = controller.labs.Create(ctx, request.Id, toInput(request.Body)); err != nil {

@@ -579,6 +579,8 @@ paths:
       tags: [Cameras]
       operationId: putCamera
       summary: Create or update a camera (UC-01, UC-02, UC-07). Idempotent upsert.
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatchCreateOnly"
       requestBody:
         required: true
         content:
@@ -648,6 +650,7 @@ paths:
                     isActive: true
                     createdAt: "2026-09-01T08:30:00Z"
                     updatedAt: "2026-09-20T10:00:00Z"
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/Unprocessable" }
@@ -951,6 +954,8 @@ paths:
       tags: [Lenses]
       operationId: putLens
       summary: Create or update a lens (UC-04, UC-05). Idempotent upsert.
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatchCreateOnly"
       requestBody:
         required: true
         content:
@@ -1023,6 +1028,7 @@ paths:
                     isActive: true
                     createdAt: "2026-09-01T08:30:00Z"
                     updatedAt: "2026-09-20T10:00:00Z"
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "422": { $ref: "#/components/responses/Unprocessable" }
     delete:
@@ -1281,6 +1287,8 @@ paths:
       tags: [Film stocks]
       operationId: putFilmStock
       summary: Create or update a film stock, including its base stock (UC-10, UC-11, UC-12)
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatchCreateOnly"
       requestBody:
         required: true
         content:
@@ -1375,6 +1383,7 @@ paths:
                     siblings: []
                     derived: []
                     warnings: []
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "422": { $ref: "#/components/responses/Unprocessable" }
     delete:
@@ -1521,6 +1530,8 @@ paths:
       tags: [Labs]
       operationId: putLab
       summary: Add or edit a lab (UC-23)
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatchCreateOnly"
       requestBody:
         required: true
         content:
@@ -1573,6 +1584,7 @@ paths:
                     createdAt: "2026-09-01T08:30:00Z"
                     updatedAt: "2026-09-20T10:00:00Z"
                     scannerIds: [d177cb3c-a850-4232-a4ca-75189b7b279b]
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "422": { $ref: "#/components/responses/Unprocessable" }
     delete:
@@ -2075,6 +2087,7 @@ paths:
                       description: Hanoi street trip
                       startedAt: "2026-09-01"
                       negativesAtLab: false
+                      version: 3
                     - id: 6b5a4938-2716-4f05-9e8d-7c6b5a493827
                       filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
                       stockBrand: Kodak
@@ -2087,6 +2100,7 @@ paths:
                         month: 6
                       price: 150000
                       negativesAtLab: false
+                      version: 3
         "400": { $ref: "#/components/responses/BadRequest" }
 
   /rolls/bulk:
@@ -2142,6 +2156,7 @@ paths:
                         month: 6
                       price: 150000
                       negativesAtLab: false
+                      version: 3
                     - id: 7c6b5a49-3827-4160-8f9e-8d7c6b5a4938
                       filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
                       stockBrand: Kodak
@@ -2154,6 +2169,7 @@ paths:
                         month: 6
                       price: 150000
                       negativesAtLab: false
+                      version: 3
         "400": { $ref: "#/components/responses/BadRequest" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/Unprocessable" }
@@ -2188,6 +2204,7 @@ paths:
                             month: 6
                           price: 150000
                           negativesAtLab: false
+                          version: 3
                         expiresOn: "2027-06-30"
                         expired: false
                     noExpiry: []
@@ -2228,6 +2245,7 @@ paths:
                       description: Hanoi street trip
                       startedAt: "2026-09-01"
                       negativesAtLab: false
+                      version: 3
                     stock:
                       id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
                       brand: Kodak
@@ -2293,7 +2311,9 @@ paths:
     put:
       tags: [Rolls]
       operationId: putRoll
-      summary: Edit a roll (UC-16)
+      summary: Edit a roll (UC-16). Send If-Match with the version you loaded so a newer change is not overwritten.
+      parameters:
+        - $ref: "#/components/parameters/IfMatchRollVersion"
       requestBody:
         required: true
         content:
@@ -2343,6 +2363,7 @@ paths:
                       description: Hanoi street trip
                       startedAt: "2026-09-01"
                       negativesAtLab: false
+                      version: 3
                     stock:
                       id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
                       brand: Kodak
@@ -2406,6 +2427,7 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
         "422": { $ref: "#/components/responses/Unprocessable" }
     delete:
       tags: [Rolls]
@@ -2425,6 +2447,13 @@ paths:
       tags: [Rolls]
       operationId: loadRoll
       summary: Load an in-stock roll into a camera (UC-17). Repeating the same load is a no-op.
+      description: >-
+        A repeat for the camera already holding the roll is a no-op (200, nothing written) only
+        when it asks for the same start date (today when left out), the same shot ISO (as stored:
+        the box speed of a single-speed stock is stored as none) and the same lens set (for a
+        fixed-lens camera, its built-in lens whatever `lensIds` says). Any difference is
+        `409 roll_loaded_differently`. A load of a roll that has moved on (finished, at a lab) is
+        `409 roll_not_in_stock`.
       requestBody:
         required: true
         content:
@@ -2472,6 +2501,7 @@ paths:
                       description: Hanoi street trip
                       startedAt: "2026-09-01"
                       negativesAtLab: false
+                      version: 3
                     stock:
                       id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
                       brand: Kodak
@@ -2589,6 +2619,10 @@ paths:
       tags: [Rolls]
       operationId: finishRoll
       summary: Mark a roll as finished shooting (UC-19)
+      description: >-
+        Repeating a finish on a roll that is done shooting with the same date (today when left
+        out) is a no-op (200, nothing written). Another date, or a roll in any other status
+        (including one that has since gone to a lab), is `409 roll_not_in_camera`.
       requestBody:
         content:
           application/json:
@@ -2630,6 +2664,7 @@ paths:
                       description: Hanoi street trip
                       startedAt: "2026-09-01"
                       negativesAtLab: false
+                      version: 3
                       finishedAt: "2026-09-28"
                     stock:
                       id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
@@ -2691,6 +2726,45 @@ paths:
                       total: 240000
                       incomplete: false
                     warnings: []
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /rolls/{id}/notes:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Rolls]
+      operationId: putRollNotes
+      summary: Set a roll's notes, and nothing else
+      description: >-
+        Writes only the roll's notes (`description`), so it never reverts other fields. With
+        `baseDescription`, the edit is a compare-and-set: already holding `description` is a no-op
+        (200, nothing written), still holding `baseDescription` saves it, anything else is
+        `409 roll_notes_conflict` and nothing changes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RollNotesInput" }
+            examples:
+              basedOn:
+                summary: Add to the notes this client last saw
+                value:
+                  description: "Hanoi street trip, overcast, roll jammed at 30"
+                  baseDescription: Hanoi street trip
+              clear:
+                summary: Clear the notes
+                value:
+                  description: ""
+                  baseDescription: Hanoi street trip
+      responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "200":
+          description: Roll
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RollDetail" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
@@ -2938,6 +3012,11 @@ paths:
               clear:
                 summary: Clear the note
                 value: {}
+              basedOn:
+                summary: Edit only if the note is still what this client last saw
+                value:
+                  notes: Golden hour on the bridge, slight shake
+                  baseNotes: Golden hour on the bridge
       responses:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
@@ -2961,6 +3040,7 @@ paths:
                         processingId: 2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /processing/{id}:
     parameters:
@@ -3499,6 +3579,7 @@ paths:
                         description: Hanoi street trip
                         startedAt: "2026-09-01"
                         negativesAtLab: false
+                        version: 3
                       scans:
                         - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
                           frameNumber: 7
@@ -3632,6 +3713,30 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    IfMatchRollVersion:
+      name: If-Match
+      in: header
+      description: >-
+        Write only if the roll is still at this version: `"<version>"` (a strong entity tag
+        holding `RollSummary.version`), several comma-separated, or `*` for any version. A
+        different version gets `412 roll_changed` and nothing is written. Weak tags (`W/"…"`) and
+        anything else malformed are refused with `400 invalid_precondition`. Without the header
+        the edit overwrites whatever is stored.
+      schema:
+        type: string
+        maxLength: 1000
+        example: '"3"'
+    IfNoneMatchCreateOnly:
+      name: If-None-Match
+      in: header
+      description: >-
+        `*` makes the PUT create-only: the record is created at this id, or, if any record already
+        holds the id (yours, deleted, or another account's), `412 already_exists` and nothing is
+        changed. Any other value is refused with `400`. Without the header the PUT creates or
+        updates.
+      schema:
+        type: string
+        enum: ["*"]
 
   responses:
     Unauthorized:
@@ -3739,6 +3844,26 @@ components:
               value:
                 code: camera_loaded
                 message: "camera already holds a roll; finish it first"
+            rollLoadedDifferently:
+              summary: The roll is already in this camera with a different date, shot ISO or lenses
+              value:
+                code: roll_loaded_differently
+                message: the roll is already loaded into this camera with different details
+            rollNotInCamera:
+              summary: Only a roll in a camera can be finished (or it was finished on another date)
+              value:
+                code: roll_not_in_camera
+                message: only a roll in a camera can be finished
+            frameNotesConflict:
+              summary: The frame's notes changed since the edit's baseNotes
+              value:
+                code: frame_notes_conflict
+                message: the frame's notes were changed elsewhere
+            rollNotesConflict:
+              summary: The roll's notes changed since the edit's baseDescription
+              value:
+                code: roll_notes_conflict
+                message: the roll's notes were changed elsewhere
             alreadyExists:
               summary: A deleted id stays reserved
               value:
@@ -3759,6 +3884,22 @@ components:
               value:
                 code: scanner_has_scans
                 message: "a scanner with imported scans cannot be removed from the order; delete its scans first"
+    PreconditionFailed:
+      description: "A precondition header did not hold: nothing was written"
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          examples:
+            rollChanged:
+              summary: The roll changed since the version in If-Match
+              value:
+                code: roll_changed
+                message: the roll was changed since it was loaded; reload it and apply your edit again
+            alreadyExists:
+              summary: "If-None-Match: * and the id is already taken"
+              value:
+                code: already_exists
+                message: a camera with this id already exists
     Unprocessable:
       description: Business validation failed
       content:
@@ -4613,7 +4754,7 @@ components:
 
     RollSummary:
       type: object
-      required: [id, filmStockId, stockBrand, stockName, format, exposures, status, negativesAtLab]
+      required: [id, filmStockId, stockBrand, stockName, format, exposures, status, negativesAtLab, version]
       properties:
         id: { type: string, format: uuid }
         filmStockId: { type: string, format: uuid }
@@ -4631,6 +4772,15 @@ components:
         startedAt: { type: string, format: date }
         finishedAt: { type: string, format: date }
         negativesAtLab: { type: boolean }
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+          description: >-
+            Grows by one on every change to the roll record (details, load, finish, notes, status
+            changes from its jobs, delete). Send it back as `If-Match: "<version>"` on
+            `PUT /rolls/{id}` so a stale form cannot overwrite a newer change. Frame notes and the
+            roll's lens set are separate records and do not move it.
       example:
         id: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07
         filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
@@ -4649,6 +4799,7 @@ components:
         description: Hanoi street trip
         startedAt: "2026-09-01"
         negativesAtLab: false
+        version: 3
 
     RollTotals:
       type: object
@@ -4706,8 +4857,32 @@ components:
       type: object
       properties:
         notes: { type: string }
+        baseNotes:
+          type: string
+          description: >-
+            The notes this edit was based on ("" when the frame had none). When sent, the server
+            compares trimmed text: if the frame already holds `notes`, nothing is written (200);
+            if it still holds `baseNotes`, `notes` is saved; otherwise `409 frame_notes_conflict`
+            and nothing changes. Leave it out to overwrite whatever is stored.
       example:
         notes: Golden hour on the bridge
+        baseNotes: ""
+
+    RollNotesInput:
+      type: object
+      required: [description]
+      properties:
+        description:
+          type: string
+          description: The roll's notes. Blank clears them.
+        baseDescription:
+          type: string
+          description: >-
+            The notes this edit was based on ("" when the roll had none). Same rules as
+            `FrameInput.baseNotes`, with `409 roll_notes_conflict`. Leave it out to overwrite.
+      example:
+        description: "Hanoi street trip, overcast, roll jammed at 30"
+        baseDescription: Hanoi street trip
 
     RollDetail:
       type: object
@@ -4740,6 +4915,7 @@ components:
           description: Hanoi street trip
           startedAt: "2026-09-01"
           negativesAtLab: false
+          version: 3
         stock:
           id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
           createdAt: "2026-09-01T08:30:00Z"
@@ -4796,6 +4972,7 @@ components:
           description: Hanoi street trip
           startedAt: "2026-09-01"
           negativesAtLab: false
+          version: 3
         expiresOn: "2027-06-30"
         expired: false
 
@@ -4825,6 +5002,7 @@ components:
               description: Hanoi street trip
               startedAt: "2026-09-01"
               negativesAtLab: false
+              version: 3
             expiresOn: "2027-06-30"
             expired: false
         noExpiry: []
@@ -5149,6 +5327,7 @@ components:
           description: Hanoi street trip
           startedAt: "2026-09-01"
           negativesAtLab: false
+          version: 3
         scans:
           - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
             frameNumber: 7

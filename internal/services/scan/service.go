@@ -77,11 +77,32 @@ func BuildFrameViews(ctx context.Context, queries gen.Querier, rollID uuid.UUID)
 // ---- frames ----
 
 // SaveFrameNotes sets notes on a frame, creating the frame when it does not exist yet (UC-34).
-func (service *Service) SaveFrameNotes(ctx context.Context, rollID uuid.UUID, number int, notes *string) (FrameView, error) {
+// With a base, the edit is a compare-and-set against the stored notes, decided under the roll's
+// row lock, which every writer of the roll and its frame notes takes first.
+func (service *Service) SaveFrameNotes(ctx context.Context, rollID uuid.UUID, number int, notes, base *string) (FrameView, error) {
 	var view FrameView
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
 		if _, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: rollID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return shared.NotFoundOr(err, "roll")
+		}
+		existing, err := queries.GetFrameByNumber(ctx, gen.GetFrameByNumberParams{RollID: rollID, Number: int32(number), OwnerID: requestctx.Owner(ctx)})
+		found := err == nil
+		if err != nil && !db.IsNoRows(err) {
+			return err
+		}
+		var current *string
+		if found {
+			current = existing.Notes
+		}
+		switch shared.DecideNoteEdit(current, notes, base) {
+		case shared.NoteConflict:
+			return apperror.Conflict("frame_notes_conflict", "the frame's notes were changed elsewhere")
+		case shared.NoteUnchanged:
+			if found {
+				view, err = frameView(ctx, queries, rollID, existing.ID)
+				return err
+			}
+		case shared.NoteApply:
 		}
 		frame, err := queries.UpsertFrame(ctx, gen.UpsertFrameParams{ID: service.newID(), RollID: rollID, Number: int32(number), OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
@@ -90,18 +111,24 @@ func (service *Service) SaveFrameNotes(ctx context.Context, rollID uuid.UUID, nu
 		if _, err := queries.SetFrameNotes(ctx, gen.SetFrameNotesParams{ID: frame.ID, Notes: pointers.TrimmedOrNil(notes), OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return err
 		}
-		frames, err := BuildFrameViews(ctx, queries, rollID)
-		if err != nil {
-			return err
-		}
-		for _, candidate := range frames {
-			if candidate.Frame.ID == frame.ID {
-				view = candidate
-			}
-		}
-		return nil
+		view, err = frameView(ctx, queries, rollID, frame.ID)
+		return err
 	})
 	return view, err
+}
+
+// frameView returns one frame of a roll with its scans.
+func frameView(ctx context.Context, queries gen.Querier, rollID, frameID uuid.UUID) (FrameView, error) {
+	frames, err := BuildFrameViews(ctx, queries, rollID)
+	if err != nil {
+		return FrameView{}, err
+	}
+	for _, candidate := range frames {
+		if candidate.Frame.ID == frameID {
+			return candidate, nil
+		}
+	}
+	return FrameView{}, nil
 }
 
 // ---- browsing ----

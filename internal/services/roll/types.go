@@ -1,6 +1,8 @@
 package roll
 
 import (
+	"slices"
+
 	"meta-frames-server/internal/db/gen"
 	"meta-frames-server/internal/domain"
 	"meta-frames-server/internal/services/processing"
@@ -39,6 +41,19 @@ type Input struct {
 	StartedAt   *time.Time
 	FinishedAt  *time.Time
 	Description *string
+	// IfMatch, when set, makes the update conditional on the roll's current version.
+	IfMatch *VersionCondition
+}
+
+// VersionCondition is a parsed If-Match header: any version, or one of a list.
+type VersionCondition struct {
+	Any      bool
+	Versions []int64
+}
+
+// Holds reports whether a roll at version may be written.
+func (condition VersionCondition) Holds(version int64) bool {
+	return condition.Any || slices.Contains(condition.Versions, version)
 }
 
 type LoadInput struct {
