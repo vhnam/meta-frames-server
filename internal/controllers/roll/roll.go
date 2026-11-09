@@ -37,7 +37,12 @@ func ToAPIRollSummary(summary rollsvc.Summary) api.RollSummary {
 		CameraId: summary.CameraID, Format: int(summary.Format), Exposures: int(summary.Exposures),
 		Status: api.RollStatus(summary.Status), ShotIso: pointers.Int(summary.ShotIso), Price: pointers.Int(summary.Price),
 		Description: summary.Description, StartedAt: convert.ToAPIDate(summary.StartedAt), FinishedAt: convert.ToAPIDate(summary.FinishedAt),
-		NegativesAtLab: summary.ShowsNegativesAtLab(), Version: summary.Version,
+		NegativesAtLab: summary.NegativesAtLab, Developed: summary.Developed, Scanned: summary.Scanned,
+		OpenJobTypes: make([]api.ProcessingType, len(summary.OpenJobTypes)), OpenAtLab: summary.OpenAtLab,
+		Version: summary.Version,
+	}
+	for index, jobType := range summary.OpenJobTypes {
+		mapped.OpenJobTypes[index] = api.ProcessingType(jobType)
 	}
 	if summary.CameraBrand != nil && summary.CameraModel != nil {
 		mapped.CameraName = pointers.To(*summary.CameraBrand + " " + *summary.CameraModel)

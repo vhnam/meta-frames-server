@@ -503,16 +503,16 @@ type ExpiryMonth struct {
 	Year  int  `json:"year"`
 }
 
-// ExpiryRoll Example: {"expired":false,"expiresOn":"2027-06-30","roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}}
+// ExpiryRoll Example: {"expired":false,"expiresOn":"2027-06-30","roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}}
 type ExpiryRoll struct {
 	Expired   bool               `json:"expired"`
 	ExpiresOn openapi_types.Date `json:"expiresOn"`
 
-	// Roll Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}
+	// Roll Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}
 	Roll RollSummary `json:"roll"`
 }
 
-// ExpiryView Example: {"expiring":[{"expired":false,"expiresOn":"2027-06-30","roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}}],"noExpiry":[]}
+// ExpiryView Example: {"expiring":[{"expired":false,"expiresOn":"2027-06-30","roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}}],"noExpiry":[]}
 type ExpiryView struct {
 	Expiring []ExpiryRoll  `json:"expiring"`
 	NoExpiry []RollSummary `json:"noExpiry"`
@@ -984,7 +984,7 @@ type ResetPasswordInput struct {
 	Token    string `json:"token"`
 }
 
-// RollDetail Example: {"frames":[],"lenses":[{"brand":"Nikon","createdAt":"2026-09-01T08:30:00Z","focalLength":50,"id":"a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03","isActive":true,"isBuiltIn":false,"maxAperture":1.4,"model":"Nikkor 50mm f/1.4 AI-S","mount":"F","updatedAt":"2026-09-20T10:00:00Z"}],"processing":[],"roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3},"stock":{"boxIso":"400","brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"},"totals":{"incomplete":false,"processingPrice":90000,"rollPrice":150000,"total":240000},"warnings":[]}
+// RollDetail Example: {"frames":[],"lenses":[{"brand":"Nikon","createdAt":"2026-09-01T08:30:00Z","focalLength":50,"id":"a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03","isActive":true,"isBuiltIn":false,"maxAperture":1.4,"model":"Nikkor 50mm f/1.4 AI-S","mount":"F","updatedAt":"2026-09-20T10:00:00Z"}],"processing":[],"roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3},"stock":{"boxIso":"400","brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"},"totals":{"incomplete":false,"processingPrice":90000,"rollPrice":150000,"total":240000},"warnings":[]}
 type RollDetail struct {
 	// BaseStock Example: {"boxIso":"400","brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"}
 	BaseStock  *FilmStock   `json:"baseStock,omitempty"`
@@ -992,7 +992,7 @@ type RollDetail struct {
 	Lenses     []Lens       `json:"lenses"`
 	Processing []Processing `json:"processing"`
 
-	// Roll Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}
+	// Roll Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}
 	Roll RollSummary `json:"roll"`
 
 	// Stock Example: {"boxIso":"400","brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"}
@@ -1030,26 +1030,40 @@ type RollNotesInput struct {
 // RollStatus defines model for RollStatus.
 type RollStatus string
 
-// RollSummary Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}
+// RollSummary Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}
 type RollSummary struct {
 	CameraId    *openapi_types.UUID `json:"cameraId,omitempty"`
 	CameraName  *string             `json:"cameraName,omitempty"`
 	Description *string             `json:"description,omitempty"`
 
+	// Developed A develop or develop_scan job has negatives returned or scans received.
+	Developed bool `json:"developed"`
+
 	// Expiry Example: {"month":6,"year":2027}
-	Expiry         *ExpiryMonth        `json:"expiry,omitempty"`
-	Exposures      int                 `json:"exposures"`
-	FilmStockId    openapi_types.UUID  `json:"filmStockId"`
-	FinishedAt     *openapi_types.Date `json:"finishedAt,omitempty"`
-	Format         int                 `json:"format"`
-	Id             openapi_types.UUID  `json:"id"`
-	NegativesAtLab bool                `json:"negativesAtLab"`
-	Price          *int                `json:"price,omitempty"`
-	ShotIso        *int                `json:"shotIso,omitempty"`
-	StartedAt      *openapi_types.Date `json:"startedAt,omitempty"`
-	Status         RollStatus          `json:"status"`
-	StockBrand     string              `json:"stockBrand"`
-	StockName      string              `json:"stockName"`
+	Expiry      *ExpiryMonth        `json:"expiry,omitempty"`
+	Exposures   int                 `json:"exposures"`
+	FilmStockId openapi_types.UUID  `json:"filmStockId"`
+	FinishedAt  *openapi_types.Date `json:"finishedAt,omitempty"`
+	Format      int                 `json:"format"`
+	Id          openapi_types.UUID  `json:"id"`
+
+	// NegativesAtLab A job was sent to a lab and its negatives return is not recorded, whatever the roll status.
+	NegativesAtLab bool `json:"negativesAtLab"`
+
+	// OpenAtLab A job is open at a lab. False while the only open jobs are processed at home (no lab), even though the status is then at_lab.
+	OpenAtLab bool `json:"openAtLab"`
+
+	// OpenJobTypes Types of the jobs still open (waiting for scans or negatives), each type once.
+	OpenJobTypes []ProcessingType `json:"openJobTypes"`
+	Price        *int             `json:"price,omitempty"`
+
+	// Scanned A job has scans received.
+	Scanned    bool                `json:"scanned"`
+	ShotIso    *int                `json:"shotIso,omitempty"`
+	StartedAt  *openapi_types.Date `json:"startedAt,omitempty"`
+	Status     RollStatus          `json:"status"`
+	StockBrand string              `json:"stockBrand"`
+	StockName  string              `json:"stockName"`
 
 	// Version Grows by one on every change to the roll record (details, load, finish, notes, status changes from its jobs, delete). Send it back as `If-Match: "<version>"` on `PUT /rolls/{id}` so a stale form cannot overwrite a newer change. Frame notes and the roll's lens set are separate records and do not move it.
 	Version int64 `json:"version"`
@@ -1242,9 +1256,9 @@ type ScannerKindOptions struct {
 	Options []ScanOption `json:"options"`
 }
 
-// SearchResult Example: {"roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3},"scans":[{"frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu","scannerId":"d177cb3c-a850-4232-a4ca-75189b7b279b","scannerName":"Noritsu HS-1800"}]}
+// SearchResult Example: {"roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3},"scans":[{"frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu","scannerId":"d177cb3c-a850-4232-a4ca-75189b7b279b","scannerName":"Noritsu HS-1800"}]}
 type SearchResult struct {
-	// Roll Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"price":150000,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}
+	// Roll Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}
 	Roll  RollSummary `json:"roll"`
 	Scans []ScanRef   `json:"scans"`
 }

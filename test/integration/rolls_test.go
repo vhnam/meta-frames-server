@@ -3,6 +3,7 @@ package integration_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -163,4 +164,30 @@ func TestLoadingFinishingAndExpiringRolls(test *testing.T) {
 	harness.expect(harness.call("PUT", "/rolls/"+freshRolls[0]+"/finish", map[string]any{"date": "2026-09-01"}), http.StatusOK)
 	harness.expect(harness.call("PUT", "/rolls/"+freshRolls[0]+"/finish", nil), http.StatusConflict)
 	harness.expect(harness.call("PUT", "/rolls/"+freshRolls[1]+"/load", map[string]any{"cameraId": seeded.fixedCamera}), http.StatusOK) // camera is free again
+}
+
+func TestRollListOrdersByStartDateThenAddedDateThenID(test *testing.T) {
+	harness := newHarness(test)
+	seeded := seedGear(harness)
+
+	// One bulk call shares one created_at, so the id breaks the tie between unstarted rolls.
+	first := harness.addRolls(seeded, 4)
+	older, newer, sameAddedA, sameAddedB := first[0], first[1], first[2], first[3]
+	harness.expect(harness.call("PUT", "/rolls/"+older+"/load", map[string]any{"cameraId": seeded.fixedCamera, "startedAt": "2026-09-01"}), http.StatusOK)
+	harness.expect(harness.call("PUT", "/rolls/"+newer+"/load", map[string]any{"cameraId": seeded.slrCamera, "startedAt": "2026-10-01"}), http.StatusOK)
+	addedLater := harness.addRolls(seeded, 1)[0]
+
+	highID, lowID := sameAddedA, sameAddedB
+	if highID < lowID {
+		highID, lowID = lowID, highID
+	}
+	want := []string{newer, older, addedLater, highID, lowID}
+	listed := harness.listOf("/rolls")
+	got := make([]string, len(listed))
+	for index, roll := range listed {
+		got[index] = roll["id"].(string)
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		test.Fatalf("order = %v, want %v", got, want)
+	}
 }

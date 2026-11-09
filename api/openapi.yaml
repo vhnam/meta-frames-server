@@ -2087,6 +2087,10 @@ paths:
                       description: Hanoi street trip
                       startedAt: "2026-09-01"
                       negativesAtLab: false
+                      developed: false
+                      scanned: false
+                      openJobTypes: []
+                      openAtLab: false
                       version: 3
                     - id: 6b5a4938-2716-4f05-9e8d-7c6b5a493827
                       filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
@@ -2100,6 +2104,10 @@ paths:
                         month: 6
                       price: 150000
                       negativesAtLab: false
+                      developed: false
+                      scanned: false
+                      openJobTypes: []
+                      openAtLab: false
                       version: 3
         "400": { $ref: "#/components/responses/BadRequest" }
 
@@ -2156,6 +2164,10 @@ paths:
                         month: 6
                       price: 150000
                       negativesAtLab: false
+                      developed: false
+                      scanned: false
+                      openJobTypes: []
+                      openAtLab: false
                       version: 3
                     - id: 7c6b5a49-3827-4160-8f9e-8d7c6b5a4938
                       filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
@@ -2169,6 +2181,10 @@ paths:
                         month: 6
                       price: 150000
                       negativesAtLab: false
+                      developed: false
+                      scanned: false
+                      openJobTypes: []
+                      openAtLab: false
                       version: 3
         "400": { $ref: "#/components/responses/BadRequest" }
         "409": { $ref: "#/components/responses/Conflict" }
@@ -2204,6 +2220,10 @@ paths:
                             month: 6
                           price: 150000
                           negativesAtLab: false
+                          developed: false
+                          scanned: false
+                          openJobTypes: []
+                          openAtLab: false
                           version: 3
                         expiresOn: "2027-06-30"
                         expired: false
@@ -2245,6 +2265,10 @@ paths:
                       description: Hanoi street trip
                       startedAt: "2026-09-01"
                       negativesAtLab: false
+                      developed: false
+                      scanned: false
+                      openJobTypes: []
+                      openAtLab: false
                       version: 3
                     stock:
                       id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
@@ -2363,6 +2387,10 @@ paths:
                       description: Hanoi street trip
                       startedAt: "2026-09-01"
                       negativesAtLab: false
+                      developed: false
+                      scanned: false
+                      openJobTypes: []
+                      openAtLab: false
                       version: 3
                     stock:
                       id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
@@ -2501,6 +2529,10 @@ paths:
                       description: Hanoi street trip
                       startedAt: "2026-09-01"
                       negativesAtLab: false
+                      developed: false
+                      scanned: false
+                      openJobTypes: []
+                      openAtLab: false
                       version: 3
                     stock:
                       id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
@@ -2664,6 +2696,10 @@ paths:
                       description: Hanoi street trip
                       startedAt: "2026-09-01"
                       negativesAtLab: false
+                      developed: false
+                      scanned: false
+                      openJobTypes: []
+                      openAtLab: false
                       version: 3
                       finishedAt: "2026-09-28"
                     stock:
@@ -3579,6 +3615,10 @@ paths:
                         description: Hanoi street trip
                         startedAt: "2026-09-01"
                         negativesAtLab: false
+                        developed: false
+                        scanned: false
+                        openJobTypes: []
+                        openAtLab: false
                         version: 3
                       scans:
                         - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
@@ -4754,7 +4794,7 @@ components:
 
     RollSummary:
       type: object
-      required: [id, filmStockId, stockBrand, stockName, format, exposures, status, negativesAtLab, version]
+      required: [id, filmStockId, stockBrand, stockName, format, exposures, status, negativesAtLab, developed, scanned, openJobTypes, openAtLab, version]
       properties:
         id: { type: string, format: uuid }
         filmStockId: { type: string, format: uuid }
@@ -4771,7 +4811,24 @@ components:
         description: { type: string }
         startedAt: { type: string, format: date }
         finishedAt: { type: string, format: date }
-        negativesAtLab: { type: boolean }
+        negativesAtLab:
+          type: boolean
+          description: A job was sent to a lab and its negatives return is not recorded, whatever the roll status.
+        developed:
+          type: boolean
+          description: A develop or develop_scan job has negatives returned or scans received.
+        scanned:
+          type: boolean
+          description: A job has scans received.
+        openJobTypes:
+          type: array
+          items: { $ref: "#/components/schemas/ProcessingType" }
+          description: Types of the jobs still open (waiting for scans or negatives), each type once.
+        openAtLab:
+          type: boolean
+          description: >-
+            A job is open at a lab. False while the only open jobs are processed at home (no lab), even
+            though the status is then at_lab.
         version:
           type: integer
           format: int64
@@ -4799,6 +4856,10 @@ components:
         description: Hanoi street trip
         startedAt: "2026-09-01"
         negativesAtLab: false
+        developed: false
+        scanned: false
+        openJobTypes: []
+        openAtLab: false
         version: 3
 
     RollTotals:
@@ -4915,6 +4976,10 @@ components:
           description: Hanoi street trip
           startedAt: "2026-09-01"
           negativesAtLab: false
+          developed: false
+          scanned: false
+          openJobTypes: []
+          openAtLab: false
           version: 3
         stock:
           id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
@@ -4972,6 +5037,10 @@ components:
           description: Hanoi street trip
           startedAt: "2026-09-01"
           negativesAtLab: false
+          developed: false
+          scanned: false
+          openJobTypes: []
+          openAtLab: false
           version: 3
         expiresOn: "2027-06-30"
         expired: false
@@ -5002,6 +5071,10 @@ components:
               description: Hanoi street trip
               startedAt: "2026-09-01"
               negativesAtLab: false
+              developed: false
+              scanned: false
+              openJobTypes: []
+              openAtLab: false
               version: 3
             expiresOn: "2027-06-30"
             expired: false
@@ -5327,6 +5400,10 @@ components:
           description: Hanoi street trip
           startedAt: "2026-09-01"
           negativesAtLab: false
+          developed: false
+          scanned: false
+          openJobTypes: []
+          openAtLab: false
           version: 3
         scans:
           - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
