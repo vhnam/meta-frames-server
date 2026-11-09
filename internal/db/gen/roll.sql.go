@@ -464,7 +464,23 @@ const listRollSummaries = `-- name: ListRollSummaries :many
 SELECT r.id, r.film_stock_id, r.camera_id, r.format, r.exposures, r.status, r.shot_iso, r.expiry_year, r.expiry_month, r.price, r.description, r.started_at, r.finished_at, r.created_at, r.updated_at, r.deleted_at, r.owner_id, r.version, fs.brand AS stock_brand, fs.name AS stock_name, fs.box_iso,
        c.brand AS camera_brand, c.model AS camera_model,
        EXISTS (SELECT 1 FROM processing p
-               WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.lab_id IS NOT NULL AND p.negatives_returned_at IS NULL) AS negatives_at_lab
+               WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.lab_id IS NOT NULL AND p.negatives_returned_at IS NULL) AS negatives_at_lab,
+       -- A development is recorded once a develop job has any result back.
+       EXISTS (SELECT 1 FROM processing p
+               WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.type IN ('develop', 'develop_scan')
+                 AND (p.negatives_returned_at IS NOT NULL OR p.scans_received_at IS NOT NULL)) AS developed,
+       EXISTS (SELECT 1 FROM processing p
+               WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.scans_received_at IS NOT NULL) AS scanned,
+       -- Open means the same as RollHasOpenJob.
+       ARRAY(SELECT DISTINCT p.type FROM processing p
+             WHERE p.roll_id = r.id AND p.deleted_at IS NULL
+               AND ((p.type IN ('develop_scan', 'scan') AND p.scans_received_at IS NULL)
+                 OR (p.type IN ('develop', 'print') AND p.negatives_returned_at IS NULL))
+             ORDER BY p.type)::text[] AS open_job_types,
+       EXISTS (SELECT 1 FROM processing p
+               WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.lab_id IS NOT NULL
+                 AND ((p.type IN ('develop_scan', 'scan') AND p.scans_received_at IS NULL)
+                   OR (p.type IN ('develop', 'print') AND p.negatives_returned_at IS NULL))) AS open_at_lab
 FROM roll r
 JOIN film_stock fs ON fs.id = r.film_stock_id
 LEFT JOIN camera c ON c.id = r.camera_id
@@ -480,7 +496,7 @@ WHERE r.owner_id = $1 AND r.deleted_at IS NULL
   AND ($10::int IS NULL OR EXISTS (
         SELECT 1 FROM roll_lens rl JOIN lens l ON l.id = rl.lens_id
         WHERE rl.roll_id = r.id AND l.focal_length = $10))
-ORDER BY r.created_at DESC
+ORDER BY r.started_at DESC NULLS LAST, r.created_at DESC, r.id DESC
 `
 
 type ListRollSummariesParams struct {
@@ -521,6 +537,10 @@ type ListRollSummariesRow struct {
 	CameraBrand    *string
 	CameraModel    *string
 	NegativesAtLab bool
+	Developed      bool
+	Scanned        bool
+	OpenJobTypes   []string
+	OpenAtLab      bool
 }
 
 func (q *Queries) ListRollSummaries(ctx context.Context, arg ListRollSummariesParams) ([]ListRollSummariesRow, error) {
@@ -568,6 +588,10 @@ func (q *Queries) ListRollSummaries(ctx context.Context, arg ListRollSummariesPa
 			&i.CameraBrand,
 			&i.CameraModel,
 			&i.NegativesAtLab,
+			&i.Developed,
+			&i.Scanned,
+			&i.OpenJobTypes,
+			&i.OpenAtLab,
 		); err != nil {
 			return nil, err
 		}

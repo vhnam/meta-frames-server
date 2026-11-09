@@ -758,25 +758,6 @@ func TestRollTotals(test *testing.T) {
 	}
 }
 
-func TestShowsNegativesAtLabOnlyForProcessedRolls(test *testing.T) {
-	cases := []struct {
-		status        string
-		negativesAway bool
-		want          bool
-	}{
-		{domain.RollStatusScanned, true, true},
-		{domain.RollStatusDeveloped, true, true},
-		{domain.RollStatusAtLab, true, false},
-		{domain.RollStatusScanned, false, false},
-	}
-	for _, testCase := range cases {
-		summary := Summary{gen.ListRollSummariesRow{Status: testCase.status, NegativesAtLab: testCase.negativesAway}}
-		if got := summary.ShowsNegativesAtLab(); got != testCase.want {
-			test.Errorf("status %s negatives=%v: got %v, want %v", testCase.status, testCase.negativesAway, got, testCase.want)
-		}
-	}
-}
-
 func TestRollDeleteSoftDeletesOnlyRollsStillInStock(test *testing.T) {
 	fixture := newLoadFixture()
 	ctx := context.Background()

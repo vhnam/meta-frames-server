@@ -507,7 +507,17 @@ func (queries *Memory) ListRollSummaries(_ context.Context, arg gen.ListRollSumm
 			Description: roll.Description, Version: roll.Version,
 		})
 	}
-	sort.Slice(rows, func(left, right int) bool { return rows[left].ID.String() < rows[right].ID.String() })
+	// Same order as the SQL query, without created_at: the memory store does not record it.
+	sort.Slice(rows, func(left, right int) bool {
+		leftStart, rightStart := rows[left].StartedAt, rows[right].StartedAt
+		if (leftStart == nil) != (rightStart == nil) {
+			return rightStart == nil
+		}
+		if leftStart != nil && !leftStart.Equal(*rightStart) {
+			return leftStart.After(*rightStart)
+		}
+		return rows[left].ID.String() > rows[right].ID.String()
+	})
 	return rows, nil
 }
 

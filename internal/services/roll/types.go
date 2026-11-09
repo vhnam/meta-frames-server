@@ -4,7 +4,6 @@ import (
 	"slices"
 
 	"meta-frames-server/internal/db/gen"
-	"meta-frames-server/internal/domain"
 	"meta-frames-server/internal/services/processing"
 	"meta-frames-server/internal/services/scan"
 	"time"
@@ -75,12 +74,6 @@ type Filter struct {
 }
 
 type Summary struct{ gen.ListRollSummariesRow }
-
-// ShowsNegativesAtLab is true for processed rolls whose negatives are still at a lab.
-func (summary Summary) ShowsNegativesAtLab() bool {
-	return summary.NegativesAtLab &&
-		(summary.Status == domain.RollStatusScanned || summary.Status == domain.RollStatusDeveloped)
-}
 
 type Totals struct {
 	RollPrice       int32
