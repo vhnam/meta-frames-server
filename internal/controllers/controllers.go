@@ -64,7 +64,7 @@ func New(appServices *services.Services) *Controllers {
 		cameraController:     camera.New(appServices.Cameras),
 		lensController:       lens.New(appServices.Lenses),
 		filmStockController:  filmstock.New(appServices.FilmStocks),
-		rollController:       roll.New(appServices.Rolls),
+		rollController:       roll.New(appServices.Rolls, appServices.Scanners),
 		labController:        lab.New(appServices.Labs),
 		labOrderController:   laborder.New(appServices.LabOrders),
 		scannerController:    scanner.New(appServices.Scanners),

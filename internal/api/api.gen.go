@@ -736,6 +736,23 @@ type GoogleTokenInput struct {
 	IdToken string `json:"idToken"`
 }
 
+// HandOverInput defines model for HandOverInput.
+type HandOverInput struct {
+	// HandedAt Defaults to today. Also the jobs' sentAt.
+	HandedAt *openapi_types.Date `json:"handedAt,omitempty"`
+	LabId    openapi_types.UUID  `json:"labId"`
+
+	// Notes Notes on every handoff of the batch.
+	Notes *string `json:"notes,omitempty"`
+	Rolls []struct {
+		RollId openapi_types.UUID `json:"rollId"`
+		Type   ProcessingType     `json:"type"`
+	} `json:"rolls"`
+
+	// ScanOrders Scanners for the jobs that produce scans. Required when any roll goes for develop_scan or scan.
+	ScanOrders *[]ScanOrderInput `json:"scanOrders,omitempty"`
+}
+
 // Health Example: {"status":"ok"}
 type Health struct {
 	Status HealthStatus `json:"status"`
@@ -1525,6 +1542,11 @@ type GetInventoryParams struct {
 	Iso *int `form:"iso,omitempty" json:"iso,omitempty"`
 }
 
+// HandOverRollsParams defines parameters for HandOverRolls.
+type HandOverRollsParams struct {
+	IdempotencyKey *string `json:"Idempotency-Key,omitempty"`
+}
+
 // ListLabOrdersParams defines parameters for ListLabOrders.
 type ListLabOrdersParams struct {
 	// LabId Only this lab's orders
@@ -1637,6 +1659,9 @@ type CreateFilmStockJSONRequestBody = FilmStockInput
 
 // PutFilmStockJSONRequestBody defines body for PutFilmStock for application/json ContentType.
 type PutFilmStockJSONRequestBody = FilmStockInput
+
+// HandOverRollsJSONRequestBody defines body for HandOverRolls for application/json ContentType.
+type HandOverRollsJSONRequestBody = HandOverInput
 
 // PutLabOrderJSONRequestBody defines body for PutLabOrder for application/json ContentType.
 type PutLabOrderJSONRequestBody = LabOrderInput
@@ -1763,6 +1788,9 @@ type ServerInterface interface {
 	// GetInventory Stocks with unused rolls on hand (UC-14)
 	// (GET /inventory)
 	GetInventory(c *gin.Context, params GetInventoryParams)
+	// HandOverRolls Hand several rolls to one lab at once (Giao lab). Send Idempotency-Key so retries do not duplicate.
+	// (POST /lab-handoffs)
+	HandOverRolls(c *gin.Context, params HandOverRollsParams)
 	// ListLabOrders Orders, newest first
 	// (GET /lab-orders)
 	ListLabOrders(c *gin.Context, params ListLabOrdersParams)
@@ -2457,6 +2485,46 @@ func (siw *ServerInterfaceWrapper) GetInventory(c *gin.Context) {
 	}
 
 	siw.Handler.GetInventory(c, params)
+}
+
+// HandOverRolls operation middleware
+func (siw *ServerInterfaceWrapper) HandOverRolls(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params HandOverRollsParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.HandOverRolls(c, params)
 }
 
 // ListLabOrders operation middleware
@@ -3996,6 +4064,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.DELETE(options.BaseURL+"/scanners/:id", wrapper.DeleteScanner)
 	router.GET(options.BaseURL+"/scanners/:id", wrapper.GetScanner)
 	router.PUT(options.BaseURL+"/scanners/:id", wrapper.PutScanner)
+	router.POST(options.BaseURL+"/lab-handoffs", wrapper.HandOverRolls)
 	router.GET(options.BaseURL+"/lab-orders", wrapper.ListLabOrders)
 	router.DELETE(options.BaseURL+"/lab-orders/:id", wrapper.DeleteLabOrder)
 	router.GET(options.BaseURL+"/lab-orders/:id", wrapper.GetLabOrder)
@@ -5242,6 +5311,99 @@ func (response GetInventory401JSONResponse) VisitGetInventoryResponse(w http.Res
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type HandOverRollsRequestObject struct {
+	Params HandOverRollsParams
+	Body   *HandOverRollsJSONRequestBody
+}
+
+type HandOverRollsResponseObject interface {
+	VisitHandOverRollsResponse(w http.ResponseWriter) error
+}
+
+type HandOverRolls201JSONResponse []RollSummary
+
+func (response HandOverRolls201JSONResponse) VisitHandOverRollsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type HandOverRolls400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response HandOverRolls400JSONResponse) VisitHandOverRollsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type HandOverRolls401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response HandOverRolls401JSONResponse) VisitHandOverRollsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type HandOverRolls404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response HandOverRolls404JSONResponse) VisitHandOverRollsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type HandOverRolls409JSONResponse struct{ ConflictJSONResponse }
+
+func (response HandOverRolls409JSONResponse) VisitHandOverRollsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type HandOverRolls422JSONResponse struct{ UnprocessableJSONResponse }
+
+func (response HandOverRolls422JSONResponse) VisitHandOverRollsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -9020,6 +9182,9 @@ type StrictServerInterface interface {
 	// GetInventory Stocks with unused rolls on hand (UC-14)
 	// (GET /inventory)
 	GetInventory(ctx context.Context, request GetInventoryRequestObject) (GetInventoryResponseObject, error)
+	// HandOverRolls Hand several rolls to one lab at once (Giao lab). Send Idempotency-Key so retries do not duplicate.
+	// (POST /lab-handoffs)
+	HandOverRolls(ctx context.Context, request HandOverRollsRequestObject) (HandOverRollsResponseObject, error)
 	// ListLabOrders Orders, newest first
 	// (GET /lab-orders)
 	ListLabOrders(ctx context.Context, request ListLabOrdersRequestObject) (ListLabOrdersResponseObject, error)
@@ -9766,6 +9931,39 @@ func (sh *strictHandler) GetInventory(ctx *gin.Context, params GetInventoryParam
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(GetInventoryResponseObject); ok {
 		if err := validResponse.VisitGetInventoryResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// HandOverRolls operation middleware
+func (sh *strictHandler) HandOverRolls(ctx *gin.Context, params HandOverRollsParams) {
+	var request HandOverRollsRequestObject
+
+	request.Params = params
+
+	var body HandOverRollsJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.HandOverRolls(ctx, request.(HandOverRollsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "HandOverRolls")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(HandOverRollsResponseObject); ok {
+		if err := validResponse.VisitHandOverRollsResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {

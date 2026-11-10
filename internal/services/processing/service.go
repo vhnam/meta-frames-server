@@ -324,27 +324,7 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 			}
 		} else {
 			created = true
-			if err := checkCanSend(roll.Status, input.Type); err != nil {
-				return err
-			}
-			process, err := resolveProcess(ctx, queries, roll.FilmStockID, input.Process)
-			if err != nil {
-				return err
-			}
-			if err := validateScanOrders(input.Type, input.ScanOrders); err != nil {
-				return err
-			}
-			if _, err := queries.InsertProcessing(ctx, gen.InsertProcessingParams{
-				ID: jobID, RollID: rollID, LabID: input.LabID, Type: input.Type, Process: process,
-				SentAt: sentAt, ScansExpectedAt: input.ScansExpectedAt, NegativesExpectedAt: input.NegativesExpectedAt, Price: pointers.Int32(input.Price), Notes: pointers.TrimmedOrNil(input.Notes),
-				OwnerID: requestctx.Owner(ctx),
-			}); err != nil {
-				return err
-			}
-			if err := syncScanOrders(ctx, queries, jobID, input.ScanOrders); err != nil {
-				return err
-			}
-			if err := queries.SetRollStatus(ctx, gen.SetRollStatusParams{ID: rollID, Status: domain.RollStatusAtLab, OwnerID: requestctx.Owner(ctx)}); err != nil {
+			if err := CreateJob(ctx, queries, roll, jobID, input, sentAt, nil); err != nil {
 				return err
 			}
 		}
@@ -355,6 +335,32 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 		return err
 	})
 	return view, created, err
+}
+
+// CreateJob sends a roll the caller has locked for a new job and moves it to at_lab. handoffID
+// links a lab job to the roll's stay at that lab; nil for a job outside a handoff.
+func CreateJob(ctx context.Context, queries gen.Querier, roll gen.Roll, jobID uuid.UUID, input Input, sentAt time.Time, handoffID *uuid.UUID) error {
+	if err := checkCanSend(roll.Status, input.Type); err != nil {
+		return err
+	}
+	process, err := resolveProcess(ctx, queries, roll.FilmStockID, input.Process)
+	if err != nil {
+		return err
+	}
+	if err := validateScanOrders(input.Type, input.ScanOrders); err != nil {
+		return err
+	}
+	if _, err := queries.InsertProcessing(ctx, gen.InsertProcessingParams{
+		ID: jobID, RollID: roll.ID, LabID: input.LabID, Type: input.Type, Process: process,
+		SentAt: sentAt, ScansExpectedAt: input.ScansExpectedAt, NegativesExpectedAt: input.NegativesExpectedAt, Price: pointers.Int32(input.Price), Notes: pointers.TrimmedOrNil(input.Notes),
+		OwnerID: requestctx.Owner(ctx), HandoffID: handoffID,
+	}); err != nil {
+		return err
+	}
+	if err := syncScanOrders(ctx, queries, jobID, input.ScanOrders); err != nil {
+		return err
+	}
+	return queries.SetRollStatus(ctx, gen.SetRollStatusParams{ID: roll.ID, Status: domain.RollStatusAtLab, OwnerID: requestctx.Owner(ctx)})
 }
 
 // syncOrderItems makes the job's order lines equal to the given ones. They must be on one order from

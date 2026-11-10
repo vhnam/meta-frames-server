@@ -31,6 +31,7 @@ type Memory struct {
 	Stocks        map[uuid.UUID]gen.FilmStock
 	Rolls         map[uuid.UUID]gen.Roll
 	Jobs          map[uuid.UUID]gen.Processing
+	Handoffs      []gen.InsertLabHandoffParams
 	Frames        map[uuid.UUID]gen.Frame
 	Scans         map[uuid.UUID]gen.Scan
 	ScanOrders    []gen.ProcessingScanOrder
@@ -485,6 +486,13 @@ func (queries *Memory) SetRollPlan(_ context.Context, arg gen.SetRollPlanParams)
 	return queries.saveRoll(roll), nil
 }
 
+func (queries *Memory) ClearRollScanRequest(_ context.Context, arg gen.ClearRollScanRequestParams) error {
+	roll := queries.Rolls[arg.ID]
+	roll.ScanRequestedAt = pgtype.Timestamptz{}
+	queries.saveRoll(roll)
+	return nil
+}
+
 func (queries *Memory) LoadRoll(_ context.Context, arg gen.LoadRollParams) (gen.Roll, error) {
 	roll := queries.Rolls[arg.ID]
 	roll.Status, roll.CameraID, roll.StartedAt, roll.ShotIso = "in_camera", arg.CameraID, arg.StartedAt, arg.ShotIso
@@ -738,9 +746,24 @@ func (queries *Memory) UpdateLab(_ context.Context, arg gen.UpdateLabParams) (ge
 }
 
 func (queries *Memory) InsertProcessing(_ context.Context, arg gen.InsertProcessingParams) (gen.Processing, error) {
-	job := gen.Processing{ID: arg.ID, RollID: arg.RollID, LabID: arg.LabID, Type: arg.Type, Process: arg.Process, SentAt: arg.SentAt, ScansExpectedAt: arg.ScansExpectedAt, NegativesExpectedAt: arg.NegativesExpectedAt, Price: arg.Price, Notes: arg.Notes}
+	job := gen.Processing{ID: arg.ID, RollID: arg.RollID, LabID: arg.LabID, Type: arg.Type, Process: arg.Process, SentAt: arg.SentAt, ScansExpectedAt: arg.ScansExpectedAt, NegativesExpectedAt: arg.NegativesExpectedAt, Price: arg.Price, Notes: arg.Notes, HandoffID: arg.HandoffID}
 	queries.Jobs[arg.ID] = job
 	return job, nil
+}
+
+// RollHasOpenHandoff: the memory store never returns a handoff, so every stored one is open.
+func (queries *Memory) RollHasOpenHandoff(_ context.Context, arg gen.RollHasOpenHandoffParams) (bool, error) {
+	for _, handoff := range queries.Handoffs {
+		if handoff.RollID == arg.RollID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (queries *Memory) InsertLabHandoff(_ context.Context, arg gen.InsertLabHandoffParams) error {
+	queries.Handoffs = append(queries.Handoffs, arg)
+	return nil
 }
 
 func (queries *Memory) UpdateProcessing(_ context.Context, arg gen.UpdateProcessingParams) (gen.Processing, error) {

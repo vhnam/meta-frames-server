@@ -1825,6 +1825,49 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /lab-handoffs:
+    post:
+      tags: [Rolls]
+      operationId: handOverRolls
+      summary: Hand several rolls to one lab at once (Giao lab). Send Idempotency-Key so retries do not duplicate.
+      description: >-
+        Creates one job per roll at the lab and one handoff per roll (the roll's stay at the lab), all
+        sharing one batch. A roll can go if it is done shooting (develop or develop_scan), developed
+        and waiting for a planned scan, or completed and marked for a scan (scan). `scanOrders` go to
+        every job that produces scans; a develop job gets none. All or nothing: one roll that cannot go
+        refuses the whole request, and the message names it. A roll a lab still holds is refused
+        (`409 negatives_at_lab`).
+      parameters:
+        - { name: Idempotency-Key, in: header, schema: { type: string, maxLength: 200 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HandOverInput" }
+            examples:
+              mixed:
+                summary: One roll to develop only, one to develop and scan
+                value:
+                  labId: 3b7e9c2a-4d1f-4e8b-9a6c-5f2d8e1b7c04
+                  handedAt: "2026-11-10"
+                  scanOrders: [{ scannerId: d177cb3c-a850-4232-a4ca-75189b7b279b }]
+                  rolls:
+                    - { rollId: 1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07, type: develop }
+                    - { rollId: 6a2e4c8b-1f3d-4a5e-b7c9-0d8f2e6a4b11, type: develop_scan }
+      responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "201":
+          description: The handed rolls, in request order
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/RollSummary" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
   /lab-orders:
     get:
       tags: [Lab orders]
@@ -5011,6 +5054,29 @@ components:
         notes: Golden hour on the bridge
         baseNotes: ""
 
+    HandOverInput:
+      type: object
+      additionalProperties: false
+      required: [labId, rolls]
+      properties:
+        labId: { type: string, format: uuid }
+        handedAt: { type: string, format: date, description: Defaults to today. Also the jobs' sentAt. }
+        notes: { type: string, description: Notes on every handoff of the batch. }
+        scanOrders:
+          type: array
+          items: { $ref: "#/components/schemas/ScanOrderInput" }
+          description: Scanners for the jobs that produce scans. Required when any roll goes for develop_scan or scan.
+        rolls:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [rollId, type]
+            properties:
+              rollId: { type: string, format: uuid }
+              type: { $ref: "#/components/schemas/ProcessingType" }
     RollPlan:
       type: object
       additionalProperties: false

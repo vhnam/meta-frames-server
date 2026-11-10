@@ -221,9 +221,37 @@ func (q *Queries) InsertLab(ctx context.Context, arg InsertLabParams) (Lab, erro
 	return i, err
 }
 
+const insertLabHandoff = `-- name: InsertLabHandoff :exec
+INSERT INTO lab_handoff (id, owner_id, roll_id, lab_id, batch_id, handed_at, notes)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+`
+
+type InsertLabHandoffParams struct {
+	ID       uuid.UUID
+	OwnerID  uuid.UUID
+	RollID   uuid.UUID
+	LabID    uuid.UUID
+	BatchID  uuid.UUID
+	HandedAt time.Time
+	Notes    *string
+}
+
+func (q *Queries) InsertLabHandoff(ctx context.Context, arg InsertLabHandoffParams) error {
+	_, err := q.db.Exec(ctx, insertLabHandoff,
+		arg.ID,
+		arg.OwnerID,
+		arg.RollID,
+		arg.LabID,
+		arg.BatchID,
+		arg.HandedAt,
+		arg.Notes,
+	)
+	return err
+}
+
 const insertProcessing = `-- name: InsertProcessing :one
-INSERT INTO processing (id, roll_id, lab_id, type, process, sent_at, scans_expected_at, negatives_expected_at, price, notes, owner_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+INSERT INTO processing (id, roll_id, lab_id, type, process, sent_at, scans_expected_at, negatives_expected_at, price, notes, owner_id, handoff_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at, owner_id, developed_at, handoff_id
 `
 
@@ -239,6 +267,7 @@ type InsertProcessingParams struct {
 	Price               *int32
 	Notes               *string
 	OwnerID             uuid.UUID
+	HandoffID           *uuid.UUID
 }
 
 func (q *Queries) InsertProcessing(ctx context.Context, arg InsertProcessingParams) (Processing, error) {
@@ -254,6 +283,7 @@ func (q *Queries) InsertProcessing(ctx context.Context, arg InsertProcessingPara
 		arg.Price,
 		arg.Notes,
 		arg.OwnerID,
+		arg.HandoffID,
 	)
 	var i Processing
 	err := row.Scan(
@@ -717,6 +747,22 @@ func (q *Queries) ReplaceScan(ctx context.Context, arg ReplaceScanParams) (Scan,
 		&i.ScannerID,
 	)
 	return i, err
+}
+
+const rollHasOpenHandoff = `-- name: RollHasOpenHandoff :one
+SELECT EXISTS (SELECT 1 FROM lab_handoff WHERE roll_id = $1 AND owner_id = $2 AND returned_at IS NULL)
+`
+
+type RollHasOpenHandoffParams struct {
+	RollID  uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) RollHasOpenHandoff(ctx context.Context, arg RollHasOpenHandoffParams) (bool, error) {
+	row := q.db.QueryRow(ctx, rollHasOpenHandoff, arg.RollID, arg.OwnerID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const scanOrderExists = `-- name: ScanOrderExists :one
