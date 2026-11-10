@@ -75,8 +75,9 @@ test/integration/   end-to-end tests against real Postgres
 ## API conventions
 
 - **Ids:** `POST` assigns an id on the server. `PUT /{resource}/{id}` creates or updates with an id from the client, so offline retries are safe.
+- **Retries and concurrent edits:** `PUT /{resource}/{id}` with `If-None-Match: *` only creates (`412 already_exists` when the id is taken), so a retried create never updates a later edit. `PUT /rolls/{id}` takes `If-Match: "<RollSummary.version>"` and answers `412 roll_changed` when the roll changed since it was read. Frame and roll notes take a base value (`baseNotes`, `baseDescription`) and answer `409` when the stored text is neither the base nor the new text. Repeating a finish or a load with the same details is a no-op.
 - **Soft delete:** `DELETE` only marks a row as deleted, and the id stays reserved. A delete returns 409 while the record is still in use.
-- **Errors:** responses use `{code, message}`. 400 means the request failed validation, 404 means not found, 409 means a state conflict, and 422 means a business rule failed.
+- **Errors:** responses use `{code, message}`. 400 means the request failed validation, 404 means not found, 409 means a state conflict, 412 means a precondition header did not hold, and 422 means a business rule failed.
 - **Your records only:** every record belongs to the account that created it, and each query is limited to the signed-in account (`owner_id`). Another account's record answers 404. Composite foreign keys stop a record from pointing at another account's record. Records created before accounts existed go to the first account.
 - **Sessions:** every endpoint except `/health` and `/auth/*` needs a session and returns 401 without one. Register or log in to get an HTTP-only session cookie, and send requests with credentials. The spec decides which operations are public (`security: []`).
 - **Audit:** each entry records the email of the signed-in user who made the change.

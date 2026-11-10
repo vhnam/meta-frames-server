@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"meta-frames-server/internal/api"
+	"meta-frames-server/internal/common/apperror"
 	"meta-frames-server/internal/common/clock"
 	"meta-frames-server/internal/common/pointers"
 	"meta-frames-server/internal/db/gen"
@@ -190,6 +191,9 @@ func TestPutFrameAndPreviewImport(test *testing.T) {
 	if _, err := f.controller.PutFrame(ctx, api.PutFrameRequestObject{Id: uuid.New(), Number: 1, Body: &api.PutFrameJSONRequestBody{}}); err == nil {
 		test.Fatal("an unknown roll must fail")
 	}
+	stale := api.PutFrameJSONRequestBody{Notes: pointers.To("mine"), BaseNotes: pointers.To("")}
+	_, err = f.controller.PutFrame(ctx, api.PutFrameRequestObject{Id: f.rollID, Number: 3, Body: &stale})
+	testutil.AssertAppError(test, err, apperror.KindConflict, "frame_notes_conflict")
 
 	preview, err := f.controller.PreviewScanImport(ctx, api.PreviewScanImportRequestObject{Id: f.jobID, Body: &api.PreviewScanImportJSONRequestBody{FileNames: []string{"000001.jpg", "readme.txt"}}})
 	items := preview.(api.PreviewScanImport200JSONResponse)

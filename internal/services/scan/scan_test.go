@@ -31,13 +31,79 @@ func TestSaveFrameNotesCreatesTheFrameAndTrimsNotes(test *testing.T) {
 	fixture := newScanFixture(domain.JobTypeDevelopScan)
 	ctx := context.Background()
 
-	view, err := fixture.service.SaveFrameNotes(ctx, fixture.job.RollID, 5, pointers.To("  sunset "))
+	view, err := fixture.service.SaveFrameNotes(ctx, fixture.job.RollID, 5, pointers.To("  sunset "), nil)
 	if err != nil || view.Frame.Number != 5 || view.Frame.Notes == nil || *view.Frame.Notes != "sunset" {
 		test.Fatalf("view=%+v err=%v", view, err)
 	}
-	if _, err := fixture.service.SaveFrameNotes(ctx, uuid.New(), 1, nil); err == nil {
+	if _, err := fixture.service.SaveFrameNotes(ctx, uuid.New(), 1, nil, nil); err == nil {
 		test.Fatal("an unknown roll must fail")
 	}
+}
+
+func TestSaveFrameNotesWithABaseIsACompareAndSet(test *testing.T) {
+	fixture := newScanFixture(domain.JobTypeDevelopScan)
+	ctx := context.Background()
+	rollID := fixture.job.RollID
+	notesOf := func(number int) *string {
+		frame, err := fixture.queries.GetFrameByNumber(ctx, gen.GetFrameByNumberParams{RollID: rollID, Number: int32(number)})
+		if err != nil {
+			return nil
+		}
+		return frame.Notes
+	}
+
+	// A new frame: its base is "".
+	if _, err := fixture.service.SaveFrameNotes(ctx, rollID, 7, stringRef("bridge"), stringRef("")); err != nil || *notesOf(7) != "bridge" {
+		test.Fatalf("new frame: notes=%v err=%v", notesOf(7), err)
+	}
+	frameID := mustFrameID(test, fixture, rollID, 7)
+
+	// A replay of the same edit writes nothing, even though its base no longer matches.
+	before := fixture.queries.Frames[frameID]
+	if view, err := fixture.service.SaveFrameNotes(ctx, rollID, 7, stringRef(" bridge "), stringRef("")); err != nil || view.Frame.ID != frameID {
+		test.Fatalf("replay: view=%+v err=%v", view, err)
+	}
+	if !reflect.DeepEqual(fixture.queries.Frames[frameID], before) {
+		test.Fatal("a replay must not write")
+	}
+
+	// The stored text is the base: the edit applies; trimmed text is compared.
+	if _, err := fixture.service.SaveFrameNotes(ctx, rollID, 7, stringRef("bridge, shake"), stringRef(" bridge")); err != nil || *notesOf(7) != "bridge, shake" {
+		test.Fatalf("apply: notes=%v err=%v", notesOf(7), err)
+	}
+
+	// Someone else changed it since the base: refused, nothing written.
+	_, err := fixture.service.SaveFrameNotes(ctx, rollID, 7, stringRef("mine"), stringRef("bridge"))
+	assertAppError(test, err, apperror.KindConflict, "frame_notes_conflict")
+	if *notesOf(7) != "bridge, shake" {
+		test.Fatalf("a conflict must not write: %v", notesOf(7))
+	}
+
+	// Clearing with the right base empties the notes; a null note and "" are the same base.
+	if _, err := fixture.service.SaveFrameNotes(ctx, rollID, 7, nil, stringRef("bridge, shake")); err != nil || notesOf(7) != nil {
+		test.Fatalf("clear: notes=%v err=%v", notesOf(7), err)
+	}
+	if _, err := fixture.service.SaveFrameNotes(ctx, rollID, 7, stringRef("again"), stringRef("  ")); err != nil || *notesOf(7) != "again" {
+		test.Fatalf("after clear: notes=%v err=%v", notesOf(7), err)
+	}
+
+	// A frame that does not exist yet but whose base says it had notes: conflict.
+	_, err = fixture.service.SaveFrameNotes(ctx, rollID, 12, stringRef("x"), stringRef("old"))
+	assertAppError(test, err, apperror.KindConflict, "frame_notes_conflict")
+
+	// Without a base the last write wins, as before.
+	if _, err := fixture.service.SaveFrameNotes(ctx, rollID, 7, stringRef("overwrite"), nil); err != nil || *notesOf(7) != "overwrite" {
+		test.Fatalf("no base: notes=%v err=%v", notesOf(7), err)
+	}
+}
+
+func mustFrameID(test *testing.T, fixture scanFixture, rollID uuid.UUID, number int) uuid.UUID {
+	test.Helper()
+	frame, err := fixture.queries.GetFrameByNumber(context.Background(), gen.GetFrameByNumberParams{RollID: rollID, Number: int32(number)})
+	if err != nil {
+		test.Fatal(err)
+	}
+	return frame.ID
 }
 
 func TestListScansAndCompareFrames(test *testing.T) {
@@ -443,10 +509,10 @@ func TestGetAndDeleteAScan(test *testing.T) {
 func TestListFramesAndGetFrame(test *testing.T) {
 	fixture := newScanFixture(domain.JobTypeDevelopScan)
 	ctx := context.Background()
-	if _, err := fixture.service.SaveFrameNotes(ctx, fixture.job.RollID, 3, stringRef("sunset")); err != nil {
+	if _, err := fixture.service.SaveFrameNotes(ctx, fixture.job.RollID, 3, stringRef("sunset"), nil); err != nil {
 		test.Fatal(err)
 	}
-	if _, err := fixture.service.SaveFrameNotes(ctx, fixture.job.RollID, 1, nil); err != nil {
+	if _, err := fixture.service.SaveFrameNotes(ctx, fixture.job.RollID, 1, nil, nil); err != nil {
 		test.Fatal(err)
 	}
 

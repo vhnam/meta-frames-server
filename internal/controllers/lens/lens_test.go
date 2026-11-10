@@ -6,8 +6,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"meta-frames-server/internal/api"
+	"meta-frames-server/internal/common/apperror"
 	"meta-frames-server/internal/common/pointers"
 	"meta-frames-server/internal/db/gen"
 	lenssvc "meta-frames-server/internal/services/lens"
@@ -42,6 +44,9 @@ func (stub *queries) GetLensForUpdate(ctx context.Context, arg gen.GetLensForUpd
 }
 
 func (stub *queries) InsertLens(_ context.Context, arg gen.InsertLensParams) (gen.Lens, error) {
+	if _, taken := stub.lenses[arg.ID]; taken {
+		return gen.Lens{}, &pgconn.PgError{Code: "23505"}
+	}
 	lens := gen.Lens{ID: arg.ID, Brand: arg.Brand, Model: arg.Model, Mount: arg.Mount, FocalLength: arg.FocalLength, MaxAperture: arg.MaxAperture, IsActive: true}
 	stub.lenses[arg.ID] = lens
 	return lens, nil
@@ -178,4 +183,27 @@ func TestCreateLensAssignsAFreshID(test *testing.T) {
 	if _, err := controller.CreateLens(context.Background(), api.CreateLensRequestObject{Body: bad}); err == nil {
 		test.Fatal("expected invalid_aperture")
 	}
+}
+
+func TestPutLensWithIfNoneMatchOnlyCreates(test *testing.T) {
+	controller, stub := newController()
+	ctx := context.Background()
+	id := uuid.New()
+	createOnly := api.PutLensParamsIfNoneMatchAsterisk
+	request := api.PutLensRequestObject{Id: id, Params: api.PutLensParams{IfNoneMatch: &createOnly}, Body: lensInput()}
+
+	if first, err := controller.PutLens(ctx, request); err != nil {
+		test.Fatal(err)
+	} else if _, ok := first.(api.PutLens201JSONResponse); !ok {
+		test.Fatalf("first = %#v", first)
+	}
+	request.Body.FocalLength = 35
+	_, err := controller.PutLens(ctx, request)
+	testutil.AssertAppError(test, err, apperror.KindPreconditionFailed, "already_exists")
+	if stub.lenses[id].FocalLength != 50 {
+		test.Fatal("a create-only PUT must not update the existing lens")
+	}
+	invalid := api.PutLensParamsIfNoneMatch(`"abc"`)
+	_, err = controller.PutLens(ctx, api.PutLensRequestObject{Id: uuid.New(), Params: api.PutLensParams{IfNoneMatch: &invalid}, Body: lensInput()})
+	testutil.AssertAppError(test, err, apperror.KindBadRequest, "invalid_precondition")
 }

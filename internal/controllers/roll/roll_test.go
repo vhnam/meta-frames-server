@@ -27,6 +27,9 @@ func TestToAPIRollSummary(test *testing.T) {
 	if !mapped.NegativesAtLab {
 		test.Fatal("a scanned roll with negatives away shows the badge")
 	}
+	if len(mapped.OpenJobTypes) != 0 || mapped.OpenJobTypes == nil {
+		test.Fatalf("OpenJobTypes = %#v, want an empty list (the field is required)", mapped.OpenJobTypes)
+	}
 	if mapped.Expiry == nil || mapped.Expiry.Year != 2027 || mapped.Expiry.Month == nil || *mapped.Expiry.Month != 6 {
 		test.Fatalf("Expiry = %+v", mapped.Expiry)
 	}

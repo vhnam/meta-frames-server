@@ -48,7 +48,7 @@ func NewHandler(appControllers api.StrictServerInterface, accounts *auth.Auth, c
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     corsOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Content-Type", "Idempotency-Key"},
+		AllowHeaders:     []string{"Content-Type", "Idempotency-Key", "If-Match", "If-None-Match"},
 		AllowCredentials: true,
 		MaxAge:           5 * time.Minute,
 	}))

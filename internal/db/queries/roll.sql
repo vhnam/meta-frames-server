@@ -24,6 +24,9 @@ RETURNING *;
 -- name: FinishRoll :one
 UPDATE roll SET status = 'done_shooting', finished_at = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL RETURNING *;
 
+-- name: SetRollDescription :one
+UPDATE roll SET description = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL RETURNING *;
+
 -- name: SetRollStatus :exec
 UPDATE roll SET status = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL;
 
@@ -34,7 +37,23 @@ UPDATE roll SET deleted_at = now() WHERE id = $1 AND owner_id = $2 AND deleted_a
 SELECT r.*, fs.brand AS stock_brand, fs.name AS stock_name, fs.box_iso,
        c.brand AS camera_brand, c.model AS camera_model,
        EXISTS (SELECT 1 FROM processing p
-               WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.lab_id IS NOT NULL AND p.negatives_returned_at IS NULL) AS negatives_at_lab
+               WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.lab_id IS NOT NULL AND p.negatives_returned_at IS NULL) AS negatives_at_lab,
+       -- A development is recorded once a develop job has any result back.
+       EXISTS (SELECT 1 FROM processing p
+               WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.type IN ('develop', 'develop_scan')
+                 AND (p.negatives_returned_at IS NOT NULL OR p.scans_received_at IS NOT NULL)) AS developed,
+       EXISTS (SELECT 1 FROM processing p
+               WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.scans_received_at IS NOT NULL) AS scanned,
+       -- Open means the same as RollHasOpenJob.
+       ARRAY(SELECT DISTINCT p.type FROM processing p
+             WHERE p.roll_id = r.id AND p.deleted_at IS NULL
+               AND ((p.type IN ('develop_scan', 'scan') AND p.scans_received_at IS NULL)
+                 OR (p.type IN ('develop', 'print') AND p.negatives_returned_at IS NULL))
+             ORDER BY p.type)::text[] AS open_job_types,
+       EXISTS (SELECT 1 FROM processing p
+               WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.lab_id IS NOT NULL
+                 AND ((p.type IN ('develop_scan', 'scan') AND p.scans_received_at IS NULL)
+                   OR (p.type IN ('develop', 'print') AND p.negatives_returned_at IS NULL))) AS open_at_lab
 FROM roll r
 JOIN film_stock fs ON fs.id = r.film_stock_id
 LEFT JOIN camera c ON c.id = r.camera_id
@@ -50,7 +69,7 @@ WHERE r.owner_id = @owner_id AND r.deleted_at IS NULL
   AND (sqlc.narg(focal_length)::int IS NULL OR EXISTS (
         SELECT 1 FROM roll_lens rl JOIN lens l ON l.id = rl.lens_id
         WHERE rl.roll_id = r.id AND l.focal_length = sqlc.narg(focal_length)))
-ORDER BY r.created_at DESC;
+ORDER BY r.started_at DESC NULLS LAST, r.created_at DESC, r.id DESC;
 
 -- name: ListRollLenses :many
 SELECT l.* FROM lens l JOIN roll_lens rl ON rl.lens_id = l.id

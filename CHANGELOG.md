@@ -9,12 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `RollSummary` reports the roll's jobs: `developed` (a develop or develop_scan job has negatives or scans back), `scanned` (a job has scans received), `openJobTypes` (the types of jobs still waiting for scans or negatives, each type once) and `openAtLab` (an open job is at a lab). `openAtLab` is false while the only open jobs are processed at home, even though the status is then `at_lab`.
+
 - Lab orders record what a lab bills: `GET /lab-orders`, `GET|PUT|DELETE /lab-orders/{id}`. An order has a code (unique per lab, `409 order_code_taken`), an order date, a due date, VAT and discount as amounts, and lines with a product, options, quantity and unit price. An order with jobs cannot be deleted or change lab (`409 order_has_jobs`). A line with jobs cannot be removed (`409 order_item_in_use`) or take fewer rolls than it has (`409 order_item_over_quantity`). A lab with orders counts as in use. Migration `00016` adds the `lab_order` and `lab_order_item` tables.
 - A job goes on one or more lines of an order, such as one for developing and one for scanning, with `orderItemIds` on `PUT /rolls/{id}/processing/{jobId}`, or with `PUT /processing/{id}/order-items`. The lines must be on one order (`422 order_items_on_two_orders`) from the job's lab (`422 order_lab_mismatch`), and each must have room (`409 order_item_full`). `GET /lab-orders/{id}/linkable-jobs` lists the jobs on no order or only on this one, with the lines they already have. Migration `00017` moves the link to the `processing_order_item` table.
+- `RollSummary.version` grows by one on every change to a roll, whichever endpoint makes it (edit, load, finish, notes, status changes from its jobs, delete). `PUT /rolls/{id}` takes `If-Match: "<version>"` (several comma-separated, or `*`): a different version gets `412 roll_changed` and nothing is written; a weak or malformed tag gets `400 invalid_precondition`. Without the header the edit overwrites as before. Migration `00018` adds the column and the trigger that moves it.
+- `PUT /rolls/{id}/notes` sets a roll's notes (`description`) and nothing else. With `baseDescription` it is a compare-and-set: already holding the notes is a no-op, still holding the base saves, anything else is `409 roll_notes_conflict`.
+- `FrameInput.baseNotes` makes `PUT /rolls/{id}/frames/{number}` the same compare-and-set (`409 frame_notes_conflict`). Without it the last write wins, as before.
+- `If-None-Match: *` makes `PUT /cameras/{id}`, `/lenses/{id}`, `/film-stocks/{id}` and `/labs/{id}` create-only: an id already taken, by any record of any account, deleted or not, gets `412 already_exists`, and nothing is changed or audited. Any other value gets `400 invalid_precondition`. CORS allows the `If-Match` and `If-None-Match` headers.
 - `make deploy` tests, builds and deploys the committed code to Cloud Run. `make migrate-prod` and `make migrate-prod-status` apply and list migrations on the production database. Each refuses uncommitted changes where they would reach production.
 
 ### Changed
 
+- `GET /rolls` lists the newest start date first. Rolls with no start date come last, then the newest added date, then id.
+- `negativesAtLab` is true for any roll with a lab job whose negatives are not recorded back, whatever the roll's status.
+- Finishing a roll that is already done shooting on the same date is a no-op (200) instead of `409 roll_not_in_camera`. Another date, or a roll that has moved on, is still a 409.
+- Loading a roll again into the camera that holds it is a no-op only when the start date (today when left out), the shot ISO as stored and the lens set (the built-in lens on a fixed-lens camera) all match. Any difference is `409 roll_loaded_differently`; it used to answer 200 and keep the stored values.
 - A job on an order takes its price from its lines added up, with the order's VAT and discount shared out by price, rounded to the dong. Its own `price` is cleared and cannot be sent with `orderItemIds` (`422 price_from_order`). `Processing.price`, a roll's totals and `GET /stats/spending` use this price. `Processing.order` names the order and the job's lines.
 
 ## [3.0.0] - 2026-11-03

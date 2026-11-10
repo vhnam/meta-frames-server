@@ -95,6 +95,16 @@ func (controller *Controller) CreateFilmStock(ctx context.Context, request api.C
 
 func (controller *Controller) PutFilmStock(ctx context.Context, request api.PutFilmStockRequestObject) (api.PutFilmStockResponseObject, error) {
 	input := toFilmStockInput(request.Body)
+	if request.Params.IfNoneMatch != nil {
+		if !request.Params.IfNoneMatch.Valid() {
+			return nil, apperror.InvalidCreateOnly()
+		}
+		detail, err := controller.filmStocks.Create(ctx, request.Id, input)
+		if err != nil {
+			return nil, apperror.CreateOnly(err)
+		}
+		return api.PutFilmStock201JSONResponse(toAPIFilmStockDetail(detail)), nil
+	}
 	detail, err := controller.filmStocks.Update(ctx, request.Id, input)
 	if apperror.IsNotFound(err) {
 		if detail, err = controller.filmStocks.Create(ctx, request.Id, input); err != nil {

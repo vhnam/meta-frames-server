@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"meta-frames-server/internal/api"
+	"meta-frames-server/internal/common/apperror"
 	"meta-frames-server/internal/common/clock"
 	"meta-frames-server/internal/common/convert"
 	"meta-frames-server/internal/common/pointers"
@@ -114,9 +115,57 @@ func TestLoadRollLensesAndFinish(test *testing.T) {
 	if err != nil || finished.(api.FinishRoll200JSONResponse).Roll.Status != api.RollStatus(domain.RollStatusDoneShooting) {
 		test.Fatalf("finished=%#v err=%v", finished, err)
 	}
-	if _, err := f.controller.FinishRoll(ctx, api.FinishRollRequestObject{Id: f.rollID, Body: &api.DateInput{}}); err == nil {
-		test.Fatal("finishing twice must fail")
+	if _, err := f.controller.FinishRoll(ctx, api.FinishRollRequestObject{Id: f.rollID, Body: &api.DateInput{}}); err != nil {
+		test.Fatalf("finishing again on the same day is a no-op: %v", err)
 	}
+	otherDay := convert.APIDate(time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC))
+	if _, err := f.controller.FinishRoll(ctx, api.FinishRollRequestObject{Id: f.rollID, Body: &api.DateInput{Date: &otherDay}}); err == nil {
+		test.Fatal("finishing again on another day must fail")
+	}
+}
+
+func TestPutRollChecksIfMatchAndReportsTheVersion(test *testing.T) {
+	f := newFixture()
+	ctx := context.Background()
+	put := func(ifMatch *string) (api.PutRollResponseObject, error) {
+		return f.controller.PutRoll(ctx, api.PutRollRequestObject{
+			Id: f.rollID, Params: api.PutRollParams{IfMatch: ifMatch}, Body: &api.RollInput{FilmStockId: f.stockID, Format: 135, Exposures: 36, Price: pointers.To(100)},
+		})
+	}
+	response, err := put(pointers.To(`"0"`))
+	if err != nil || response.(api.PutRoll200JSONResponse).Roll.Version != 1 {
+		test.Fatalf("matching version: response=%#v err=%v", response, err)
+	}
+	_, err = put(pointers.To(`"0"`))
+	testutil.AssertAppError(test, err, apperror.KindPreconditionFailed, "roll_changed")
+	for _, accepted := range []string{`"1"`, ` "9", "1" `, `*`} {
+		if _, err := put(pointers.To(accepted)); err != nil {
+			test.Fatalf("If-Match %s: %v", accepted, err)
+		}
+	}
+	for _, malformed := range []string{``, `1`, `W/"1"`, `"1`, `"-1"`, `"+1"`, `"1",`, `"x"`, `"99999999999999999999"`} {
+		_, err := put(pointers.To(malformed))
+		testutil.AssertAppError(test, err, apperror.KindBadRequest, "invalid_precondition")
+	}
+	if _, err := put(nil); err != nil {
+		test.Fatalf("a client without If-Match still writes: %v", err)
+	}
+}
+
+func TestPutRollNotesWritesOnlyTheNotes(test *testing.T) {
+	f := newFixture()
+	ctx := context.Background()
+	roll := f.memory.Rolls[f.rollID]
+	roll.Price = pointers.To(int32(150000))
+	f.memory.Rolls[f.rollID] = roll
+
+	response, err := f.controller.PutRollNotes(ctx, api.PutRollNotesRequestObject{Id: f.rollID, Body: &api.RollNotesInput{Description: "overcast", BaseDescription: pointers.To("")}})
+	detail, ok := response.(api.PutRollNotes200JSONResponse)
+	if err != nil || !ok || *detail.Roll.Description != "overcast" || *detail.Roll.Price != 150000 || detail.Roll.Version != 1 {
+		test.Fatalf("response=%#v err=%v", response, err)
+	}
+	_, err = f.controller.PutRollNotes(ctx, api.PutRollNotesRequestObject{Id: f.rollID, Body: &api.RollNotesInput{Description: "mine", BaseDescription: pointers.To("")}})
+	testutil.AssertAppError(test, err, apperror.KindConflict, "roll_notes_conflict")
 }
 
 func TestGetExpiryReport(test *testing.T) {
