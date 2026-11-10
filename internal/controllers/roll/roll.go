@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"meta-frames-server/internal/api"
 	"meta-frames-server/internal/common/apperror"
 	"meta-frames-server/internal/common/convert"
@@ -13,16 +15,22 @@ import (
 	"meta-frames-server/internal/controllers/lens"
 	"meta-frames-server/internal/controllers/processing"
 	"meta-frames-server/internal/controllers/scan"
+	"meta-frames-server/internal/db/gen"
+	processingsvc "meta-frames-server/internal/services/processing"
 	rollsvc "meta-frames-server/internal/services/roll"
+	scannersvc "meta-frames-server/internal/services/scanner"
 )
 
 // Controller serves the roll endpoints.
 type Controller struct {
-	rolls *rollsvc.Service
+	rolls    *rollsvc.Service
+	scanners *scannersvc.Service
 }
 
-// New builds the controller around its service.
-func New(rolls *rollsvc.Service) *Controller { return &Controller{rolls: rolls} }
+// New builds the controller around its services.
+func New(rolls *rollsvc.Service, scanners *scannersvc.Service) *Controller {
+	return &Controller{rolls: rolls, scanners: scanners}
+}
 
 func expiryInput(expiry *api.ExpiryMonth) (year, month *int) {
 	if expiry == nil {
@@ -129,6 +137,28 @@ func (controller *Controller) AddRolls(ctx context.Context, request api.AddRolls
 		return nil, err
 	}
 	return api.AddRolls201JSONResponse(toAPIRollSummaries(summaries)), nil
+}
+
+func (controller *Controller) HandOverRolls(ctx context.Context, request api.HandOverRollsRequestObject) (api.HandOverRollsResponseObject, error) {
+	body := request.Body
+	input := rollsvc.HandOverInput{
+		LabID: body.LabId, HandedAt: convert.FromAPIDate(body.HandedAt), Notes: body.Notes,
+		ResolveScanOrders: func(queries gen.Querier) ([]processingsvc.ScanOrderInput, error) {
+			pick := func(ctx context.Context, scannerID *uuid.UUID, code *string) (uuid.UUID, error) {
+				return controller.scanners.PickForOrderIn(ctx, queries, scannerID, code)
+			}
+			return processing.ScanOrderInputs(ctx, pick, body.ScanOrders)
+		},
+		Rolls: make([]rollsvc.HandOverRoll, len(body.Rolls)), IdempotencyKey: pointers.Value(request.Params.IdempotencyKey),
+	}
+	for index, item := range body.Rolls {
+		input.Rolls[index] = rollsvc.HandOverRoll{RollID: item.RollId, Type: string(item.Type)}
+	}
+	summaries, err := controller.rolls.HandOver(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	return api.HandOverRolls201JSONResponse(toAPIRollSummaries(summaries)), nil
 }
 
 // parseIfMatch reads an If-Match header: `*`, or a comma-separated list of strong entity tags

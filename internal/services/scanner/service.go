@@ -92,14 +92,19 @@ func (service *Service) Create(ctx context.Context, scannerID uuid.UUID, input I
 	}
 	var scanner gen.Scanner
 	err = service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		if err := checkNameFree(ctx, queries, input); err != nil {
-			return err
-		}
-		scanner, err = queries.InsertScanner(ctx, gen.InsertScannerParams{
-			ID: scannerID, Brand: input.Brand, Model: input.Model, Kind: input.Kind, Notes: input.Notes,
-			DefaultSettings: domain.EncodeScanSettings(input.DefaultSettings), OwnerID: requestctx.Owner(ctx),
-		})
+		scanner, err = insertScanner(ctx, queries, scannerID, input)
 		return err
+	})
+	return scanner, err
+}
+
+func insertScanner(ctx context.Context, queries gen.Querier, scannerID uuid.UUID, input Input) (gen.Scanner, error) {
+	if err := checkNameFree(ctx, queries, input); err != nil {
+		return gen.Scanner{}, err
+	}
+	scanner, err := queries.InsertScanner(ctx, gen.InsertScannerParams{
+		ID: scannerID, Brand: input.Brand, Model: input.Model, Kind: input.Kind, Notes: input.Notes,
+		DefaultSettings: domain.EncodeScanSettings(input.DefaultSettings), OwnerID: requestctx.Owner(ctx),
 	})
 	return scanner, nameTaken(err)
 }
@@ -170,15 +175,22 @@ func (service *Service) Delete(ctx context.Context, scannerID uuid.UUID) error {
 // The id is returned as given: callers check that the account can use it. The code "other"
 // stands for the account's "Unknown scanner" and is unknown_scanner when there is none.
 func (service *Service) Pick(ctx context.Context, scannerID *uuid.UUID, code *string) (uuid.UUID, error) {
-	return service.pick(ctx, scannerID, code, false)
+	return service.pick(ctx, nil, scannerID, code, false)
 }
 
 // PickForOrder is Pick for ordering a scan, where "other" creates the "Unknown scanner" on first use.
 func (service *Service) PickForOrder(ctx context.Context, scannerID *uuid.UUID, code *string) (uuid.UUID, error) {
-	return service.pick(ctx, scannerID, code, true)
+	return service.pick(ctx, nil, scannerID, code, true)
 }
 
-func (service *Service) pick(ctx context.Context, scannerID *uuid.UUID, code *string, create bool) (uuid.UUID, error) {
+// PickForOrderIn is PickForOrder inside the caller's transaction, so a refused request also drops
+// the "Unknown scanner" it created.
+func (service *Service) PickForOrderIn(ctx context.Context, queries gen.Querier, scannerID *uuid.UUID, code *string) (uuid.UUID, error) {
+	return service.pick(ctx, queries, scannerID, code, true)
+}
+
+// pick: queries is the caller's transaction, or nil when there is none.
+func (service *Service) pick(ctx context.Context, queries gen.Querier, scannerID *uuid.UUID, code *string, create bool) (uuid.UUID, error) {
 	if (scannerID == nil) == (code == nil) {
 		return uuid.Nil, apperror.Unprocessable("invalid_scanner", "give either scannerId or scanner")
 	}
@@ -191,15 +203,19 @@ func (service *Service) pick(ctx context.Context, scannerID *uuid.UUID, code *st
 	case domain.ScannerCodeFrontier:
 		return domain.ScannerFrontierSP3000, nil
 	case domain.ScannerCodeOther:
-		return service.unknownScanner(ctx, create)
+		return service.unknownScanner(ctx, queries, create)
 	default:
 		return uuid.Nil, apperror.Unprocessable("invalid_scanner", "scanner must be noritsu, frontier or other")
 	}
 }
 
-func (service *Service) unknownScanner(ctx context.Context, create bool) (uuid.UUID, error) {
+func (service *Service) unknownScanner(ctx context.Context, queries gen.Querier, create bool) (uuid.UUID, error) {
 	named := gen.GetOwnScannerNamedParams{OwnerID: requestctx.Owner(ctx), Brand: unknownBrand, Model: &unknownModel}
-	scanner, err := service.store.Queries().GetOwnScannerNamed(ctx, named)
+	lookup := queries
+	if lookup == nil {
+		lookup = service.store.Queries()
+	}
+	scanner, err := lookup.GetOwnScannerNamed(ctx, named)
 	if err == nil {
 		return scanner.ID, nil
 	}
@@ -208,6 +224,11 @@ func (service *Service) unknownScanner(ctx context.Context, create bool) (uuid.U
 	}
 	if !create {
 		return uuid.Nil, apperror.Unprocessable("unknown_scanner", "scanner does not exist")
+	}
+	if queries != nil {
+		// A concurrent first use fails the caller's transaction with already_exists; a retry finds it.
+		scanner, err = insertScanner(ctx, queries, service.newID(), Input{Brand: unknownBrand, Model: &unknownModel})
+		return scanner.ID, err
 	}
 	scanner, err = service.Create(ctx, service.newID(), Input{Brand: unknownBrand, Model: &unknownModel})
 	if appError, ok := apperror.From(err); ok && appError.Code == "already_exists" {

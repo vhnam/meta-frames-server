@@ -32,6 +32,9 @@ UPDATE roll SET target = $2, develop_by = $3, scan_by = $4
 WHERE id = $1 AND owner_id = $5 AND deleted_at IS NULL
 RETURNING *;
 
+-- name: ClearRollScanRequest :exec
+UPDATE roll SET scan_requested_at = NULL WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL;
+
 -- name: SetRollStatus :exec
 UPDATE roll SET status = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL;
 

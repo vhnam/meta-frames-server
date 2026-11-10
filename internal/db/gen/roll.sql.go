@@ -31,6 +31,20 @@ func (q *Queries) ClaimIdempotencyKey(ctx context.Context, arg ClaimIdempotencyK
 	return result.RowsAffected(), nil
 }
 
+const clearRollScanRequest = `-- name: ClearRollScanRequest :exec
+UPDATE roll SET scan_requested_at = NULL WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
+`
+
+type ClearRollScanRequestParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) ClearRollScanRequest(ctx context.Context, arg ClearRollScanRequestParams) error {
+	_, err := q.db.Exec(ctx, clearRollScanRequest, arg.ID, arg.OwnerID)
+	return err
+}
+
 const deleteRollLensesExcept = `-- name: DeleteRollLensesExcept :exec
 DELETE FROM roll_lens WHERE roll_id = $1 AND NOT (lens_id = ANY($2::uuid[]))
 `

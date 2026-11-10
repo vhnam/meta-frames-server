@@ -21,6 +21,7 @@ type Querier interface {
 	ClearLabDefaultScanner(ctx context.Context, labID uuid.UUID) error
 	// A job on an order takes its price from its lines, so its own price goes.
 	ClearProcessingPrice(ctx context.Context, arg ClearProcessingPriceParams) error
+	ClearRollScanRequest(ctx context.Context, arg ClearRollScanRequestParams) error
 	CountCameraRolls(ctx context.Context, arg CountCameraRollsParams) (int64, error)
 	CountLabOrderItemJobs(ctx context.Context, arg CountLabOrderItemJobsParams) (int32, error)
 	DeleteCameraLensesExcept(ctx context.Context, arg DeleteCameraLensesExceptParams) error
@@ -70,6 +71,7 @@ type Querier interface {
 	InsertCameraLens(ctx context.Context, arg InsertCameraLensParams) error
 	InsertFilmStock(ctx context.Context, arg InsertFilmStockParams) (FilmStock, error)
 	InsertLab(ctx context.Context, arg InsertLabParams) (Lab, error)
+	InsertLabHandoff(ctx context.Context, arg InsertLabHandoffParams) error
 	InsertLabOrder(ctx context.Context, arg InsertLabOrderParams) (LabOrder, error)
 	InsertLens(ctx context.Context, arg InsertLensParams) (Lens, error)
 	InsertProcessing(ctx context.Context, arg InsertProcessingParams) (Processing, error)
@@ -120,6 +122,7 @@ type Querier interface {
 	// A deleted scanner leaves the labs that ran it.
 	RemoveScannerFromLabs(ctx context.Context, scannerID uuid.UUID) error
 	ReplaceScan(ctx context.Context, arg ReplaceScanParams) (Scan, error)
+	RollHasOpenHandoff(ctx context.Context, arg RollHasOpenHandoffParams) (bool, error)
 	RollHasOpenJob(ctx context.Context, arg RollHasOpenJobParams) (bool, error)
 	RollHasScansReceived(ctx context.Context, arg RollHasScansReceivedParams) (bool, error)
 	RollSpend(ctx context.Context, arg RollSpendParams) (RollSpendRow, error)

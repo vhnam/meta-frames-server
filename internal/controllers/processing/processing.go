@@ -3,6 +3,7 @@ package processing
 import (
 	"context"
 
+	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"meta-frames-server/internal/api"
@@ -90,6 +91,23 @@ func (controller *Controller) GetProcessing(ctx context.Context, request api.Get
 	return api.GetProcessing200JSONResponse(ToAPIProcessing(view)), nil
 }
 
+// ScanOrderInputs resolves each requested scan order to a scanner with pick, by id or by built-in code.
+func ScanOrderInputs(ctx context.Context, pick func(context.Context, *uuid.UUID, *string) (uuid.UUID, error), orders *[]api.ScanOrderInput) ([]processingsvc.ScanOrderInput, error) {
+	var inputs []processingsvc.ScanOrderInput
+	for _, order := range pointers.Value(orders) {
+		var code *string
+		if order.Scanner != nil {
+			code = pointers.To(string(*order.Scanner))
+		}
+		scannerID, err := pick(ctx, order.ScannerId, code)
+		if err != nil {
+			return nil, err
+		}
+		inputs = append(inputs, processingsvc.ScanOrderInput{ScannerID: scannerID, Settings: orderSettings(order)})
+	}
+	return inputs, nil
+}
+
 func (controller *Controller) PutProcessing(ctx context.Context, request api.PutProcessingRequestObject) (api.PutProcessingResponseObject, error) {
 	body := request.Body
 	input := processingsvc.Input{
@@ -99,19 +117,11 @@ func (controller *Controller) PutProcessing(ctx context.Context, request api.Put
 	if body.Process != nil {
 		input.Process = pointers.To(string(*body.Process))
 	}
-	if body.ScanOrders != nil {
-		for _, order := range *body.ScanOrders {
-			var code *string
-			if order.Scanner != nil {
-				code = pointers.To(string(*order.Scanner))
-			}
-			scannerID, err := controller.scanners.PickForOrder(ctx, order.ScannerId, code)
-			if err != nil {
-				return nil, err
-			}
-			input.ScanOrders = append(input.ScanOrders, processingsvc.ScanOrderInput{ScannerID: scannerID, Settings: orderSettings(order)})
-		}
+	scanOrders, err := ScanOrderInputs(ctx, controller.scanners.PickForOrder, body.ScanOrders)
+	if err != nil {
+		return nil, err
 	}
+	input.ScanOrders = scanOrders
 	view, created, err := controller.processing.Save(ctx, request.Id, request.JobId, input)
 	if err != nil {
 		return nil, err
