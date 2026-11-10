@@ -67,7 +67,7 @@ func (q *Queries) FinishIdempotencyKey(ctx context.Context, arg FinishIdempotenc
 }
 
 const finishRoll = `-- name: FinishRoll :one
-UPDATE roll SET status = 'done_shooting', finished_at = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL RETURNING id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at, owner_id
+UPDATE roll SET status = 'done_shooting', finished_at = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL RETURNING id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at, owner_id, version
 `
 
 type FinishRollParams struct {
@@ -97,6 +97,7 @@ func (q *Queries) FinishRoll(ctx context.Context, arg FinishRollParams) (Roll, e
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.OwnerID,
+		&i.Version,
 	)
 	return i, err
 }
@@ -175,7 +176,7 @@ func (q *Queries) GetIdempotencyKey(ctx context.Context, arg GetIdempotencyKeyPa
 }
 
 const getRoll = `-- name: GetRoll :one
-SELECT id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at, owner_id FROM roll WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
+SELECT id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at, owner_id, version FROM roll WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
 `
 
 type GetRollParams struct {
@@ -204,12 +205,13 @@ func (q *Queries) GetRoll(ctx context.Context, arg GetRollParams) (Roll, error) 
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.OwnerID,
+		&i.Version,
 	)
 	return i, err
 }
 
 const getRollForUpdate = `-- name: GetRollForUpdate :one
-SELECT id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at, owner_id FROM roll WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL FOR UPDATE
+SELECT id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at, owner_id, version FROM roll WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL FOR UPDATE
 `
 
 type GetRollForUpdateParams struct {
@@ -238,6 +240,7 @@ func (q *Queries) GetRollForUpdate(ctx context.Context, arg GetRollForUpdatePara
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.OwnerID,
+		&i.Version,
 	)
 	return i, err
 }
@@ -245,7 +248,7 @@ func (q *Queries) GetRollForUpdate(ctx context.Context, arg GetRollForUpdatePara
 const insertRoll = `-- name: InsertRoll :one
 INSERT INTO roll (id, film_stock_id, format, exposures, price, expiry_year, expiry_month, owner_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at, owner_id
+RETURNING id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at, owner_id, version
 `
 
 type InsertRollParams struct {
@@ -289,6 +292,7 @@ func (q *Queries) InsertRoll(ctx context.Context, arg InsertRollParams) (Roll, e
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.OwnerID,
+		&i.Version,
 	)
 	return i, err
 }
@@ -457,10 +461,26 @@ func (q *Queries) ListRollScans(ctx context.Context, arg ListRollScansParams) ([
 }
 
 const listRollSummaries = `-- name: ListRollSummaries :many
-SELECT r.id, r.film_stock_id, r.camera_id, r.format, r.exposures, r.status, r.shot_iso, r.expiry_year, r.expiry_month, r.price, r.description, r.started_at, r.finished_at, r.created_at, r.updated_at, r.deleted_at, r.owner_id, fs.brand AS stock_brand, fs.name AS stock_name, fs.box_iso,
+SELECT r.id, r.film_stock_id, r.camera_id, r.format, r.exposures, r.status, r.shot_iso, r.expiry_year, r.expiry_month, r.price, r.description, r.started_at, r.finished_at, r.created_at, r.updated_at, r.deleted_at, r.owner_id, r.version, fs.brand AS stock_brand, fs.name AS stock_name, fs.box_iso,
        c.brand AS camera_brand, c.model AS camera_model,
        EXISTS (SELECT 1 FROM processing p
-               WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.lab_id IS NOT NULL AND p.negatives_returned_at IS NULL) AS negatives_at_lab
+               WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.lab_id IS NOT NULL AND p.negatives_returned_at IS NULL) AS negatives_at_lab,
+       -- A development is recorded once a develop job has any result back.
+       EXISTS (SELECT 1 FROM processing p
+               WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.type IN ('develop', 'develop_scan')
+                 AND (p.negatives_returned_at IS NOT NULL OR p.scans_received_at IS NOT NULL)) AS developed,
+       EXISTS (SELECT 1 FROM processing p
+               WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.scans_received_at IS NOT NULL) AS scanned,
+       -- Open means the same as RollHasOpenJob.
+       ARRAY(SELECT DISTINCT p.type FROM processing p
+             WHERE p.roll_id = r.id AND p.deleted_at IS NULL
+               AND ((p.type IN ('develop_scan', 'scan') AND p.scans_received_at IS NULL)
+                 OR (p.type IN ('develop', 'print') AND p.negatives_returned_at IS NULL))
+             ORDER BY p.type)::text[] AS open_job_types,
+       EXISTS (SELECT 1 FROM processing p
+               WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.lab_id IS NOT NULL
+                 AND ((p.type IN ('develop_scan', 'scan') AND p.scans_received_at IS NULL)
+                   OR (p.type IN ('develop', 'print') AND p.negatives_returned_at IS NULL))) AS open_at_lab
 FROM roll r
 JOIN film_stock fs ON fs.id = r.film_stock_id
 LEFT JOIN camera c ON c.id = r.camera_id
@@ -476,7 +496,7 @@ WHERE r.owner_id = $1 AND r.deleted_at IS NULL
   AND ($10::int IS NULL OR EXISTS (
         SELECT 1 FROM roll_lens rl JOIN lens l ON l.id = rl.lens_id
         WHERE rl.roll_id = r.id AND l.focal_length = $10))
-ORDER BY r.created_at DESC
+ORDER BY r.started_at DESC NULLS LAST, r.created_at DESC, r.id DESC
 `
 
 type ListRollSummariesParams struct {
@@ -510,12 +530,17 @@ type ListRollSummariesRow struct {
 	UpdatedAt      pgtype.Timestamptz
 	DeletedAt      pgtype.Timestamptz
 	OwnerID        uuid.UUID
+	Version        int64
 	StockBrand     string
 	StockName      string
 	BoxIso         string
 	CameraBrand    *string
 	CameraModel    *string
 	NegativesAtLab bool
+	Developed      bool
+	Scanned        bool
+	OpenJobTypes   []string
+	OpenAtLab      bool
 }
 
 func (q *Queries) ListRollSummaries(ctx context.Context, arg ListRollSummariesParams) ([]ListRollSummariesRow, error) {
@@ -556,12 +581,17 @@ func (q *Queries) ListRollSummaries(ctx context.Context, arg ListRollSummariesPa
 			&i.UpdatedAt,
 			&i.DeletedAt,
 			&i.OwnerID,
+			&i.Version,
 			&i.StockBrand,
 			&i.StockName,
 			&i.BoxIso,
 			&i.CameraBrand,
 			&i.CameraModel,
 			&i.NegativesAtLab,
+			&i.Developed,
+			&i.Scanned,
+			&i.OpenJobTypes,
+			&i.OpenAtLab,
 		); err != nil {
 			return nil, err
 		}
@@ -576,7 +606,7 @@ func (q *Queries) ListRollSummaries(ctx context.Context, arg ListRollSummariesPa
 const loadRoll = `-- name: LoadRoll :one
 UPDATE roll SET camera_id = $2, status = 'in_camera', started_at = $3, shot_iso = $4
 WHERE id = $1 AND owner_id = $5 AND deleted_at IS NULL
-RETURNING id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at, owner_id
+RETURNING id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at, owner_id, version
 `
 
 type LoadRollParams struct {
@@ -614,6 +644,7 @@ func (q *Queries) LoadRoll(ctx context.Context, arg LoadRollParams) (Roll, error
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.OwnerID,
+		&i.Version,
 	)
 	return i, err
 }
@@ -714,6 +745,42 @@ func (q *Queries) SetFrameNotes(ctx context.Context, arg SetFrameNotesParams) (F
 	return i, err
 }
 
+const setRollDescription = `-- name: SetRollDescription :one
+UPDATE roll SET description = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL RETURNING id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at, owner_id, version
+`
+
+type SetRollDescriptionParams struct {
+	ID          uuid.UUID
+	Description *string
+	OwnerID     uuid.UUID
+}
+
+func (q *Queries) SetRollDescription(ctx context.Context, arg SetRollDescriptionParams) (Roll, error) {
+	row := q.db.QueryRow(ctx, setRollDescription, arg.ID, arg.Description, arg.OwnerID)
+	var i Roll
+	err := row.Scan(
+		&i.ID,
+		&i.FilmStockID,
+		&i.CameraID,
+		&i.Format,
+		&i.Exposures,
+		&i.Status,
+		&i.ShotIso,
+		&i.ExpiryYear,
+		&i.ExpiryMonth,
+		&i.Price,
+		&i.Description,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.OwnerID,
+		&i.Version,
+	)
+	return i, err
+}
+
 const setRollStatus = `-- name: SetRollStatus :exec
 UPDATE roll SET status = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL
 `
@@ -751,7 +818,7 @@ UPDATE roll SET film_stock_id = $2, format = $3, exposures = $4, price = $5,
        expiry_year = $6, expiry_month = $7, shot_iso = $8, started_at = $9,
        finished_at = $10, description = $11
 WHERE id = $1 AND owner_id = $12 AND deleted_at IS NULL
-RETURNING id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at, owner_id
+RETURNING id, film_stock_id, camera_id, format, exposures, status, shot_iso, expiry_year, expiry_month, price, description, started_at, finished_at, created_at, updated_at, deleted_at, owner_id, version
 `
 
 type UpdateRollParams struct {
@@ -803,6 +870,7 @@ func (q *Queries) UpdateRoll(ctx context.Context, arg UpdateRollParams) (Roll, e
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.OwnerID,
+		&i.Version,
 	)
 	return i, err
 }

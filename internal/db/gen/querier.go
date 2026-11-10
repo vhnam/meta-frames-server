@@ -131,6 +131,7 @@ type Querier interface {
 	SetFrameNotes(ctx context.Context, arg SetFrameNotesParams) (Frame, error)
 	SetLensActive(ctx context.Context, arg SetLensActiveParams) (Lens, error)
 	SetNegativesReturned(ctx context.Context, arg SetNegativesReturnedParams) (Processing, error)
+	SetRollDescription(ctx context.Context, arg SetRollDescriptionParams) (Roll, error)
 	SetRollStatus(ctx context.Context, arg SetRollStatusParams) error
 	SetScansReceived(ctx context.Context, arg SetScansReceivedParams) (Processing, error)
 	SoftDeleteBuiltInLenses(ctx context.Context, arg SoftDeleteBuiltInLensesParams) error

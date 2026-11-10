@@ -251,6 +251,9 @@ func (service *Service) Update(ctx context.Context, rollID uuid.UUID, input Inpu
 		if err != nil {
 			return shared.NotFoundOr(err, "roll")
 		}
+		if input.IfMatch != nil && !input.IfMatch.Holds(roll.Version) {
+			return apperror.PreconditionFailed("roll_changed", "the roll was changed since it was loaded; reload it and apply your edit again")
+		}
 		if input.FilmStockID != roll.FilmStockID && roll.Status != domain.RollStatusInStock {
 			return apperror.Conflict("stock_locked", "film stock can only change while the roll is in stock")
 		}
@@ -276,7 +279,34 @@ func (service *Service) Update(ctx context.Context, rollID uuid.UUID, input Inpu
 	return detail, err
 }
 
-// Load puts an in-stock roll into a camera (UC-17). Repeating the same load changes nothing.
+// SetNotes writes only a roll's notes. With a base, it is a compare-and-set against the stored
+// notes, decided under the roll's row lock like every other roll write.
+func (service *Service) SetNotes(ctx context.Context, rollID uuid.UUID, description string, base *string) (Detail, error) {
+	var detail Detail
+	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
+		roll, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: rollID, OwnerID: requestctx.Owner(ctx)})
+		if err != nil {
+			return shared.NotFoundOr(err, "roll")
+		}
+		switch shared.DecideNoteEdit(roll.Description, &description, base) {
+		case shared.NoteConflict:
+			return apperror.Conflict("roll_notes_conflict", "the roll's notes were changed elsewhere")
+		case shared.NoteApply:
+			if _, err := queries.SetRollDescription(ctx, gen.SetRollDescriptionParams{
+				ID: rollID, Description: pointers.TrimmedOrNil(&description), OwnerID: requestctx.Owner(ctx),
+			}); err != nil {
+				return err
+			}
+		case shared.NoteUnchanged:
+		}
+		detail, err = buildRollDetail(ctx, queries, service.clock.Today(), rollID, nil)
+		return err
+	})
+	return detail, err
+}
+
+// Load puts an in-stock roll into a camera (UC-17). Repeating the same load changes nothing;
+// a repeat that asks for different details is refused rather than silently ignored.
 func (service *Service) Load(ctx context.Context, rollID uuid.UUID, input LoadInput) (Detail, error) {
 	var detail Detail
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
@@ -286,6 +316,13 @@ func (service *Service) Load(ctx context.Context, rollID uuid.UUID, input LoadIn
 		}
 		today := service.clock.Today()
 		if roll.Status == domain.RollStatusInCamera && roll.CameraID != nil && *roll.CameraID == input.CameraID {
+			same, err := loadedAsRequested(ctx, queries, roll, input, today)
+			if err != nil {
+				return err
+			}
+			if !same {
+				return apperror.Conflict("roll_loaded_differently", "the roll is already loaded into this camera with different details")
+			}
 			detail, err = buildRollDetail(ctx, queries, today, rollID, nil)
 			return err
 		}
@@ -341,6 +378,65 @@ func (service *Service) Load(ctx context.Context, rollID uuid.UUID, input LoadIn
 		return Detail{}, apperror.Conflict("camera_loaded", "camera already holds a roll; finish it first")
 	}
 	return detail, err
+}
+
+// loadedAsRequested reports whether a roll already in the requested camera was loaded with the
+// requested start date, shot ISO (as it would be stored) and lens set. A fixed-lens camera always
+// gets its built-in lens, so for one the requested lenses do not matter.
+func loadedAsRequested(ctx context.Context, queries gen.Querier, roll gen.Roll, input LoadInput, today time.Time) (bool, error) {
+	if roll.StartedAt == nil || !sameDate(*roll.StartedAt, shared.DateOrDefault(input.StartedAt, today)) {
+		return false, nil
+	}
+	stock, err := queries.GetFilmStock(ctx, gen.GetFilmStockParams{ID: roll.FilmStockID, OwnerID: requestctx.Owner(ctx)})
+	if err != nil {
+		return false, err
+	}
+	if !equalInt32(roll.ShotIso, normalizeShotISO(input.ShotISO, stock.BoxIso)) {
+		return false, nil
+	}
+	camera, err := queries.GetCamera(ctx, gen.GetCameraParams{ID: input.CameraID, OwnerID: requestctx.Owner(ctx)})
+	if err != nil {
+		return false, err
+	}
+	var requested []uuid.UUID
+	if camera.HasFixedLens {
+		linked, err := queries.ListCameraLenses(ctx, gen.ListCameraLensesParams{CameraID: camera.ID, OwnerID: requestctx.Owner(ctx)})
+		if err != nil {
+			return false, err
+		}
+		for _, lens := range linked {
+			requested = append(requested, lens.ID)
+		}
+	} else if input.LensIDs != nil {
+		requested = shared.RemoveDuplicates(*input.LensIDs)
+	}
+	current, err := queries.ListRollLenses(ctx, gen.ListRollLensesParams{RollID: roll.ID, OwnerID: requestctx.Owner(ctx)})
+	if err != nil {
+		return false, err
+	}
+	if len(current) != len(requested) {
+		return false, nil
+	}
+	onRoll := shared.LensIDSet(current)
+	for _, lensID := range requested {
+		if !onRoll[lensID] {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func sameDate(left, right time.Time) bool {
+	leftYear, leftMonth, leftDay := left.Date()
+	rightYear, rightMonth, rightDay := right.Date()
+	return leftYear == rightYear && leftMonth == rightMonth && leftDay == rightDay
+}
+
+func equalInt32(left, right *int32) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return *left == *right
 }
 
 // lensesForLoad decides which lenses go on a roll being loaded: the built-in lens of a
@@ -432,7 +528,8 @@ func checkUsableLenses(found []gen.Lens, requestedIDs []uuid.UUID, alreadyOnRoll
 	return nil
 }
 
-// Finish marks a roll as fully exposed and frees its camera (UC-19).
+// Finish marks a roll as fully exposed and frees its camera (UC-19). Repeating the finish with
+// the same date changes nothing.
 func (service *Service) Finish(ctx context.Context, rollID uuid.UUID, finishedAt *time.Time) (Detail, error) {
 	var detail Detail
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
@@ -440,11 +537,16 @@ func (service *Service) Finish(ctx context.Context, rollID uuid.UUID, finishedAt
 		if err != nil {
 			return shared.NotFoundOr(err, "roll")
 		}
+		today := service.clock.Today()
+		date := shared.DateOrDefault(finishedAt, today)
+		if roll.Status == domain.RollStatusDoneShooting && roll.FinishedAt != nil && sameDate(*roll.FinishedAt, date) {
+			detail, err = buildRollDetail(ctx, queries, today, rollID, nil)
+			return err
+		}
 		if roll.Status != domain.RollStatusInCamera {
 			return apperror.Conflict("roll_not_in_camera", "only a roll in a camera can be finished")
 		}
-		today := service.clock.Today()
-		if _, err := queries.FinishRoll(ctx, gen.FinishRollParams{ID: rollID, FinishedAt: pointers.To(shared.DateOrDefault(finishedAt, today)), OwnerID: requestctx.Owner(ctx)}); err != nil {
+		if _, err := queries.FinishRoll(ctx, gen.FinishRollParams{ID: rollID, FinishedAt: &date, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return err
 		}
 		detail, err = buildRollDetail(ctx, queries, today, rollID, nil)

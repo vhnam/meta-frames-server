@@ -62,7 +62,7 @@ func ToAPIFrame(view scansvc.FrameView) api.Frame {
 }
 
 func (controller *Controller) PutFrame(ctx context.Context, request api.PutFrameRequestObject) (api.PutFrameResponseObject, error) {
-	view, err := controller.scans.SaveFrameNotes(ctx, request.Id, request.Number, request.Body.Notes)
+	view, err := controller.scans.SaveFrameNotes(ctx, request.Id, request.Number, request.Body.Notes, request.Body.BaseNotes)
 	if err != nil {
 		return nil, err
 	}

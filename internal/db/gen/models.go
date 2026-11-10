@@ -221,6 +221,7 @@ type Roll struct {
 	UpdatedAt   pgtype.Timestamptz
 	DeletedAt   pgtype.Timestamptz
 	OwnerID     uuid.UUID
+	Version     int64
 }
 
 type RollLens struct {

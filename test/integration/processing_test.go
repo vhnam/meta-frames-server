@@ -2,9 +2,12 @@ package integration_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -172,5 +175,123 @@ func TestHomeProcessingRecordsTheDayNegativesWereDeveloped(test *testing.T) {
 	// Closing a develop-only job leaves the roll developed (never scanned).
 	if status := harness.rollStatus(rollID); status != "developed" {
 		test.Fatalf("status = %s", status)
+	}
+}
+
+func TestRollSummaryReportsJobsAndNegativesAtLab(test *testing.T) {
+	harness := newHarness(test)
+	seeded := seedGear(harness)
+	labID := newID()
+	harness.expect(harness.call("PUT", "/labs/"+labID, map[string]any{"name": "Lab A"}), http.StatusCreated)
+	scanOrders := []map[string]any{{"scanner": "noritsu"}}
+
+	send := func(rollID string, body map[string]any) string {
+		jobID := newID()
+		harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+jobID, body), http.StatusCreated)
+		return jobID
+	}
+	record := func(jobID, what string) {
+		harness.expect(harness.call("PUT", "/processing/"+jobID+"/"+what, nil), http.StatusOK)
+	}
+	check := func(step, rollID string, developed, scanned, negativesAtLab bool, openJobTypes string) {
+		test.Helper()
+		roll := harness.expect(harness.call("GET", "/rolls/"+rollID, nil), http.StatusOK).Body["roll"].(map[string]any)
+		got := fmt.Sprint(roll["developed"], roll["scanned"], roll["negativesAtLab"], roll["openJobTypes"])
+		if want := fmt.Sprint(developed, scanned, negativesAtLab, splitTypes(openJobTypes)); got != want {
+			test.Errorf("%s: developed scanned negativesAtLab openJobTypes = %s, want %s", step, got, want)
+		}
+	}
+
+	// Develop only, then sent again for scan only.
+	developThenScan := harness.finishedRoll(seeded)
+	develop := send(developThenScan, map[string]any{"labId": labID, "type": "develop"})
+	check("develop at lab", developThenScan, false, false, true, "develop")
+	record(develop, "negatives-returned")
+	check("developed", developThenScan, true, false, false, "")
+	rescan := send(developThenScan, map[string]any{"labId": labID, "type": "scan", "scanOrders": scanOrders})
+	check("rescan at lab", developThenScan, true, false, true, "scan")
+	record(rescan, "scans-received")
+	check("developed then scanned", developThenScan, true, true, true, "")
+
+	// Develop + scan in one job: negatives stay at the lab after the scans arrive.
+	developScan := harness.finishedRoll(seeded)
+	both := send(developScan, map[string]any{"labId": labID, "type": "develop_scan", "scanOrders": scanOrders})
+	check("develop+scan at lab", developScan, false, false, true, "develop_scan")
+	record(both, "scans-received")
+	check("develop+scan scanned", developScan, true, true, true, "")
+	record(both, "negatives-returned")
+	check("develop+scan negatives back", developScan, true, true, false, "")
+
+	// Scan only, for old negatives.
+	scanOnly := harness.finishedRoll(seeded)
+	record(send(scanOnly, map[string]any{"labId": labID, "type": "scan", "scanOrders": scanOrders}), "scans-received")
+	check("scan only", scanOnly, false, true, true, "")
+
+	// Developed at home: no lab, so negatives are never at a lab.
+	home := harness.finishedRoll(seeded)
+	send(home, map[string]any{"type": "develop"})
+	check("home develop", home, false, false, false, "develop")
+}
+
+// splitTypes turns "a b" into the JSON array shape the API returns.
+func splitTypes(types string) []any {
+	list := []any{}
+	for _, jobType := range strings.Fields(types) {
+		list = append(list, jobType)
+	}
+	return list
+}
+
+func TestRollSummaryOpenAtLabNeedsAnOpenLabJob(test *testing.T) {
+	harness := newHarness(test)
+	seeded := seedGear(harness)
+	labID := newID()
+	harness.expect(harness.call("PUT", "/labs/"+labID, map[string]any{"name": "Lab A"}), http.StatusCreated)
+	send := func(rollID string, body map[string]any) string {
+		jobID := newID()
+		harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+jobID, body), http.StatusCreated)
+		return jobID
+	}
+	openAtLab := func(rollID string) any {
+		return harness.expect(harness.call("GET", "/rolls/"+rollID, nil), http.StatusOK).Body["roll"].(map[string]any)["openAtLab"]
+	}
+
+	atLab := harness.finishedRoll(seeded)
+	send(atLab, map[string]any{"labId": labID, "type": "develop"})
+
+	atHome := harness.finishedRoll(seeded)
+	send(atHome, map[string]any{"type": "develop"})
+
+	// The API allows one open job at a time, so the second open job is inserted directly.
+	both := harness.finishedRoll(seeded)
+	bothHomeJob := send(both, map[string]any{"type": "develop"})
+	if _, err := harness.pool.Exec(context.Background(), `
+		INSERT INTO processing (id, roll_id, lab_id, type, process, sent_at, owner_id)
+		SELECT $1, roll_id, $2, 'print', process, sent_at, owner_id FROM processing WHERE id = $3`,
+		newID(), labID, bothHomeJob); err != nil {
+		test.Fatal(err)
+	}
+
+	closed := harness.finishedRoll(seeded)
+	closedJob := send(closed, map[string]any{"labId": labID, "type": "develop"})
+	harness.expect(harness.call("PUT", "/processing/"+closedJob+"/negatives-returned", nil), http.StatusOK)
+
+	cases := []struct {
+		name   string
+		rollID string
+		want   bool
+	}{
+		{"open lab job", atLab, true},
+		{"open home job", atHome, false},
+		{"open lab job and open home job", both, true},
+		{"all jobs closed", closed, false},
+	}
+	for _, testCase := range cases {
+		if got := openAtLab(testCase.rollID); got != testCase.want {
+			test.Errorf("%s: openAtLab = %v, want %v", testCase.name, got, testCase.want)
+		}
+	}
+	if status := harness.rollStatus(atHome); status != "at_lab" {
+		test.Errorf("home job status = %s, want at_lab (status rules unchanged)", status)
 	}
 }
