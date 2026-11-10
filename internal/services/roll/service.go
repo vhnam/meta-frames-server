@@ -80,7 +80,12 @@ func ListSummaries(ctx context.Context, queries gen.Querier, params gen.ListRoll
 	}
 	summaries := make([]Summary, len(rows))
 	for index, row := range rows {
-		summaries[index] = Summary{row}
+		var jobs []stageJob
+		if err := json.Unmarshal(row.StageJobs, &jobs); err != nil {
+			return nil, err
+		}
+		stage, detail := rollStage(row.Status, row.Target, row.ScanBy, jobs)
+		summaries[index] = Summary{ListRollSummariesRow: row, Stage: stage, StageDetail: detail}
 	}
 	return summaries, nil
 }

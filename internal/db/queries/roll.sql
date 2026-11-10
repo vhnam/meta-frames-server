@@ -46,7 +46,7 @@ SELECT r.*, fs.brand AS stock_brand, fs.name AS stock_name, fs.box_iso,
        -- A development is recorded once a develop job has any result back.
        EXISTS (SELECT 1 FROM processing p
                WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.type IN ('develop', 'develop_scan')
-                 AND (p.negatives_returned_at IS NOT NULL OR p.scans_received_at IS NOT NULL)) AS developed,
+                 AND (p.developed_at IS NOT NULL OR p.negatives_returned_at IS NOT NULL OR p.scans_received_at IS NOT NULL)) AS developed,
        EXISTS (SELECT 1 FROM processing p
                WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.scans_received_at IS NOT NULL) AS scanned,
        -- Open means the same as RollHasOpenJob.
@@ -58,7 +58,13 @@ SELECT r.*, fs.brand AS stock_brand, fs.name AS stock_name, fs.box_iso,
        EXISTS (SELECT 1 FROM processing p
                WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.lab_id IS NOT NULL
                  AND ((p.type IN ('develop_scan', 'scan') AND p.scans_received_at IS NULL)
-                   OR (p.type IN ('develop', 'print') AND p.negatives_returned_at IS NULL))) AS open_at_lab
+                   OR (p.type IN ('develop', 'print') AND p.negatives_returned_at IS NULL))) AS open_at_lab,
+       -- What the stage rule reads from the live jobs, in the same statement as the flags above so
+       -- both come from one snapshot.
+       COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                  'type', p.type, 'atLab', p.lab_id IS NOT NULL, 'developed', p.developed_at IS NOT NULL,
+                  'negativesBack', p.negatives_returned_at IS NOT NULL, 'scansBack', p.scans_received_at IS NOT NULL))
+                 FROM processing p WHERE p.roll_id = r.id AND p.deleted_at IS NULL), '[]')::jsonb AS stage_jobs
 FROM roll r
 JOIN film_stock fs ON fs.id = r.film_stock_id
 LEFT JOIN camera c ON c.id = r.camera_id

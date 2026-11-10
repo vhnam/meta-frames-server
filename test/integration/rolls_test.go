@@ -234,3 +234,44 @@ func TestRollPlanIsSetOnItsOwnAndKeptByRollEdits(test *testing.T) {
 		test.Fatalf("plan after clear = %v, want empty", plan)
 	}
 }
+
+func TestRollStageFollowsJobsAndPlan(test *testing.T) {
+	harness := newHarness(test)
+	seeded := seedGear(harness)
+	rollID := harness.finishedRoll(seeded)
+	labID := newID()
+	harness.expect(harness.call("PUT", "/labs/"+labID, map[string]any{"name": "Lab A"}), http.StatusCreated)
+	summary := func() map[string]any {
+		return asObject(harness.expect(harness.call("GET", "/rolls/"+rollID, nil), http.StatusOK).Body["roll"])
+	}
+
+	if roll := summary(); roll["stage"] != "done_shooting" || roll["stageDetail"] != nil || roll["needsScan"] != false {
+		test.Fatalf("finished roll = %v", roll)
+	}
+
+	jobID := newID()
+	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+jobID, map[string]any{"labId": labID, "type": "develop"}), http.StatusCreated)
+	if roll := summary(); roll["stage"] != "processing" || roll["stageDetail"] != "lab_developing" {
+		test.Fatalf("roll at the lab = %v", roll)
+	}
+
+	// The lab has developed it; the negatives are still there. Develop only: completed, still at the lab.
+	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/plan", map[string]any{"target": "developed"}), http.StatusOK)
+	harness.execSQL(`UPDATE processing SET developed_at = DATE '2026-10-05' WHERE id = $1`, jobID)
+	if roll := summary(); roll["stage"] != "completed" || roll["stageDetail"] != nil || roll["negativesAtLab"] != true || roll["status"] != "at_lab" || roll["developed"] != true {
+		test.Fatalf("developed, negatives at lab = %v", roll)
+	}
+
+	// Planned for a scan by the lab: waiting for that scan, and the list says the same.
+	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/plan", map[string]any{"target": "scanned", "scanBy": "lab"}), http.StatusOK)
+	harness.execSQL(`UPDATE roll SET scan_requested_at = now() WHERE id = $1`, rollID)
+	var listed map[string]any
+	for _, roll := range harness.listOf("/rolls") {
+		if roll["id"] == rollID {
+			listed = roll
+		}
+	}
+	if listed == nil || listed["stage"] != "processing" || listed["stageDetail"] != "waiting_lab_scan" || listed["needsScan"] != true {
+		test.Fatalf("listed roll = %v", listed)
+	}
+}

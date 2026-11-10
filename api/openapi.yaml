@@ -2092,6 +2092,8 @@ paths:
                       openJobTypes: []
                       openAtLab: false
                       plan: {}
+                      stage: in_camera
+                      needsScan: false
                       version: 3
                     - id: 6b5a4938-2716-4f05-9e8d-7c6b5a493827
                       filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
@@ -2110,6 +2112,8 @@ paths:
                       openJobTypes: []
                       openAtLab: false
                       plan: {}
+                      stage: in_stock
+                      needsScan: false
                       version: 3
         "400": { $ref: "#/components/responses/BadRequest" }
 
@@ -2171,6 +2175,8 @@ paths:
                       openJobTypes: []
                       openAtLab: false
                       plan: {}
+                      stage: in_stock
+                      needsScan: false
                       version: 3
                     - id: 7c6b5a49-3827-4160-8f9e-8d7c6b5a4938
                       filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
@@ -2189,6 +2195,8 @@ paths:
                       openJobTypes: []
                       openAtLab: false
                       plan: {}
+                      stage: in_stock
+                      needsScan: false
                       version: 3
         "400": { $ref: "#/components/responses/BadRequest" }
         "409": { $ref: "#/components/responses/Conflict" }
@@ -2229,6 +2237,8 @@ paths:
                           openJobTypes: []
                           openAtLab: false
                           plan: {}
+                          stage: in_stock
+                          needsScan: false
                           version: 3
                         expiresOn: "2027-06-30"
                         expired: false
@@ -2275,6 +2285,8 @@ paths:
                       openJobTypes: []
                       openAtLab: false
                       plan: {}
+                      stage: in_camera
+                      needsScan: false
                       version: 3
                     stock:
                       id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
@@ -2398,6 +2410,8 @@ paths:
                       openJobTypes: []
                       openAtLab: false
                       plan: {}
+                      stage: in_camera
+                      needsScan: false
                       version: 3
                     stock:
                       id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
@@ -2541,6 +2555,8 @@ paths:
                       openJobTypes: []
                       openAtLab: false
                       plan: {}
+                      stage: in_camera
+                      needsScan: false
                       version: 3
                     stock:
                       id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
@@ -2709,6 +2725,8 @@ paths:
                       openJobTypes: []
                       openAtLab: false
                       plan: {}
+                      stage: done_shooting
+                      needsScan: false
                       version: 3
                       finishedAt: "2026-09-28"
                     stock:
@@ -3663,6 +3681,8 @@ paths:
                         openJobTypes: []
                         openAtLab: false
                         plan: {}
+                        stage: in_camera
+                        needsScan: false
                         version: 3
                       scans:
                         - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
@@ -4838,7 +4858,7 @@ components:
 
     RollSummary:
       type: object
-      required: [id, filmStockId, stockBrand, stockName, format, exposures, status, negativesAtLab, developed, scanned, openJobTypes, openAtLab, plan, version]
+      required: [id, filmStockId, stockBrand, stockName, format, exposures, status, negativesAtLab, developed, scanned, openJobTypes, openAtLab, plan, stage, needsScan, version]
       properties:
         id: { type: string, format: uuid }
         filmStockId: { type: string, format: uuid }
@@ -4860,7 +4880,7 @@ components:
           description: A job was sent to a lab and its negatives return is not recorded, whatever the roll status.
         developed:
           type: boolean
-          description: A develop or develop_scan job has negatives returned or scans received.
+          description: A develop or develop_scan job has a developed date, negatives returned or scans received.
         scanned:
           type: boolean
           description: A job has scans received.
@@ -4874,6 +4894,20 @@ components:
             A job is open at a lab. False while the only open jobs are processed at home (no lab), even
             though the status is then at_lab.
         plan: { $ref: "#/components/schemas/RollPlan" }
+        stage:
+          type: string
+          enum: [in_stock, in_camera, done_shooting, processing, completed]
+          description: >-
+            The Rolls tab the roll is in. Past done_shooting it comes from the jobs and the plan, not
+            from status: processing while a job's goal result is not recorded or a planned scan has not
+            started; completed otherwise, even while a lab still holds the negatives (see negativesAtLab).
+        stageDetail:
+          type: string
+          enum: [lab_developing, lab_scanning, home_developing, home_scanning, rescanning, waiting_scan, waiting_home_scan, waiting_lab_scan, printing]
+          description: What the roll waits for while stage is processing. Absent in every other stage.
+        needsScan:
+          type: boolean
+          description: The owner marked the roll for a scan (first scan or rescan) that has not started.
         version:
           type: integer
           format: int64
@@ -4906,6 +4940,8 @@ components:
         openJobTypes: []
         openAtLab: false
         plan: {}
+        stage: in_camera
+        needsScan: false
         version: 3
 
     RollTotals:
@@ -5042,6 +5078,8 @@ components:
           openJobTypes: []
           openAtLab: false
           plan: {}
+          stage: in_camera
+          needsScan: false
           version: 3
         stock:
           id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
@@ -5104,6 +5142,8 @@ components:
           openJobTypes: []
           openAtLab: false
           plan: {}
+          stage: in_camera
+          needsScan: false
           version: 3
         expiresOn: "2027-06-30"
         expired: false
@@ -5139,6 +5179,8 @@ components:
               openJobTypes: []
               openAtLab: false
               plan: {}
+              stage: in_camera
+              needsScan: false
               version: 3
             expiresOn: "2027-06-30"
             expired: false
@@ -5469,6 +5511,8 @@ components:
           openJobTypes: []
           openAtLab: false
           plan: {}
+          stage: in_camera
+          needsScan: false
           version: 3
         scans:
           - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10

@@ -3,6 +3,7 @@ package testutil
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"reflect"
 	"slices"
@@ -512,6 +513,7 @@ func (queries *Memory) ListRollSummaries(_ context.Context, arg gen.ListRollSumm
 			StartedAt: roll.StartedAt, FinishedAt: roll.FinishedAt, StockBrand: stock.Brand, StockName: stock.Name, BoxIso: stock.BoxIso,
 			Description: roll.Description, Version: roll.Version,
 			Target: roll.Target, DevelopBy: roll.DevelopBy, ScanBy: roll.ScanBy, ScanRequestedAt: roll.ScanRequestedAt,
+			StageJobs: queries.stageJobs(roll.ID),
 		})
 	}
 	// Same order as the SQL query, without created_at: the memory store does not record it.
@@ -526,6 +528,21 @@ func (queries *Memory) ListRollSummaries(_ context.Context, arg gen.ListRollSumm
 		return rows[left].ID.String() > rows[right].ID.String()
 	})
 	return rows, nil
+}
+
+// stageJobs builds the stage_jobs JSON of ListRollSummaries.
+func (queries *Memory) stageJobs(rollID uuid.UUID) []byte {
+	jobs := []map[string]any{}
+	for _, job := range queries.Jobs {
+		if job.RollID == rollID && !job.DeletedAt.Valid {
+			jobs = append(jobs, map[string]any{
+				"type": job.Type, "atLab": job.LabID != nil, "developed": job.DevelopedAt != nil,
+				"negativesBack": job.NegativesReturnedAt != nil, "scansBack": job.ScansReceivedAt != nil,
+			})
+		}
+	}
+	encoded, _ := json.Marshal(jobs)
+	return encoded
 }
 
 func (queries *Memory) ListRollLenses(_ context.Context, arg gen.ListRollLensesParams) ([]gen.Lens, error) {

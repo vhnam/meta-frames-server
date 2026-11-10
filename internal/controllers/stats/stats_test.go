@@ -30,7 +30,7 @@ func (stub *queries) err() error {
 }
 
 func (stub *queries) ListRollSummaries(context.Context, gen.ListRollSummariesParams) ([]gen.ListRollSummariesRow, error) {
-	return []gen.ListRollSummariesRow{{ID: uuid.New(), Status: domain.RollStatusScanned}}, stub.err()
+	return []gen.ListRollSummariesRow{{ID: uuid.New(), Status: domain.RollStatusScanned, StageJobs: []byte("[]")}}, stub.err()
 }
 
 func (stub *queries) ListRollScans(_ context.Context, arg gen.ListRollScansParams) ([]gen.ListRollScansRow, error) {
