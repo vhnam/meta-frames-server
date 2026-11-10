@@ -56,7 +56,7 @@ func (q *Queries) GetLab(ctx context.Context, arg GetLabParams) (Lab, error) {
 }
 
 const getProcessing = `-- name: GetProcessing :one
-SELECT id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at, owner_id FROM processing WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
+SELECT id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at, owner_id, developed_at, handoff_id FROM processing WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
 `
 
 type GetProcessingParams struct {
@@ -84,12 +84,14 @@ func (q *Queries) GetProcessing(ctx context.Context, arg GetProcessingParams) (P
 		&i.ScansExpectedAt,
 		&i.NegativesExpectedAt,
 		&i.OwnerID,
+		&i.DevelopedAt,
+		&i.HandoffID,
 	)
 	return i, err
 }
 
 const getProcessingForUpdate = `-- name: GetProcessingForUpdate :one
-SELECT id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at, owner_id FROM processing WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL FOR UPDATE
+SELECT id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at, owner_id, developed_at, handoff_id FROM processing WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL FOR UPDATE
 `
 
 type GetProcessingForUpdateParams struct {
@@ -117,6 +119,8 @@ func (q *Queries) GetProcessingForUpdate(ctx context.Context, arg GetProcessingF
 		&i.ScansExpectedAt,
 		&i.NegativesExpectedAt,
 		&i.OwnerID,
+		&i.DevelopedAt,
+		&i.HandoffID,
 	)
 	return i, err
 }
@@ -220,7 +224,7 @@ func (q *Queries) InsertLab(ctx context.Context, arg InsertLabParams) (Lab, erro
 const insertProcessing = `-- name: InsertProcessing :one
 INSERT INTO processing (id, roll_id, lab_id, type, process, sent_at, scans_expected_at, negatives_expected_at, price, notes, owner_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at, owner_id
+RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at, owner_id, developed_at, handoff_id
 `
 
 type InsertProcessingParams struct {
@@ -269,6 +273,8 @@ func (q *Queries) InsertProcessing(ctx context.Context, arg InsertProcessingPara
 		&i.ScansExpectedAt,
 		&i.NegativesExpectedAt,
 		&i.OwnerID,
+		&i.DevelopedAt,
+		&i.HandoffID,
 	)
 	return i, err
 }
@@ -472,7 +478,7 @@ func (q *Queries) ListProcessingScans(ctx context.Context, arg ListProcessingSca
 }
 
 const listRollProcessing = `-- name: ListRollProcessing :many
-SELECT p.id, p.roll_id, p.lab_id, p.type, p.process, p.sent_at, p.scans_received_at, p.negatives_returned_at, p.price, p.notes, p.created_at, p.updated_at, p.deleted_at, p.scans_expected_at, p.negatives_expected_at, p.owner_id, COALESCE(l.name, '') AS lab_name, cost.cost AS order_cost
+SELECT p.id, p.roll_id, p.lab_id, p.type, p.process, p.sent_at, p.scans_received_at, p.negatives_returned_at, p.price, p.notes, p.created_at, p.updated_at, p.deleted_at, p.scans_expected_at, p.negatives_expected_at, p.owner_id, p.developed_at, p.handoff_id, COALESCE(l.name, '') AS lab_name, cost.cost AS order_cost
 FROM processing p LEFT JOIN lab l ON l.id = p.lab_id
 LEFT JOIN processing_order_cost cost ON cost.processing_id = p.id
 WHERE p.roll_id = $1 AND p.owner_id = $2 AND p.deleted_at IS NULL ORDER BY p.sent_at, p.created_at
@@ -500,6 +506,8 @@ type ListRollProcessingRow struct {
 	ScansExpectedAt     *time.Time
 	NegativesExpectedAt *time.Time
 	OwnerID             uuid.UUID
+	DevelopedAt         *time.Time
+	HandoffID           *uuid.UUID
 	LabName             string
 	OrderCost           *int32
 }
@@ -530,6 +538,8 @@ func (q *Queries) ListRollProcessing(ctx context.Context, arg ListRollProcessing
 			&i.ScansExpectedAt,
 			&i.NegativesExpectedAt,
 			&i.OwnerID,
+			&i.DevelopedAt,
+			&i.HandoffID,
 			&i.LabName,
 			&i.OrderCost,
 		); err != nil {
@@ -726,7 +736,7 @@ func (q *Queries) ScanOrderExists(ctx context.Context, arg ScanOrderExistsParams
 }
 
 const setNegativesReturned = `-- name: SetNegativesReturned :one
-UPDATE processing SET negatives_returned_at = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at, owner_id
+UPDATE processing SET negatives_returned_at = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at, owner_id, developed_at, handoff_id
 `
 
 type SetNegativesReturnedParams struct {
@@ -755,12 +765,14 @@ func (q *Queries) SetNegativesReturned(ctx context.Context, arg SetNegativesRetu
 		&i.ScansExpectedAt,
 		&i.NegativesExpectedAt,
 		&i.OwnerID,
+		&i.DevelopedAt,
+		&i.HandoffID,
 	)
 	return i, err
 }
 
 const setScansReceived = `-- name: SetScansReceived :one
-UPDATE processing SET scans_received_at = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at, owner_id
+UPDATE processing SET scans_received_at = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at, owner_id, developed_at, handoff_id
 `
 
 type SetScansReceivedParams struct {
@@ -789,6 +801,8 @@ func (q *Queries) SetScansReceived(ctx context.Context, arg SetScansReceivedPara
 		&i.ScansExpectedAt,
 		&i.NegativesExpectedAt,
 		&i.OwnerID,
+		&i.DevelopedAt,
+		&i.HandoffID,
 	)
 	return i, err
 }
@@ -877,7 +891,7 @@ func (q *Queries) UpdateLab(ctx context.Context, arg UpdateLabParams) (Lab, erro
 
 const updateProcessing = `-- name: UpdateProcessing :one
 UPDATE processing SET lab_id = $2, sent_at = $3, scans_expected_at = $4, negatives_expected_at = $5, price = $6, notes = $7, process = $9
-WHERE id = $1 AND owner_id = $8 AND deleted_at IS NULL RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at, owner_id
+WHERE id = $1 AND owner_id = $8 AND deleted_at IS NULL RETURNING id, roll_id, lab_id, type, process, sent_at, scans_received_at, negatives_returned_at, price, notes, created_at, updated_at, deleted_at, scans_expected_at, negatives_expected_at, owner_id, developed_at, handoff_id
 `
 
 type UpdateProcessingParams struct {
@@ -922,6 +936,8 @@ func (q *Queries) UpdateProcessing(ctx context.Context, arg UpdateProcessingPara
 		&i.ScansExpectedAt,
 		&i.NegativesExpectedAt,
 		&i.OwnerID,
+		&i.DevelopedAt,
+		&i.HandoffID,
 	)
 	return i, err
 }

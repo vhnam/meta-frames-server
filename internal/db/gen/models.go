@@ -108,6 +108,19 @@ type Lab struct {
 	OwnerID   uuid.UUID
 }
 
+type LabHandoff struct {
+	ID         uuid.UUID
+	OwnerID    uuid.UUID
+	RollID     uuid.UUID
+	LabID      uuid.UUID
+	BatchID    uuid.UUID
+	HandedAt   time.Time
+	ReturnedAt *time.Time
+	Notes      *string
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+}
+
 type LabOrder struct {
 	ID        uuid.UUID
 	OwnerID   uuid.UUID
@@ -182,6 +195,8 @@ type Processing struct {
 	ScansExpectedAt     *time.Time
 	NegativesExpectedAt *time.Time
 	OwnerID             uuid.UUID
+	DevelopedAt         *time.Time
+	HandoffID           *uuid.UUID
 }
 
 type ProcessingOrderCost struct {
@@ -204,24 +219,28 @@ type ProcessingScanOrder struct {
 }
 
 type Roll struct {
-	ID          uuid.UUID
-	FilmStockID uuid.UUID
-	CameraID    *uuid.UUID
-	Format      int32
-	Exposures   int32
-	Status      string
-	ShotIso     *int32
-	ExpiryYear  *int32
-	ExpiryMonth *int32
-	Price       *int32
-	Description *string
-	StartedAt   *time.Time
-	FinishedAt  *time.Time
-	CreatedAt   pgtype.Timestamptz
-	UpdatedAt   pgtype.Timestamptz
-	DeletedAt   pgtype.Timestamptz
-	OwnerID     uuid.UUID
-	Version     int64
+	ID              uuid.UUID
+	FilmStockID     uuid.UUID
+	CameraID        *uuid.UUID
+	Format          int32
+	Exposures       int32
+	Status          string
+	ShotIso         *int32
+	ExpiryYear      *int32
+	ExpiryMonth     *int32
+	Price           *int32
+	Description     *string
+	StartedAt       *time.Time
+	FinishedAt      *time.Time
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	DeletedAt       pgtype.Timestamptz
+	OwnerID         uuid.UUID
+	Version         int64
+	Target          *string
+	DevelopBy       *string
+	ScanBy          *string
+	ScanRequestedAt pgtype.Timestamptz
 }
 
 type RollLens struct {

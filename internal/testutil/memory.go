@@ -478,6 +478,12 @@ func (queries *Memory) SetRollDescription(_ context.Context, arg gen.SetRollDesc
 	return queries.saveRoll(roll), nil
 }
 
+func (queries *Memory) SetRollPlan(_ context.Context, arg gen.SetRollPlanParams) (gen.Roll, error) {
+	roll := queries.Rolls[arg.ID]
+	roll.Target, roll.DevelopBy, roll.ScanBy = arg.Target, arg.DevelopBy, arg.ScanBy
+	return queries.saveRoll(roll), nil
+}
+
 func (queries *Memory) LoadRoll(_ context.Context, arg gen.LoadRollParams) (gen.Roll, error) {
 	roll := queries.Rolls[arg.ID]
 	roll.Status, roll.CameraID, roll.StartedAt, roll.ShotIso = "in_camera", arg.CameraID, arg.StartedAt, arg.ShotIso
@@ -505,6 +511,7 @@ func (queries *Memory) ListRollSummaries(_ context.Context, arg gen.ListRollSumm
 			Status: roll.Status, ShotIso: roll.ShotIso, ExpiryYear: roll.ExpiryYear, ExpiryMonth: roll.ExpiryMonth, Price: roll.Price,
 			StartedAt: roll.StartedAt, FinishedAt: roll.FinishedAt, StockBrand: stock.Brand, StockName: stock.Name, BoxIso: stock.BoxIso,
 			Description: roll.Description, Version: roll.Version,
+			Target: roll.Target, DevelopBy: roll.DevelopBy, ScanBy: roll.ScanBy, ScanRequestedAt: roll.ScanRequestedAt,
 		})
 	}
 	// Same order as the SQL query, without created_at: the memory store does not record it.
