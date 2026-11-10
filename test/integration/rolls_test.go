@@ -191,3 +191,46 @@ func TestRollListOrdersByStartDateThenAddedDateThenID(test *testing.T) {
 		test.Fatalf("order = %v, want %v", got, want)
 	}
 }
+
+func TestRollPlanIsSetOnItsOwnAndKeptByRollEdits(test *testing.T) {
+	harness := newHarness(test)
+	seeded := seedGear(harness)
+	rollID := harness.addRolls(seeded, 1)[0]
+	planOf := func(result response) map[string]any {
+		return asObject(asObject(result.Body["roll"])["plan"])
+	}
+
+	set := harness.expect(harness.call("PUT", "/rolls/"+rollID+"/plan", map[string]any{"target": "scanned", "developBy": "lab", "scanBy": "self"}), http.StatusOK)
+	if plan := planOf(set); plan["target"] != "scanned" || plan["developBy"] != "lab" || plan["scanBy"] != "self" {
+		test.Fatalf("plan after set = %v", plan)
+	}
+
+	// A client that edits the roll without knowing about plans (the mobile app) keeps the plan.
+	harness.expect(harness.call("PUT", "/rolls/"+rollID, map[string]any{"filmStockId": seeded.stockID, "format": 135, "exposures": 24}), http.StatusOK)
+	detail := harness.expect(harness.call("GET", "/rolls/"+rollID, nil), http.StatusOK)
+	if plan := planOf(detail); plan["target"] != "scanned" || plan["scanBy"] != "self" {
+		test.Fatalf("plan after roll edit = %v, want it kept", plan)
+	}
+
+	refused := harness.call("PUT", "/rolls/"+rollID+"/plan", map[string]any{"target": "developed", "scanBy": "lab"})
+	if refused.Status != http.StatusUnprocessableEntity || !bytes.Contains(refused.Raw, []byte("scan_not_planned")) {
+		test.Fatalf("develop-only plan with scanBy: %d %s", refused.Status, refused.Raw)
+	}
+	if plan := planOf(harness.expect(harness.call("GET", "/rolls/"+rollID, nil), http.StatusOK)); plan["target"] != "scanned" {
+		test.Fatalf("refused plan changed the roll: %v", plan)
+	}
+
+	// A misspelled field must not read as an empty plan and clear the stored one.
+	misspelled := harness.call("PUT", "/rolls/"+rollID+"/plan", map[string]any{"scan_by": "self"})
+	if misspelled.Status != http.StatusBadRequest {
+		test.Fatalf("misspelled plan field: %d %s, want 400", misspelled.Status, misspelled.Raw)
+	}
+	if plan := planOf(harness.expect(harness.call("GET", "/rolls/"+rollID, nil), http.StatusOK)); plan["target"] != "scanned" {
+		test.Fatalf("misspelled plan field changed the roll: %v", plan)
+	}
+
+	cleared := harness.expect(harness.call("PUT", "/rolls/"+rollID+"/plan", map[string]any{}), http.StatusOK)
+	if plan := planOf(cleared); len(plan) != 0 {
+		test.Fatalf("plan after clear = %v, want empty", plan)
+	}
+}

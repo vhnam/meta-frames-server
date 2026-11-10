@@ -305,6 +305,29 @@ func (service *Service) SetNotes(ctx context.Context, rollID uuid.UUID, descript
 	return detail, err
 }
 
+// SetPlan replaces only a roll's plan (target, who develops, who scans), so a client that edits
+// the other fields with PUT /rolls/{id} never clears it.
+func (service *Service) SetPlan(ctx context.Context, rollID uuid.UUID, input PlanInput) (Detail, error) {
+	if input.ScanBy != nil && input.Target != nil && *input.Target == targetDeveloped {
+		return Detail{}, apperror.Unprocessable("scan_not_planned", "scanBy needs a target other than developed")
+	}
+	var detail Detail
+	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
+		if _, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: rollID, OwnerID: requestctx.Owner(ctx)}); err != nil {
+			return shared.NotFoundOr(err, "roll")
+		}
+		if _, err := queries.SetRollPlan(ctx, gen.SetRollPlanParams{
+			ID: rollID, Target: input.Target, DevelopBy: input.DevelopBy, ScanBy: input.ScanBy, OwnerID: requestctx.Owner(ctx),
+		}); err != nil {
+			return err
+		}
+		var err error
+		detail, err = buildRollDetail(ctx, queries, service.clock.Today(), rollID, nil)
+		return err
+	})
+	return detail, err
+}
+
 // Load puts an in-stock roll into a camera (UC-17). Repeating the same load changes nothing;
 // a repeat that asks for different details is refused rather than silently ignored.
 func (service *Service) Load(ctx context.Context, rollID uuid.UUID, input LoadInput) (Detail, error) {

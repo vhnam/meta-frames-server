@@ -39,6 +39,11 @@ func ToAPIRollSummary(summary rollsvc.Summary) api.RollSummary {
 		Description: summary.Description, StartedAt: convert.ToAPIDate(summary.StartedAt), FinishedAt: convert.ToAPIDate(summary.FinishedAt),
 		NegativesAtLab: summary.NegativesAtLab, Developed: summary.Developed, Scanned: summary.Scanned,
 		OpenJobTypes: make([]api.ProcessingType, len(summary.OpenJobTypes)), OpenAtLab: summary.OpenAtLab,
+		Plan: api.RollPlan{
+			Target:    (*api.RollPlanTarget)(summary.Target),
+			DevelopBy: (*api.StepActor)(summary.DevelopBy),
+			ScanBy:    (*api.StepActor)(summary.ScanBy),
+		},
 		Version: summary.Version,
 	}
 	for index, jobType := range summary.OpenJobTypes {
@@ -177,6 +182,17 @@ func (controller *Controller) PutRollNotes(ctx context.Context, request api.PutR
 		return nil, err
 	}
 	return api.PutRollNotes200JSONResponse(toAPIRollDetail(detail)), nil
+}
+
+func (controller *Controller) PutRollPlan(ctx context.Context, request api.PutRollPlanRequestObject) (api.PutRollPlanResponseObject, error) {
+	body := request.Body
+	detail, err := controller.rolls.SetPlan(ctx, request.Id, rollsvc.PlanInput{
+		Target: (*string)(body.Target), DevelopBy: (*string)(body.DevelopBy), ScanBy: (*string)(body.ScanBy),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return api.PutRollPlan200JSONResponse(toAPIRollDetail(detail)), nil
 }
 
 func (controller *Controller) LoadRoll(ctx context.Context, request api.LoadRollRequestObject) (api.LoadRollResponseObject, error) {

@@ -47,6 +47,7 @@ const (
 	AuditEntityTypeFilmStock           AuditEntityType = "film_stock"
 	AuditEntityTypeFrame               AuditEntityType = "frame"
 	AuditEntityTypeLab                 AuditEntityType = "lab"
+	AuditEntityTypeLabHandoff          AuditEntityType = "lab_handoff"
 	AuditEntityTypeLabOrder            AuditEntityType = "lab_order"
 	AuditEntityTypeLabOrderItem        AuditEntityType = "lab_order_item"
 	AuditEntityTypeLens                AuditEntityType = "lens"
@@ -71,6 +72,8 @@ func (e AuditEntityType) Valid() bool {
 	case AuditEntityTypeFrame:
 		return true
 	case AuditEntityTypeLab:
+		return true
+	case AuditEntityTypeLabHandoff:
 		return true
 	case AuditEntityTypeLabOrder:
 		return true
@@ -181,30 +184,48 @@ func (e ProcessingType) Valid() bool {
 	}
 }
 
+// Defines values for RollPlanTarget.
+const (
+	RollPlanTargetDeveloped RollPlanTarget = "developed"
+	RollPlanTargetScanned   RollPlanTarget = "scanned"
+)
+
+// Valid indicates whether the value is a known member of the RollPlanTarget enum.
+func (e RollPlanTarget) Valid() bool {
+	switch e {
+	case RollPlanTargetDeveloped:
+		return true
+	case RollPlanTargetScanned:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RollStatus.
 const (
-	AtLab        RollStatus = "at_lab"
-	Developed    RollStatus = "developed"
-	DoneShooting RollStatus = "done_shooting"
-	InCamera     RollStatus = "in_camera"
-	InStock      RollStatus = "in_stock"
-	Scanned      RollStatus = "scanned"
+	RollStatusAtLab        RollStatus = "at_lab"
+	RollStatusDeveloped    RollStatus = "developed"
+	RollStatusDoneShooting RollStatus = "done_shooting"
+	RollStatusInCamera     RollStatus = "in_camera"
+	RollStatusInStock      RollStatus = "in_stock"
+	RollStatusScanned      RollStatus = "scanned"
 )
 
 // Valid indicates whether the value is a known member of the RollStatus enum.
 func (e RollStatus) Valid() bool {
 	switch e {
-	case AtLab:
+	case RollStatusAtLab:
 		return true
-	case Developed:
+	case RollStatusDeveloped:
 		return true
-	case DoneShooting:
+	case RollStatusDoneShooting:
 		return true
-	case InCamera:
+	case RollStatusInCamera:
 		return true
-	case InStock:
+	case RollStatusInStock:
 		return true
-	case Scanned:
+	case RollStatusScanned:
 		return true
 	default:
 		return false
@@ -277,6 +298,24 @@ func (e ScannerKind) Valid() bool {
 	case ScannerKindMinilab:
 		return true
 	case ScannerKindVirtualDrum:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for StepActor.
+const (
+	StepActorLab  StepActor = "lab"
+	StepActorSelf StepActor = "self"
+)
+
+// Valid indicates whether the value is a known member of the StepActor enum.
+func (e StepActor) Valid() bool {
+	switch e {
+	case StepActorLab:
+		return true
+	case StepActorSelf:
 		return true
 	default:
 		return false
@@ -503,16 +542,16 @@ type ExpiryMonth struct {
 	Year  int  `json:"year"`
 }
 
-// ExpiryRoll Example: {"expired":false,"expiresOn":"2027-06-30","roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}}
+// ExpiryRoll Example: {"expired":false,"expiresOn":"2027-06-30","roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"plan":{},"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}}
 type ExpiryRoll struct {
 	Expired   bool               `json:"expired"`
 	ExpiresOn openapi_types.Date `json:"expiresOn"`
 
-	// Roll Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}
+	// Roll Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"plan":{},"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}
 	Roll RollSummary `json:"roll"`
 }
 
-// ExpiryView Example: {"expiring":[{"expired":false,"expiresOn":"2027-06-30","roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}}],"noExpiry":[]}
+// ExpiryView Example: {"expiring":[{"expired":false,"expiresOn":"2027-06-30","roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"plan":{},"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}}],"noExpiry":[]}
 type ExpiryView struct {
 	Expiring []ExpiryRoll  `json:"expiring"`
 	NoExpiry []RollSummary `json:"noExpiry"`
@@ -984,7 +1023,7 @@ type ResetPasswordInput struct {
 	Token    string `json:"token"`
 }
 
-// RollDetail Example: {"frames":[],"lenses":[{"brand":"Nikon","createdAt":"2026-09-01T08:30:00Z","focalLength":50,"id":"a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03","isActive":true,"isBuiltIn":false,"maxAperture":1.4,"model":"Nikkor 50mm f/1.4 AI-S","mount":"F","updatedAt":"2026-09-20T10:00:00Z"}],"processing":[],"roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3},"stock":{"boxIso":"400","brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"},"totals":{"incomplete":false,"processingPrice":90000,"rollPrice":150000,"total":240000},"warnings":[]}
+// RollDetail Example: {"frames":[],"lenses":[{"brand":"Nikon","createdAt":"2026-09-01T08:30:00Z","focalLength":50,"id":"a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03","isActive":true,"isBuiltIn":false,"maxAperture":1.4,"model":"Nikkor 50mm f/1.4 AI-S","mount":"F","updatedAt":"2026-09-20T10:00:00Z"}],"processing":[],"roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"plan":{},"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3},"stock":{"boxIso":"400","brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"},"totals":{"incomplete":false,"processingPrice":90000,"rollPrice":150000,"total":240000},"warnings":[]}
 type RollDetail struct {
 	// BaseStock Example: {"boxIso":"400","brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"}
 	BaseStock  *FilmStock   `json:"baseStock,omitempty"`
@@ -992,7 +1031,7 @@ type RollDetail struct {
 	Lenses     []Lens       `json:"lenses"`
 	Processing []Processing `json:"processing"`
 
-	// Roll Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}
+	// Roll Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"plan":{},"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}
 	Roll RollSummary `json:"roll"`
 
 	// Stock Example: {"boxIso":"400","brand":"Kodak","createdAt":"2026-09-01T08:30:00Z","id":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","name":"Portra 400","packaging":"factory","process":"C-41","type":"color","updatedAt":"2026-09-20T10:00:00Z"}
@@ -1027,10 +1066,25 @@ type RollNotesInput struct {
 	Description string `json:"description"`
 }
 
+// RollPlan What the owner plans for the roll. Every field is optional; a missing field means not decided yet.
+type RollPlan struct {
+	// DevelopBy Who does a step. self is the owner at home.
+	DevelopBy *StepActor `json:"developBy,omitempty"`
+
+	// ScanBy Who does a step. self is the owner at home.
+	ScanBy *StepActor `json:"scanBy,omitempty"`
+
+	// Target Where the roll ends. developed means develop only; scanned means develop and scan.
+	Target *RollPlanTarget `json:"target,omitempty"`
+}
+
+// RollPlanTarget Where the roll ends. developed means develop only; scanned means develop and scan.
+type RollPlanTarget string
+
 // RollStatus defines model for RollStatus.
 type RollStatus string
 
-// RollSummary Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}
+// RollSummary Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"plan":{},"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}
 type RollSummary struct {
 	CameraId    *openapi_types.UUID `json:"cameraId,omitempty"`
 	CameraName  *string             `json:"cameraName,omitempty"`
@@ -1055,7 +1109,10 @@ type RollSummary struct {
 
 	// OpenJobTypes Types of the jobs still open (waiting for scans or negatives), each type once.
 	OpenJobTypes []ProcessingType `json:"openJobTypes"`
-	Price        *int             `json:"price,omitempty"`
+
+	// Plan What the owner plans for the roll. Every field is optional; a missing field means not decided yet.
+	Plan  RollPlan `json:"plan"`
+	Price *int     `json:"price,omitempty"`
 
 	// Scanned A job has scans received.
 	Scanned    bool                `json:"scanned"`
@@ -1256,9 +1313,9 @@ type ScannerKindOptions struct {
 	Options []ScanOption `json:"options"`
 }
 
-// SearchResult Example: {"roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3},"scans":[{"frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu","scannerId":"d177cb3c-a850-4232-a4ca-75189b7b279b","scannerName":"Noritsu HS-1800"}]}
+// SearchResult Example: {"roll":{"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"plan":{},"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3},"scans":[{"frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu","scannerId":"d177cb3c-a850-4232-a4ca-75189b7b279b","scannerName":"Noritsu HS-1800"}]}
 type SearchResult struct {
-	// Roll Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}
+	// Roll Example: {"cameraId":"7d1c5a3e-5b0a-4f6e-9a77-2f1d0c9b8a01","cameraName":"Nikon FM2","description":"Hanoi street trip","developed":false,"expiry":{"month":6,"year":2027},"exposures":36,"filmStockId":"e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05","format":135,"id":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","negativesAtLab":false,"openAtLab":false,"openJobTypes":[],"plan":{},"price":150000,"scanned":false,"shotIso":800,"startedAt":"2026-09-01","status":"in_camera","stockBrand":"Kodak","stockName":"Portra 400","version":3}
 	Roll  RollSummary `json:"roll"`
 	Scans []ScanRef   `json:"scans"`
 }
@@ -1277,6 +1334,9 @@ type SpendBucket struct {
 	Incomplete     bool `json:"incomplete"`
 	ProcessingCost int  `json:"processingCost"`
 }
+
+// StepActor Who does a step. self is the owner at home.
+type StepActor string
 
 // StockType defines model for StockType.
 type StockType string
@@ -1551,6 +1611,9 @@ type LoadRollJSONRequestBody = LoadRollInput
 // PutRollNotesJSONRequestBody defines body for PutRollNotes for application/json ContentType.
 type PutRollNotesJSONRequestBody = RollNotesInput
 
+// PutRollPlanJSONRequestBody defines body for PutRollPlan for application/json ContentType.
+type PutRollPlanJSONRequestBody = RollPlan
+
 // PutProcessingJSONRequestBody defines body for PutProcessing for application/json ContentType.
 type PutProcessingJSONRequestBody = ProcessingInput
 
@@ -1734,6 +1797,9 @@ type ServerInterface interface {
 	// PutRollNotes Set a roll's notes, and nothing else
 	// (PUT /rolls/{id}/notes)
 	PutRollNotes(c *gin.Context, id Id)
+	// PutRollPlan Set what is planned for a roll, and nothing else
+	// (PUT /rolls/{id}/plan)
+	PutRollPlan(c *gin.Context, id Id)
 	// ListRollProcessing Processing history of a roll (UC-29)
 	// (GET /rolls/{id}/processing)
 	ListRollProcessing(c *gin.Context, id Id)
@@ -3409,6 +3475,31 @@ func (siw *ServerInterfaceWrapper) PutRollNotes(c *gin.Context) {
 	siw.Handler.PutRollNotes(c, id)
 }
 
+// PutRollPlan operation middleware
+func (siw *ServerInterfaceWrapper) PutRollPlan(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PutRollPlan(c, id)
+}
+
 // ListRollProcessing operation middleware
 func (siw *ServerInterfaceWrapper) ListRollProcessing(c *gin.Context) {
 
@@ -3842,6 +3933,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PUT(options.BaseURL+"/rolls/:id/lenses", wrapper.SetRollLenses)
 	router.PUT(options.BaseURL+"/rolls/:id/finish", wrapper.FinishRoll)
 	router.PUT(options.BaseURL+"/rolls/:id/notes", wrapper.PutRollNotes)
+	router.PUT(options.BaseURL+"/rolls/:id/plan", wrapper.PutRollPlan)
 	router.GET(options.BaseURL+"/rolls/:id/processing", wrapper.ListRollProcessing)
 	router.PUT(options.BaseURL+"/rolls/:id/processing/:jobId", wrapper.PutProcessing)
 	router.GET(options.BaseURL+"/rolls/:id/frames", wrapper.ListRollFrames)
@@ -7748,6 +7840,85 @@ func (response PutRollNotes409JSONResponse) VisitPutRollNotesResponse(w http.Res
 	return err
 }
 
+type PutRollPlanRequestObject struct {
+	Id   Id `json:"id"`
+	Body *PutRollPlanJSONRequestBody
+}
+
+type PutRollPlanResponseObject interface {
+	VisitPutRollPlanResponse(w http.ResponseWriter) error
+}
+
+type PutRollPlan200JSONResponse RollDetail
+
+func (response PutRollPlan200JSONResponse) VisitPutRollPlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutRollPlan400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response PutRollPlan400JSONResponse) VisitPutRollPlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutRollPlan401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response PutRollPlan401JSONResponse) VisitPutRollPlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutRollPlan404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response PutRollPlan404JSONResponse) VisitPutRollPlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutRollPlan422JSONResponse struct{ UnprocessableJSONResponse }
+
+func (response PutRollPlan422JSONResponse) VisitPutRollPlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListRollProcessingRequestObject struct {
 	Id Id `json:"id"`
 }
@@ -8883,6 +9054,9 @@ type StrictServerInterface interface {
 	// PutRollNotes Set a roll's notes, and nothing else
 	// (PUT /rolls/{id}/notes)
 	PutRollNotes(ctx context.Context, request PutRollNotesRequestObject) (PutRollNotesResponseObject, error)
+	// PutRollPlan Set what is planned for a roll, and nothing else
+	// (PUT /rolls/{id}/plan)
+	PutRollPlan(ctx context.Context, request PutRollPlanRequestObject) (PutRollPlanResponseObject, error)
 	// ListRollProcessing Processing history of a roll (UC-29)
 	// (GET /rolls/{id}/processing)
 	ListRollProcessing(ctx context.Context, request ListRollProcessingRequestObject) (ListRollProcessingResponseObject, error)
@@ -10633,6 +10807,39 @@ func (sh *strictHandler) PutRollNotes(ctx *gin.Context, id Id) {
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(PutRollNotesResponseObject); ok {
 		if err := validResponse.VisitPutRollNotesResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PutRollPlan operation middleware
+func (sh *strictHandler) PutRollPlan(ctx *gin.Context, id Id) {
+	var request PutRollPlanRequestObject
+
+	request.Id = id
+
+	var body PutRollPlanJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.PutRollPlan(ctx, request.(PutRollPlanRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PutRollPlan")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(PutRollPlanResponseObject); ok {
+		if err := validResponse.VisitPutRollPlanResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {

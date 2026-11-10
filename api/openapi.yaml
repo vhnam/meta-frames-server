@@ -2091,6 +2091,7 @@ paths:
                       scanned: false
                       openJobTypes: []
                       openAtLab: false
+                      plan: {}
                       version: 3
                     - id: 6b5a4938-2716-4f05-9e8d-7c6b5a493827
                       filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
@@ -2108,6 +2109,7 @@ paths:
                       scanned: false
                       openJobTypes: []
                       openAtLab: false
+                      plan: {}
                       version: 3
         "400": { $ref: "#/components/responses/BadRequest" }
 
@@ -2168,6 +2170,7 @@ paths:
                       scanned: false
                       openJobTypes: []
                       openAtLab: false
+                      plan: {}
                       version: 3
                     - id: 7c6b5a49-3827-4160-8f9e-8d7c6b5a4938
                       filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
@@ -2185,6 +2188,7 @@ paths:
                       scanned: false
                       openJobTypes: []
                       openAtLab: false
+                      plan: {}
                       version: 3
         "400": { $ref: "#/components/responses/BadRequest" }
         "409": { $ref: "#/components/responses/Conflict" }
@@ -2224,6 +2228,7 @@ paths:
                           scanned: false
                           openJobTypes: []
                           openAtLab: false
+                          plan: {}
                           version: 3
                         expiresOn: "2027-06-30"
                         expired: false
@@ -2269,6 +2274,7 @@ paths:
                       scanned: false
                       openJobTypes: []
                       openAtLab: false
+                      plan: {}
                       version: 3
                     stock:
                       id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
@@ -2391,6 +2397,7 @@ paths:
                       scanned: false
                       openJobTypes: []
                       openAtLab: false
+                      plan: {}
                       version: 3
                     stock:
                       id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
@@ -2533,6 +2540,7 @@ paths:
                       scanned: false
                       openJobTypes: []
                       openAtLab: false
+                      plan: {}
                       version: 3
                     stock:
                       id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
@@ -2700,6 +2708,7 @@ paths:
                       scanned: false
                       openJobTypes: []
                       openAtLab: false
+                      plan: {}
                       version: 3
                       finishedAt: "2026-09-28"
                     stock:
@@ -2804,6 +2813,40 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+
+  /rolls/{id}/plan:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Rolls]
+      operationId: putRollPlan
+      summary: Set what is planned for a roll, and nothing else
+      description: >-
+        Replaces the roll's plan: its target (developed only, or scanned too) and who develops and
+        who scans it. A field left out is cleared. `scanBy` needs a target other than `developed`
+        (`422 scan_not_planned`). Allowed in every roll status; it does not start or change any job.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RollPlan" }
+            examples:
+              labDevelopSelfScan:
+                summary: Lab develops, the owner scans at home
+                value: { target: scanned, developBy: lab, scanBy: self }
+              clear:
+                summary: Clear the plan
+                value: {}
+      responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "200":
+          description: Roll
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RollDetail" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
 
   /rolls/{id}/processing:
     parameters:
@@ -3619,6 +3662,7 @@ paths:
                         scanned: false
                         openJobTypes: []
                         openAtLab: false
+                        plan: {}
                         version: 3
                       scans:
                         - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
@@ -4794,7 +4838,7 @@ components:
 
     RollSummary:
       type: object
-      required: [id, filmStockId, stockBrand, stockName, format, exposures, status, negativesAtLab, developed, scanned, openJobTypes, openAtLab, version]
+      required: [id, filmStockId, stockBrand, stockName, format, exposures, status, negativesAtLab, developed, scanned, openJobTypes, openAtLab, plan, version]
       properties:
         id: { type: string, format: uuid }
         filmStockId: { type: string, format: uuid }
@@ -4829,6 +4873,7 @@ components:
           description: >-
             A job is open at a lab. False while the only open jobs are processed at home (no lab), even
             though the status is then at_lab.
+        plan: { $ref: "#/components/schemas/RollPlan" }
         version:
           type: integer
           format: int64
@@ -4860,6 +4905,7 @@ components:
         scanned: false
         openJobTypes: []
         openAtLab: false
+        plan: {}
         version: 3
 
     RollTotals:
@@ -4929,6 +4975,21 @@ components:
         notes: Golden hour on the bridge
         baseNotes: ""
 
+    RollPlan:
+      type: object
+      additionalProperties: false
+      description: What the owner plans for the roll. Every field is optional; a missing field means not decided yet.
+      properties:
+        target:
+          type: string
+          enum: [developed, scanned]
+          description: Where the roll ends. developed means develop only; scanned means develop and scan.
+        developBy: { $ref: "#/components/schemas/StepActor" }
+        scanBy: { $ref: "#/components/schemas/StepActor" }
+    StepActor:
+      type: string
+      enum: [self, lab]
+      description: Who does a step. self is the owner at home.
     RollNotesInput:
       type: object
       required: [description]
@@ -4980,6 +5041,7 @@ components:
           scanned: false
           openJobTypes: []
           openAtLab: false
+          plan: {}
           version: 3
         stock:
           id: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
@@ -5041,6 +5103,7 @@ components:
           scanned: false
           openJobTypes: []
           openAtLab: false
+          plan: {}
           version: 3
         expiresOn: "2027-06-30"
         expired: false
@@ -5075,6 +5138,7 @@ components:
               scanned: false
               openJobTypes: []
               openAtLab: false
+              plan: {}
               version: 3
             expiresOn: "2027-06-30"
             expired: false
@@ -5404,6 +5468,7 @@ components:
           scanned: false
           openJobTypes: []
           openAtLab: false
+          plan: {}
           version: 3
         scans:
           - id: 4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10
@@ -5497,7 +5562,7 @@ components:
 
     AuditEntityType:
       type: string
-      enum: [camera, lens, film_stock, lab, lab_order, lab_order_item, scanner, roll, processing, frame, scan, camera_lens, roll_lens, processing_scan_order, processing_order_item]
+      enum: [camera, lens, film_stock, lab, lab_order, lab_order_item, scanner, roll, processing, frame, scan, camera_lens, roll_lens, processing_scan_order, processing_order_item, lab_handoff]
 
     AuditAction: { type: string, enum: [create, update, delete] }
 

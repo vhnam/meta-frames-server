@@ -16,6 +16,8 @@ const (
 	format135           = 135
 	expiryHorizonMonths = 6
 	unknownExpiryMonth  = 12
+	// targetDeveloped is the plan target "develop only, no scan".
+	targetDeveloped = "developed"
 )
 
 type BulkInput struct {
@@ -42,6 +44,14 @@ type Input struct {
 	Description *string
 	// IfMatch, when set, makes the update conditional on the roll's current version.
 	IfMatch *VersionCondition
+}
+
+// PlanInput is what the owner plans for a roll; nil means not decided. Values are checked
+// against the API enums before they get here.
+type PlanInput struct {
+	Target    *string
+	DevelopBy *string
+	ScanBy    *string
 }
 
 // VersionCondition is a parsed If-Match header: any version, or one of a list.
