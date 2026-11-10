@@ -44,7 +44,9 @@ func ToAPIRollSummary(summary rollsvc.Summary) api.RollSummary {
 			DevelopBy: (*api.StepActor)(summary.DevelopBy),
 			ScanBy:    (*api.StepActor)(summary.ScanBy),
 		},
-		Version: summary.Version,
+		Stage: api.RollSummaryStage(summary.Stage), StageDetail: (*api.RollSummaryStageDetail)(summary.StageDetail),
+		NeedsScan: summary.ScanRequestedAt.Valid,
+		Version:   summary.Version,
 	}
 	for index, jobType := range summary.OpenJobTypes {
 		mapped.OpenJobTypes[index] = api.ProcessingType(jobType)

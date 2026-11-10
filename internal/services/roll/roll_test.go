@@ -51,7 +51,7 @@ func TestIsExpiredIsInclusiveOfTheLastDay(test *testing.T) {
 }
 
 func rollExpiring(year, month *int32) Summary {
-	return Summary{gen.ListRollSummariesRow{ExpiryYear: year, ExpiryMonth: month}}
+	return Summary{ListRollSummariesRow: gen.ListRollSummariesRow{ExpiryYear: year, ExpiryMonth: month}}
 }
 
 func TestBuildExpiryReport(test *testing.T) {

@@ -18,6 +18,7 @@ const (
 	unknownExpiryMonth  = 12
 	// targetDeveloped is the plan target "develop only, no scan".
 	targetDeveloped = "developed"
+	targetScanned   = "scanned"
 )
 
 type BulkInput struct {
@@ -83,7 +84,12 @@ type Filter struct {
 	StartedTo   *time.Time
 }
 
-type Summary struct{ gen.ListRollSummariesRow }
+type Summary struct {
+	gen.ListRollSummariesRow
+	// Stage is the Rolls tab the roll is in; StageDetail is its badge inside processing.
+	Stage       string
+	StageDetail *string
+}
 
 type Totals struct {
 	RollPrice       int32
