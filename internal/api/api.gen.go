@@ -1187,11 +1187,14 @@ type RollSummary struct {
 	// NeedsScan The owner marked the roll for a scan (first scan or rescan) that has not started.
 	NeedsScan bool `json:"needsScan"`
 
-	// NegativesAtLab A job was sent to a lab and its negatives return is not recorded, whatever the roll status.
+	// NegativesAtLab A lab holds the roll, whatever the roll status: it has an open handoff, or an old lab job with no handoff whose negatives return is not recorded.
 	NegativesAtLab bool `json:"negativesAtLab"`
 
 	// OpenAtLab A job is open at a lab. False while the only open jobs are processed at home (no lab), even though the status is then at_lab.
 	OpenAtLab bool `json:"openAtLab"`
+
+	// OpenHandoffId The roll's open handoff (its stay at a lab), for PUT /lab-handoffs/{id}/returned.
+	OpenHandoffId *openapi_types.UUID `json:"openHandoffId,omitempty"`
 
 	// OpenJobTypes Types of the jobs still open (waiting for scans or negatives), each type once.
 	OpenJobTypes []ProcessingType `json:"openJobTypes"`
@@ -1663,6 +1666,9 @@ type PutFilmStockJSONRequestBody = FilmStockInput
 // HandOverRollsJSONRequestBody defines body for HandOverRolls for application/json ContentType.
 type HandOverRollsJSONRequestBody = HandOverInput
 
+// ReturnLabHandoffJSONRequestBody defines body for ReturnLabHandoff for application/json ContentType.
+type ReturnLabHandoffJSONRequestBody = DateInput
+
 // PutLabOrderJSONRequestBody defines body for PutLabOrder for application/json ContentType.
 type PutLabOrderJSONRequestBody = LabOrderInput
 
@@ -1791,6 +1797,9 @@ type ServerInterface interface {
 	// HandOverRolls Hand several rolls to one lab at once (Giao lab). Send Idempotency-Key so retries do not duplicate.
 	// (POST /lab-handoffs)
 	HandOverRolls(c *gin.Context, params HandOverRollsParams)
+	// ReturnLabHandoff Record that a roll came back from the lab of one handoff
+	// (PUT /lab-handoffs/{id}/returned)
+	ReturnLabHandoff(c *gin.Context, id Id)
 	// ListLabOrders Orders, newest first
 	// (GET /lab-orders)
 	ListLabOrders(c *gin.Context, params ListLabOrdersParams)
@@ -2525,6 +2534,31 @@ func (siw *ServerInterfaceWrapper) HandOverRolls(c *gin.Context) {
 	}
 
 	siw.Handler.HandOverRolls(c, params)
+}
+
+// ReturnLabHandoff operation middleware
+func (siw *ServerInterfaceWrapper) ReturnLabHandoff(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ReturnLabHandoff(c, id)
 }
 
 // ListLabOrders operation middleware
@@ -4065,6 +4099,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/scanners/:id", wrapper.GetScanner)
 	router.PUT(options.BaseURL+"/scanners/:id", wrapper.PutScanner)
 	router.POST(options.BaseURL+"/lab-handoffs", wrapper.HandOverRolls)
+	router.PUT(options.BaseURL+"/lab-handoffs/:id/returned", wrapper.ReturnLabHandoff)
 	router.GET(options.BaseURL+"/lab-orders", wrapper.ListLabOrders)
 	router.DELETE(options.BaseURL+"/lab-orders/:id", wrapper.DeleteLabOrder)
 	router.GET(options.BaseURL+"/lab-orders/:id", wrapper.GetLabOrder)
@@ -5397,6 +5432,85 @@ func (response HandOverRolls409JSONResponse) VisitHandOverRollsResponse(w http.R
 type HandOverRolls422JSONResponse struct{ UnprocessableJSONResponse }
 
 func (response HandOverRolls422JSONResponse) VisitHandOverRollsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReturnLabHandoffRequestObject struct {
+	Id   Id `json:"id"`
+	Body *ReturnLabHandoffJSONRequestBody
+}
+
+type ReturnLabHandoffResponseObject interface {
+	VisitReturnLabHandoffResponse(w http.ResponseWriter) error
+}
+
+type ReturnLabHandoff200JSONResponse RollSummary
+
+func (response ReturnLabHandoff200JSONResponse) VisitReturnLabHandoffResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReturnLabHandoff400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ReturnLabHandoff400JSONResponse) VisitReturnLabHandoffResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReturnLabHandoff401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ReturnLabHandoff401JSONResponse) VisitReturnLabHandoffResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReturnLabHandoff404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ReturnLabHandoff404JSONResponse) VisitReturnLabHandoffResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReturnLabHandoff422JSONResponse struct{ UnprocessableJSONResponse }
+
+func (response ReturnLabHandoff422JSONResponse) VisitReturnLabHandoffResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -9185,6 +9299,9 @@ type StrictServerInterface interface {
 	// HandOverRolls Hand several rolls to one lab at once (Giao lab). Send Idempotency-Key so retries do not duplicate.
 	// (POST /lab-handoffs)
 	HandOverRolls(ctx context.Context, request HandOverRollsRequestObject) (HandOverRollsResponseObject, error)
+	// ReturnLabHandoff Record that a roll came back from the lab of one handoff
+	// (PUT /lab-handoffs/{id}/returned)
+	ReturnLabHandoff(ctx context.Context, request ReturnLabHandoffRequestObject) (ReturnLabHandoffResponseObject, error)
 	// ListLabOrders Orders, newest first
 	// (GET /lab-orders)
 	ListLabOrders(ctx context.Context, request ListLabOrdersRequestObject) (ListLabOrdersResponseObject, error)
@@ -9964,6 +10081,42 @@ func (sh *strictHandler) HandOverRolls(ctx *gin.Context, params HandOverRollsPar
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(HandOverRollsResponseObject); ok {
 		if err := validResponse.VisitHandOverRollsResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReturnLabHandoff operation middleware
+func (sh *strictHandler) ReturnLabHandoff(ctx *gin.Context, id Id) {
+	var request ReturnLabHandoffRequestObject
+
+	request.Id = id
+
+	var body ReturnLabHandoffJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(ctx, err)
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ReturnLabHandoff(ctx, request.(ReturnLabHandoffRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReturnLabHandoff")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ReturnLabHandoffResponseObject); ok {
+		if err := validResponse.VisitReturnLabHandoffResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {

@@ -14,6 +14,44 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const adoptLegacyLabJobs = `-- name: AdoptLegacyLabJobs :exec
+UPDATE processing SET handoff_id = $1::uuid
+WHERE roll_id = $2 AND owner_id = $3 AND lab_id = $4::uuid
+  AND deleted_at IS NULL AND handoff_id IS NULL AND negatives_returned_at IS NULL
+`
+
+type AdoptLegacyLabJobsParams struct {
+	HandoffID uuid.UUID
+	RollID    uuid.UUID
+	OwnerID   uuid.UUID
+	LabID     uuid.UUID
+}
+
+func (q *Queries) AdoptLegacyLabJobs(ctx context.Context, arg AdoptLegacyLabJobsParams) error {
+	_, err := q.db.Exec(ctx, adoptLegacyLabJobs,
+		arg.HandoffID,
+		arg.RollID,
+		arg.OwnerID,
+		arg.LabID,
+	)
+	return err
+}
+
+const closeLabHandoff = `-- name: CloseLabHandoff :exec
+UPDATE lab_handoff SET returned_at = $2 WHERE id = $1 AND owner_id = $3 AND returned_at IS NULL
+`
+
+type CloseLabHandoffParams struct {
+	ID         uuid.UUID
+	ReturnedAt *time.Time
+	OwnerID    uuid.UUID
+}
+
+func (q *Queries) CloseLabHandoff(ctx context.Context, arg CloseLabHandoffParams) error {
+	_, err := q.db.Exec(ctx, closeLabHandoff, arg.ID, arg.ReturnedAt, arg.OwnerID)
+	return err
+}
+
 const deleteScanOrder = `-- name: DeleteScanOrder :execrows
 DELETE FROM processing_scan_order WHERE processing_id = $1 AND scanner_id = $2
 `
@@ -51,6 +89,87 @@ func (q *Queries) GetLab(ctx context.Context, arg GetLabParams) (Lab, error) {
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.OwnerID,
+	)
+	return i, err
+}
+
+const getLabHandoff = `-- name: GetLabHandoff :one
+SELECT id, owner_id, roll_id, lab_id, batch_id, handed_at, returned_at, notes, created_at, updated_at FROM lab_handoff WHERE id = $1 AND owner_id = $2
+`
+
+type GetLabHandoffParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) GetLabHandoff(ctx context.Context, arg GetLabHandoffParams) (LabHandoff, error) {
+	row := q.db.QueryRow(ctx, getLabHandoff, arg.ID, arg.OwnerID)
+	var i LabHandoff
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.RollID,
+		&i.LabID,
+		&i.BatchID,
+		&i.HandedAt,
+		&i.ReturnedAt,
+		&i.Notes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getLabHandoffForUpdate = `-- name: GetLabHandoffForUpdate :one
+SELECT id, owner_id, roll_id, lab_id, batch_id, handed_at, returned_at, notes, created_at, updated_at FROM lab_handoff WHERE id = $1 AND owner_id = $2 FOR UPDATE
+`
+
+type GetLabHandoffForUpdateParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) GetLabHandoffForUpdate(ctx context.Context, arg GetLabHandoffForUpdateParams) (LabHandoff, error) {
+	row := q.db.QueryRow(ctx, getLabHandoffForUpdate, arg.ID, arg.OwnerID)
+	var i LabHandoff
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.RollID,
+		&i.LabID,
+		&i.BatchID,
+		&i.HandedAt,
+		&i.ReturnedAt,
+		&i.Notes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getOpenLabHandoff = `-- name: GetOpenLabHandoff :one
+SELECT id, owner_id, roll_id, lab_id, batch_id, handed_at, returned_at, notes, created_at, updated_at FROM lab_handoff WHERE roll_id = $1 AND owner_id = $2 AND returned_at IS NULL
+`
+
+type GetOpenLabHandoffParams struct {
+	RollID  uuid.UUID
+	OwnerID uuid.UUID
+}
+
+func (q *Queries) GetOpenLabHandoff(ctx context.Context, arg GetOpenLabHandoffParams) (LabHandoff, error) {
+	row := q.db.QueryRow(ctx, getOpenLabHandoff, arg.RollID, arg.OwnerID)
+	var i LabHandoff
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.RollID,
+		&i.LabID,
+		&i.BatchID,
+		&i.HandedAt,
+		&i.ReturnedAt,
+		&i.Notes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -646,7 +765,9 @@ FROM processing p
 JOIN lab l ON l.id = p.lab_id
 JOIN roll r ON r.id = p.roll_id
 JOIN film_stock fs ON fs.id = r.film_stock_id
-WHERE p.owner_id = $1 AND p.negatives_returned_at IS NULL AND p.deleted_at IS NULL AND r.deleted_at IS NULL
+LEFT JOIN lab_handoff h ON h.id = p.handoff_id
+WHERE p.owner_id = $1 AND p.deleted_at IS NULL AND r.deleted_at IS NULL
+  AND CASE WHEN p.handoff_id IS NULL THEN p.negatives_returned_at IS NULL ELSE h.returned_at IS NULL END
 ORDER BY p.sent_at
 `
 
@@ -662,6 +783,7 @@ type NegativesAtLabRow struct {
 	StockName     string
 }
 
+// A job in a handoff waits for the handoff's return; an old job with none, for its own.
 func (q *Queries) NegativesAtLab(ctx context.Context, ownerID uuid.UUID) ([]NegativesAtLabRow, error) {
 	rows, err := q.db.Query(ctx, negativesAtLab, ownerID)
 	if err != nil {
@@ -749,20 +871,42 @@ func (q *Queries) ReplaceScan(ctx context.Context, arg ReplaceScanParams) (Scan,
 	return i, err
 }
 
-const rollHasOpenHandoff = `-- name: RollHasOpenHandoff :one
-SELECT EXISTS (SELECT 1 FROM lab_handoff WHERE roll_id = $1 AND owner_id = $2 AND returned_at IS NULL)
+const rollLegacyLabHolders = `-- name: RollLegacyLabHolders :many
+SELECT lab_id::uuid AS lab_id, min(sent_at)::date AS first_sent_at FROM processing
+WHERE roll_id = $1 AND owner_id = $2 AND deleted_at IS NULL AND lab_id IS NOT NULL AND handoff_id IS NULL
+  AND negatives_returned_at IS NULL
+GROUP BY lab_id
 `
 
-type RollHasOpenHandoffParams struct {
+type RollLegacyLabHoldersParams struct {
 	RollID  uuid.UUID
 	OwnerID uuid.UUID
 }
 
-func (q *Queries) RollHasOpenHandoff(ctx context.Context, arg RollHasOpenHandoffParams) (bool, error) {
-	row := q.db.QueryRow(ctx, rollHasOpenHandoff, arg.RollID, arg.OwnerID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
+type RollLegacyLabHoldersRow struct {
+	LabID       uuid.UUID
+	FirstSentAt time.Time
+}
+
+// Labs of old lab jobs (before handoffs) whose negatives are not back: they still hold the roll.
+func (q *Queries) RollLegacyLabHolders(ctx context.Context, arg RollLegacyLabHoldersParams) ([]RollLegacyLabHoldersRow, error) {
+	rows, err := q.db.Query(ctx, rollLegacyLabHolders, arg.RollID, arg.OwnerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RollLegacyLabHoldersRow
+	for rows.Next() {
+		var i RollLegacyLabHoldersRow
+		if err := rows.Scan(&i.LabID, &i.FirstSentAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const scanOrderExists = `-- name: ScanOrderExists :one
@@ -779,6 +923,23 @@ func (q *Queries) ScanOrderExists(ctx context.Context, arg ScanOrderExistsParams
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const setHandoffNegativesReturned = `-- name: SetHandoffNegativesReturned :exec
+UPDATE processing SET negatives_returned_at = $2
+WHERE handoff_id = $1 AND owner_id = $3 AND deleted_at IS NULL AND negatives_returned_at IS NULL
+`
+
+type SetHandoffNegativesReturnedParams struct {
+	HandoffID           *uuid.UUID
+	NegativesReturnedAt *time.Time
+	OwnerID             uuid.UUID
+}
+
+// The negatives of every live job of the handoff come back with the roll.
+func (q *Queries) SetHandoffNegativesReturned(ctx context.Context, arg SetHandoffNegativesReturnedParams) error {
+	_, err := q.db.Exec(ctx, setHandoffNegativesReturned, arg.HandoffID, arg.NegativesReturnedAt, arg.OwnerID)
+	return err
 }
 
 const setNegativesReturned = `-- name: SetNegativesReturned :one

@@ -12,6 +12,7 @@ import (
 
 type Querier interface {
 	AddJobOrderItem(ctx context.Context, arg AddJobOrderItemParams) error
+	AdoptLegacyLabJobs(ctx context.Context, arg AdoptLegacyLabJobsParams) error
 	BuiltInScannerNamed(ctx context.Context, arg BuiltInScannerNamedParams) (bool, error)
 	CameraIsLoaded(ctx context.Context, arg CameraIsLoadedParams) (bool, error)
 	ClaimIdempotencyKey(ctx context.Context, arg ClaimIdempotencyKeyParams) (int64, error)
@@ -22,6 +23,7 @@ type Querier interface {
 	// A job on an order takes its price from its lines, so its own price goes.
 	ClearProcessingPrice(ctx context.Context, arg ClearProcessingPriceParams) error
 	ClearRollScanRequest(ctx context.Context, arg ClearRollScanRequestParams) error
+	CloseLabHandoff(ctx context.Context, arg CloseLabHandoffParams) error
 	CountCameraRolls(ctx context.Context, arg CountCameraRollsParams) (int64, error)
 	CountLabOrderItemJobs(ctx context.Context, arg CountLabOrderItemJobsParams) (int32, error)
 	DeleteCameraLensesExcept(ctx context.Context, arg DeleteCameraLensesExceptParams) error
@@ -48,12 +50,15 @@ type Querier interface {
 	GetFrameByNumber(ctx context.Context, arg GetFrameByNumberParams) (Frame, error)
 	GetIdempotencyKey(ctx context.Context, arg GetIdempotencyKeyParams) (IdempotencyKey, error)
 	GetLab(ctx context.Context, arg GetLabParams) (Lab, error)
+	GetLabHandoff(ctx context.Context, arg GetLabHandoffParams) (LabHandoff, error)
+	GetLabHandoffForUpdate(ctx context.Context, arg GetLabHandoffForUpdateParams) (LabHandoff, error)
 	GetLabOrder(ctx context.Context, arg GetLabOrderParams) (GetLabOrderRow, error)
 	GetLabOrderForUpdate(ctx context.Context, arg GetLabOrderForUpdateParams) (LabOrder, error)
 	GetLabOrderItemForUpdate(ctx context.Context, arg GetLabOrderItemForUpdateParams) (GetLabOrderItemForUpdateRow, error)
 	GetLens(ctx context.Context, arg GetLensParams) (Lens, error)
 	GetLensForUpdate(ctx context.Context, arg GetLensForUpdateParams) (Lens, error)
 	GetLensesByIDs(ctx context.Context, arg GetLensesByIDsParams) ([]Lens, error)
+	GetOpenLabHandoff(ctx context.Context, arg GetOpenLabHandoffParams) (LabHandoff, error)
 	GetOwnScannerNamed(ctx context.Context, arg GetOwnScannerNamedParams) (Scanner, error)
 	GetProcessing(ctx context.Context, arg GetProcessingParams) (Processing, error)
 	GetProcessingForUpdate(ctx context.Context, arg GetProcessingForUpdateParams) (Processing, error)
@@ -117,14 +122,16 @@ type Querier interface {
 	ListScanners(ctx context.Context, ownerID uuid.UUID) ([]Scanner, error)
 	ListSiblingStocks(ctx context.Context, arg ListSiblingStocksParams) ([]FilmStock, error)
 	LoadRoll(ctx context.Context, arg LoadRollParams) (Roll, error)
+	// A job in a handoff waits for the handoff's return; an old job with none, for its own.
 	NegativesAtLab(ctx context.Context, ownerID uuid.UUID) ([]NegativesAtLabRow, error)
 	ProcessingHasScans(ctx context.Context, arg ProcessingHasScansParams) (bool, error)
 	// A deleted scanner leaves the labs that ran it.
 	RemoveScannerFromLabs(ctx context.Context, scannerID uuid.UUID) error
 	ReplaceScan(ctx context.Context, arg ReplaceScanParams) (Scan, error)
-	RollHasOpenHandoff(ctx context.Context, arg RollHasOpenHandoffParams) (bool, error)
 	RollHasOpenJob(ctx context.Context, arg RollHasOpenJobParams) (bool, error)
 	RollHasScansReceived(ctx context.Context, arg RollHasScansReceivedParams) (bool, error)
+	// Labs of old lab jobs (before handoffs) whose negatives are not back: they still hold the roll.
+	RollLegacyLabHolders(ctx context.Context, arg RollLegacyLabHoldersParams) ([]RollLegacyLabHoldersRow, error)
 	RollSpend(ctx context.Context, arg RollSpendParams) (RollSpendRow, error)
 	ScanOrderExists(ctx context.Context, arg ScanOrderExistsParams) (bool, error)
 	// Deleted scans count too: they can be restored and still name their scanner.
@@ -132,6 +139,8 @@ type Querier interface {
 	SetBuiltInLensActive(ctx context.Context, arg SetBuiltInLensActiveParams) error
 	SetCameraActive(ctx context.Context, arg SetCameraActiveParams) (Camera, error)
 	SetFrameNotes(ctx context.Context, arg SetFrameNotesParams) (Frame, error)
+	// The negatives of every live job of the handoff come back with the roll.
+	SetHandoffNegativesReturned(ctx context.Context, arg SetHandoffNegativesReturnedParams) error
 	SetLensActive(ctx context.Context, arg SetLensActiveParams) (Lens, error)
 	SetNegativesReturned(ctx context.Context, arg SetNegativesReturnedParams) (Processing, error)
 	SetRollDescription(ctx context.Context, arg SetRollDescriptionParams) (Roll, error)

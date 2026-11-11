@@ -1868,6 +1868,32 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/Unprocessable" }
 
+  /lab-handoffs/{id}/returned:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Rolls]
+      operationId: returnLabHandoff
+      summary: Record that a roll came back from the lab of one handoff
+      description: >-
+        Closes the handoff and gives every live job of it the return date, if it has none. Works also
+        when every job of the handoff was cancelled. A handoff already returned changes nothing.
+        The roll's open handoff is `openHandoffId` on its summary.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DateInput" }
+      responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "200":
+          description: The roll
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RollSummary" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
   /lab-orders:
     get:
       tags: [Lab orders]
@@ -4920,7 +4946,13 @@ components:
         finishedAt: { type: string, format: date }
         negativesAtLab:
           type: boolean
-          description: A job was sent to a lab and its negatives return is not recorded, whatever the roll status.
+          description: >-
+            A lab holds the roll, whatever the roll status: it has an open handoff, or an old lab job with
+            no handoff whose negatives return is not recorded.
+        openHandoffId:
+          type: string
+          format: uuid
+          description: The roll's open handoff (its stay at a lab), for PUT /lab-handoffs/{id}/returned.
         developed:
           type: boolean
           description: A develop or develop_scan job has a developed date, negatives returned or scans received.

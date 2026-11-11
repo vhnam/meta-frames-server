@@ -59,6 +59,10 @@ func ToAPIRollSummary(summary rollsvc.Summary) api.RollSummary {
 	for index, jobType := range summary.OpenJobTypes {
 		mapped.OpenJobTypes[index] = api.ProcessingType(jobType)
 	}
+	// the query gives uuid.Nil when the roll has no open handoff
+	if summary.OpenHandoffID != uuid.Nil {
+		mapped.OpenHandoffId = &summary.OpenHandoffID
+	}
 	if summary.CameraBrand != nil && summary.CameraModel != nil {
 		mapped.CameraName = pointers.To(*summary.CameraBrand + " " + *summary.CameraModel)
 	}
@@ -159,6 +163,14 @@ func (controller *Controller) HandOverRolls(ctx context.Context, request api.Han
 		return nil, err
 	}
 	return api.HandOverRolls201JSONResponse(toAPIRollSummaries(summaries)), nil
+}
+
+func (controller *Controller) ReturnLabHandoff(ctx context.Context, request api.ReturnLabHandoffRequestObject) (api.ReturnLabHandoffResponseObject, error) {
+	summary, err := controller.rolls.ReturnHandoff(ctx, request.Id, convert.OptionalDate(request.Body))
+	if err != nil {
+		return nil, err
+	}
+	return api.ReturnLabHandoff200JSONResponse(ToAPIRollSummary(summary)), nil
 }
 
 // parseIfMatch reads an If-Match header: `*`, or a comma-separated list of strong entity tags
