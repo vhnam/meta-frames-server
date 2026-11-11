@@ -1043,6 +1043,8 @@ type Process string
 
 // Processing Example: {"id":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","isOpen":true,"labId":"3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09","labName":"Saigon Film Lab","notes":"Push 1 stop","price":90000,"process":"C-41","rollId":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","scanOrders":[{"hiRes":false,"scanCount":36,"scanner":"noritsu","scannerId":"d177cb3c-a850-4232-a4ca-75189b7b279b","scannerName":"Noritsu HS-1800","settings":{"resolution":"standard"}}],"scansExpectedAt":"2026-10-04","scansReceivedAt":"2026-09-27","sentAt":"2026-09-20","type":"develop_scan"}
 type Processing struct {
+	// DevelopedAt The day the film was developed ("Đã tráng"); develop and develop_scan jobs only
+	DevelopedAt         *openapi_types.Date `json:"developedAt,omitempty"`
 	Id                  openapi_types.UUID  `json:"id"`
 	IsOpen              bool                `json:"isOpen"`
 	LabId               *openapi_types.UUID `json:"labId,omitempty"`

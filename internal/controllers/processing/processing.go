@@ -32,7 +32,7 @@ func ToAPIProcessing(view processingsvc.View) api.Processing {
 		SentAt: convert.APIDate(job.SentAt), ScansReceivedAt: convert.ToAPIDate(job.ScansReceivedAt),
 		ScansExpectedAt:     convert.ToAPIDate(job.ScansExpectedAt),
 		NegativesExpectedAt: convert.ToAPIDate(job.NegativesExpectedAt),
-		NegativesReturnedAt: convert.ToAPIDate(job.NegativesReturnedAt), Price: pointers.Int(view.Price), Notes: job.Notes,
+		NegativesReturnedAt: convert.ToAPIDate(job.NegativesReturnedAt), DevelopedAt: convert.ToAPIDate(job.DevelopedAt), Price: pointers.Int(view.Price), Notes: job.Notes,
 		ScanOrders: make([]api.ScanOrder, len(view.ScanOrders)), IsOpen: view.IsOpen,
 	}
 	if view.LabName != "" {

@@ -13,6 +13,13 @@ func (harness *harness) markDeveloped(rollID string, body map[string]any) respon
 	return harness.call("PUT", "/rolls/"+rollID+"/developed", body)
 }
 
+// finishedOctFirst is a finished roll with no job, finished on 2026-10-01 so the October dates below fit.
+func (harness *harness) finishedOctFirst(seeded gear) string {
+	rollID := harness.finishedRoll(seeded)
+	harness.execSQL(`UPDATE roll SET finished_at = DATE '2026-10-01' WHERE id = $1`, rollID)
+	return rollID
+}
+
 func detailRoll(result response) map[string]any { return asObject(result.Body["roll"]) }
 
 // D4 on a job: a lab job gets only the developed date; a home develop job also closes.
@@ -34,6 +41,9 @@ func TestDevelopedDateGoesOnTheOpenDevelopJob(test *testing.T) {
 		}
 		if roll := harness.rollOf(rollID); roll["status"] != "at_lab" || roll["negativesAtLab"] != true {
 			test.Fatalf("lab %s roll = %v", jobType, roll)
+		}
+		if job := harness.expect(harness.call("GET", "/processing/"+jobID, nil), http.StatusOK); job.Body["developedAt"] != "2026-10-04" {
+			test.Fatalf("lab %s job read = %s", jobType, job.Raw)
 		}
 	}
 
@@ -73,7 +83,7 @@ func TestDevelopedWithNoJobCreatesAClosedHomeJob(test *testing.T) {
 	harness := newHarness(test)
 	seeded := seedGear(harness)
 
-	developOnly := harness.finishedRoll(seeded)
+	developOnly := harness.finishedOctFirst(seeded)
 	harness.expect(harness.call("PUT", "/rolls/"+developOnly+"/plan", map[string]any{"target": "scanned", "scanBy": "lab"}), http.StatusOK)
 	roll := detailRoll(harness.expect(harness.markDeveloped(developOnly, map[string]any{"date": "2026-10-03", "target": "developed"}), http.StatusOK))
 	plan := asObject(roll["plan"])
@@ -86,7 +96,7 @@ func TestDevelopedWithNoJobCreatesAClosedHomeJob(test *testing.T) {
 		test.Fatal("no closed home develop job")
 	}
 
-	toScan := harness.finishedRoll(seeded)
+	toScan := harness.finishedOctFirst(seeded)
 	roll = detailRoll(harness.expect(harness.markDeveloped(toScan, map[string]any{"date": "2026-10-03", "target": "scanned"}), http.StatusOK))
 	if roll["stage"] != "processing" || roll["stageDetail"] != "waiting_scan" || harness.count(closedHomeJob, toScan) != 1 {
 		test.Fatalf("to be scanned = %v", roll)
@@ -98,11 +108,72 @@ func TestDevelopedWithNoJobCreatesAClosedHomeJob(test *testing.T) {
 	}
 }
 
+// Đã tráng refuses a date outside the roll's history, and saves nothing.
+func TestDevelopedDateMustFitTheRollHistory(test *testing.T) {
+	harness := newHarness(test)
+	seeded := seedGear(harness)
+	labID := harness.newLab("Lab A")
+
+	noJob := harness.finishedRoll(seeded)
+	harness.execSQL(`UPDATE roll SET finished_at = DATE '2026-09-10' WHERE id = $1`, noJob)
+	if refused := harness.expect(harness.markDeveloped(noJob, map[string]any{"date": "2026-09-05"}), http.StatusUnprocessableEntity); refused.Body["code"] != "developed_before_finished" {
+		test.Fatalf("before finished = %s", refused.Raw)
+	}
+	if harness.count(`SELECT count(*) FROM processing WHERE roll_id = $1`, noJob) != 0 {
+		test.Fatal("a refused Đã tráng created a job")
+	}
+
+	rollID, jobID := harness.finishedRoll(seeded), newID()
+	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+jobID, map[string]any{
+		"labId": labID, "type": "develop_scan", "sentAt": "2026-10-01", "scanOrders": []map[string]any{{"scanner": "noritsu"}},
+	}), http.StatusCreated)
+	harness.expect(harness.call("PUT", "/processing/"+jobID+"/negatives-returned", map[string]any{"date": "2026-10-05"}), http.StatusOK)
+	if refused := harness.expect(harness.markDeveloped(rollID, map[string]any{"date": "2026-10-08"}), http.StatusUnprocessableEntity); refused.Body["code"] != "developed_after_negatives_returned" {
+		test.Fatalf("after negatives returned = %s", refused.Raw)
+	}
+	if harness.count(`SELECT count(*) FROM processing WHERE id = $1 AND developed_at IS NULL`, jobID) != 1 {
+		test.Fatal("a refused Đã tráng saved a date")
+	}
+	harness.expect(harness.markDeveloped(rollID, map[string]any{"date": "2026-10-05"}), http.StatusOK)
+}
+
+// The other order: negatives cannot come back before the developed date, on a handoff or an old job.
+func TestReturnDateMustNotPrecedeTheDevelopedDate(test *testing.T) {
+	harness := newHarness(test)
+	seeded := seedGear(harness)
+	labID := harness.newLab("Lab A")
+
+	rollID, jobID := harness.finishedOctFirst(seeded), newID()
+	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+jobID, map[string]any{"labId": labID, "type": "develop", "sentAt": "2026-10-01"}), http.StatusCreated)
+	harness.expect(harness.markDeveloped(rollID, map[string]any{"date": "2026-10-08"}), http.StatusOK)
+	handoffID, _ := harness.rollOf(rollID)["openHandoffId"].(string)
+	for _, path := range []string{"/processing/" + jobID + "/negatives-returned", "/lab-handoffs/" + handoffID + "/returned"} {
+		if refused := harness.expect(harness.call("PUT", path, map[string]any{"date": "2026-10-05"}), http.StatusUnprocessableEntity); refused.Body["code"] != "returned_before_developed" {
+			test.Fatalf("%s = %s", path, refused.Raw)
+		}
+	}
+	if roll := harness.rollOf(rollID); roll["negativesAtLab"] != true {
+		test.Fatalf("a refused return closed the handoff: %v", roll)
+	}
+	harness.expect(harness.call("PUT", "/lab-handoffs/"+handoffID+"/returned", map[string]any{"date": "2026-10-08"}), http.StatusOK)
+
+	// an old lab job with no handoff
+	oldRoll, oldJob := harness.finishedOctFirst(seeded), newID()
+	harness.expect(harness.call("PUT", "/rolls/"+oldRoll+"/processing/"+oldJob, map[string]any{"labId": labID, "type": "develop", "sentAt": "2026-10-01"}), http.StatusCreated)
+	harness.execSQL(`UPDATE processing SET handoff_id = NULL, developed_at = DATE '2026-10-08' WHERE id = $1`, oldJob)
+	if refused := harness.expect(harness.call("PUT", "/processing/"+oldJob+"/negatives-returned", map[string]any{"date": "2026-10-05"}), http.StatusUnprocessableEntity); refused.Body["code"] != "returned_before_developed" {
+		test.Fatalf("old job = %s", refused.Raw)
+	}
+	if harness.count(`SELECT count(*) FROM processing WHERE id = $1 AND negatives_returned_at IS NULL`, oldJob) != 1 {
+		test.Fatal("a refused return saved a date on the old job")
+	}
+}
+
 // D3: mark and unmark "Cần scan"; a single scan job removes the mark.
 func TestScanRequestMarkAndASingleScanJob(test *testing.T) {
 	harness := newHarness(test)
 	seeded := seedGear(harness)
-	rollID := harness.finishedRoll(seeded)
+	rollID := harness.finishedOctFirst(seeded)
 	harness.expect(harness.markDeveloped(rollID, map[string]any{"date": "2026-10-03"}), http.StatusOK)
 
 	if roll := detailRoll(harness.expect(harness.call("PUT", "/rolls/"+rollID+"/scan-request", nil), http.StatusOK)); roll["needsScan"] != true {

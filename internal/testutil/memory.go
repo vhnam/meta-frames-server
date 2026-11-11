@@ -343,7 +343,7 @@ func (queries *Memory) ListRollProcessing(_ context.Context, arg gen.ListRollPro
 		if job.RollID == rollID && !job.DeletedAt.Valid {
 			rows = append(rows, gen.ListRollProcessingRow{
 				ID: job.ID, RollID: job.RollID, LabID: job.LabID, Type: job.Type, Process: job.Process, SentAt: job.SentAt,
-				ScansReceivedAt: job.ScansReceivedAt, ScansExpectedAt: job.ScansExpectedAt, NegativesExpectedAt: job.NegativesExpectedAt, NegativesReturnedAt: job.NegativesReturnedAt, Price: job.Price, Notes: job.Notes,
+				ScansReceivedAt: job.ScansReceivedAt, ScansExpectedAt: job.ScansExpectedAt, NegativesExpectedAt: job.NegativesExpectedAt, NegativesReturnedAt: job.NegativesReturnedAt, DevelopedAt: job.DevelopedAt, HandoffID: job.HandoffID, Price: job.Price, Notes: job.Notes,
 			})
 		}
 	}
