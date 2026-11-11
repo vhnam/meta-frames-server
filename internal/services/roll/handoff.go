@@ -99,21 +99,19 @@ func (service *Service) HandOver(ctx context.Context, input HandOverInput) ([]Su
 			if err != nil {
 				return err
 			}
-			if err := checkCanHandOver(summary, item.Type); err != nil {
+			// who holds the roll first, then whether it waits for this job
+			handoffID, err := processing.JoinOrOpenHandoff(ctx, queries, item.RollID, input.LabID, handedAt, batchID, pointers.TrimmedOrNil(input.Notes))
+			if err != nil {
 				return forRoll(item.RollID, err)
 			}
-			handoffID := service.newID()
-			if err := queries.InsertLabHandoff(ctx, gen.InsertLabHandoffParams{
-				ID: handoffID, OwnerID: owner, RollID: item.RollID, LabID: input.LabID, BatchID: batchID,
-				HandedAt: handedAt, Notes: pointers.TrimmedOrNil(input.Notes),
-			}); err != nil {
-				return err
+			if err := checkCanHandOver(summary, item.Type); err != nil {
+				return forRoll(item.RollID, err)
 			}
 			job := processing.Input{LabID: &input.LabID, Type: item.Type}
 			if processing.JobProducesScans(item.Type) {
 				job.ScanOrders = scanOrders
 			}
-			if err := processing.CreateJob(ctx, queries, rolls[item.RollID], service.newID(), job, handedAt, &handoffID); err != nil {
+			if err := processing.CreateJob(ctx, queries, rolls[item.RollID], service.newID(), job, handedAt, handoffID); err != nil {
 				return forRoll(item.RollID, err)
 			}
 			if processing.JobProducesScans(item.Type) {
@@ -173,12 +171,8 @@ func (service *Service) ReturnHandoff(ctx context.Context, handoffID uuid.UUID, 
 
 // checkCanHandOver decides whether a roll waits to go to a lab, and for which job: a finished roll
 // to be developed, a developed roll waiting for its planned scan, or a completed roll marked for a
-// scan. The negatives must be home (no open handoff): a roll a lab still holds waits for the
-// same-lab rule (slice 3c).
+// scan. Which lab holds the roll is JoinOrOpenHandoff's rule.
 func checkCanHandOver(summary Summary, jobType string) error {
-	if summary.NegativesAtLab {
-		return apperror.Conflict("negatives_at_lab", "a lab still holds this roll; record its return first")
-	}
 	waitingForScan := summary.Stage == stageCompleted && summary.ScanRequestedAt.Valid
 	if summary.Stage == stageProcessing && summary.StageDetail != nil {
 		switch *summary.StageDetail {

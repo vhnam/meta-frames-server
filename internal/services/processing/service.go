@@ -305,6 +305,12 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 			if existing.RollID != rollID || existing.Type != input.Type {
 				return apperror.Conflict("job_immutable", "a job's roll and type cannot change")
 			}
+			// D8.6: the lab of a job that holds the roll stays: a job in a handoff, or an old lab job
+			// with no handoff whose negatives are not back
+			holdsRoll := existing.HandoffID != nil || (existing.LabID != nil && existing.NegativesReturnedAt == nil)
+			if holdsRoll && (existing.LabID == nil || input.LabID == nil || *existing.LabID != *input.LabID) {
+				return apperror.Conflict("lab_fixed_by_handoff", "a job handed to a lab keeps its lab; cancel it and record the return to move the roll")
+			}
 			if err := validateScanOrders(input.Type, input.ScanOrders); err != nil {
 				return err
 			}
@@ -326,9 +332,12 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 			created = true
 			var handoffID *uuid.UUID
 			if input.LabID != nil {
-				if handoffID, err = joinOrOpenHandoff(ctx, queries, rollID, *input.LabID, sentAt); err != nil {
-					return err
-				}
+				handoffID, err = JoinOrOpenHandoff(ctx, queries, rollID, *input.LabID, sentAt, uuid.New(), nil)
+			} else {
+				err = refuseWhileALabHolds(ctx, queries, rollID)
+			}
+			if err != nil {
+				return err
 			}
 			if err := CreateJob(ctx, queries, roll, jobID, input, sentAt, handoffID); err != nil {
 				return err
@@ -347,7 +356,13 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 // links a lab job to the roll's stay at that lab; nil for a job outside a handoff.
 func CreateJob(ctx context.Context, queries gen.Querier, roll gen.Roll, jobID uuid.UUID, input Input, sentAt time.Time, handoffID *uuid.UUID) error {
 	if err := checkCanSend(roll.Status, input.Type); err != nil {
-		return err
+		sameLab, checkErr := scansNextAtSameLab(ctx, queries, roll, input.Type, handoffID)
+		if checkErr != nil {
+			return checkErr
+		}
+		if !sameLab {
+			return err
+		}
 	}
 	process, err := resolveProcess(ctx, queries, roll.FilmStockID, input.Process)
 	if err != nil {
@@ -385,9 +400,48 @@ func LockJob(ctx context.Context, queries gen.Querier, jobID uuid.UUID) (gen.Pro
 	return job, shared.NotFoundOr(err, "processing job")
 }
 
-// joinOrOpenHandoff is the roll's stay at the lab a new lab job goes to (D8.1): the roll's open
-// handoff at that lab, or a new one. An open handoff at another lab refuses the job.
-func joinOrOpenHandoff(ctx context.Context, queries gen.Querier, rollID, labID uuid.UUID, handedAt time.Time) (*uuid.UUID, error) {
+// scansNextAtSameLab (D8.3): the lab that developed the roll scans it next while it still holds the
+// negatives, although the roll is at_lab. Every open job must be a developed develop job of the
+// stay the scan joins.
+func scansNextAtSameLab(ctx context.Context, queries gen.Querier, roll gen.Roll, jobType string, handoffID *uuid.UUID) (bool, error) {
+	if roll.Status != domain.RollStatusAtLab || jobType != domain.JobTypeScan || handoffID == nil {
+		return false, nil
+	}
+	rows, err := queries.ListRollProcessing(ctx, gen.ListRollProcessingParams{RollID: roll.ID, OwnerID: requestctx.Owner(ctx)})
+	if err != nil {
+		return false, err
+	}
+	for _, row := range rows {
+		if !isJobOpen(gen.Processing{Type: row.Type, ScansReceivedAt: row.ScansReceivedAt, NegativesReturnedAt: row.NegativesReturnedAt}) {
+			continue
+		}
+		if row.Type != domain.JobTypeDevelop || row.DevelopedAt == nil || row.HandoffID == nil || *row.HandoffID != *handoffID {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// refuseWhileALabHolds (D8.2): a home job needs the negatives home.
+func refuseWhileALabHolds(ctx context.Context, queries gen.Querier, rollID uuid.UUID) error {
+	owner := requestctx.Owner(ctx)
+	_, err := queries.GetOpenLabHandoff(ctx, gen.GetOpenLabHandoffParams{RollID: rollID, OwnerID: owner})
+	if err != nil && !db.IsNoRows(err) {
+		return err
+	}
+	holders, holdersErr := queries.RollLegacyLabHolders(ctx, gen.RollLegacyLabHoldersParams{RollID: rollID, OwnerID: owner})
+	if holdersErr != nil {
+		return holdersErr
+	}
+	if err == nil || len(holders) > 0 {
+		return apperror.Conflict("negatives_at_lab", "a lab holds this roll; record its return first")
+	}
+	return nil
+}
+
+// JoinOrOpenHandoff is the roll's stay at the lab a new lab job goes to (D8.1): the roll's open
+// handoff at that lab, or a new one in batchID. A lab that holds the roll elsewhere refuses the job.
+func JoinOrOpenHandoff(ctx context.Context, queries gen.Querier, rollID, labID uuid.UUID, handedAt time.Time, batchID uuid.UUID, notes *string) (*uuid.UUID, error) {
 	owner := requestctx.Owner(ctx)
 	open, err := queries.GetOpenLabHandoff(ctx, gen.GetOpenLabHandoffParams{RollID: rollID, OwnerID: owner})
 	switch {
@@ -413,9 +467,8 @@ func joinOrOpenHandoff(ctx context.Context, queries gen.Querier, rollID, labID u
 		}
 	}
 	handoffID := uuid.New()
-	// a single job is a batch of one
 	if err := queries.InsertLabHandoff(ctx, gen.InsertLabHandoffParams{
-		ID: handoffID, OwnerID: owner, RollID: rollID, LabID: labID, BatchID: handoffID, HandedAt: handedAt,
+		ID: handoffID, OwnerID: owner, RollID: rollID, LabID: labID, BatchID: batchID, HandedAt: handedAt, Notes: notes,
 	}); err != nil {
 		return nil, err
 	}

@@ -46,7 +46,8 @@ func TestProcessingSaveSendsTheRollAndUpdatesTheJob(test *testing.T) {
 		test.Fatalf("roll status = %q", fixture.queries.Rolls[fixture.rollID].Status)
 	}
 
-	view, created, err = fixture.service.Save(ctx, fixture.rollID, jobID, Input{Type: domain.JobTypeDevelopScan, Price: pointers.To(90), ScanOrders: noritsuOrder})
+	// the job keeps its lab: a job handed to a lab cannot move (D8.6)
+	view, created, err = fixture.service.Save(ctx, fixture.rollID, jobID, Input{LabID: &fixture.labID, Type: domain.JobTypeDevelopScan, Price: pointers.To(90), ScanOrders: noritsuOrder})
 	if err != nil || created || view.Job.Price == nil || *view.Job.Price != 90 {
 		test.Fatalf("update: view=%+v created=%v err=%v", view, created, err)
 	}
