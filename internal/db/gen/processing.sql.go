@@ -925,6 +925,21 @@ func (q *Queries) ScanOrderExists(ctx context.Context, arg ScanOrderExistsParams
 	return exists, err
 }
 
+const setDevelopedAt = `-- name: SetDevelopedAt :exec
+UPDATE processing SET developed_at = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL
+`
+
+type SetDevelopedAtParams struct {
+	ID          uuid.UUID
+	DevelopedAt *time.Time
+	OwnerID     uuid.UUID
+}
+
+func (q *Queries) SetDevelopedAt(ctx context.Context, arg SetDevelopedAtParams) error {
+	_, err := q.db.Exec(ctx, setDevelopedAt, arg.ID, arg.DevelopedAt, arg.OwnerID)
+	return err
+}
+
 const setHandoffNegativesReturned = `-- name: SetHandoffNegativesReturned :exec
 UPDATE processing SET negatives_returned_at = $2
 WHERE handoff_id = $1 AND owner_id = $3 AND deleted_at IS NULL AND negatives_returned_at IS NULL

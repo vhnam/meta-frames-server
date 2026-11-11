@@ -100,6 +100,24 @@ func (e AuditEntityType) Valid() bool {
 	}
 }
 
+// Defines values for DevelopedInputTarget.
+const (
+	DevelopedInputTargetDeveloped DevelopedInputTarget = "developed"
+	DevelopedInputTargetScanned   DevelopedInputTarget = "scanned"
+)
+
+// Valid indicates whether the value is a known member of the DevelopedInputTarget enum.
+func (e DevelopedInputTarget) Valid() bool {
+	switch e {
+	case DevelopedInputTargetDeveloped:
+		return true
+	case DevelopedInputTargetScanned:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HealthStatus.
 const (
 	Ok HealthStatus = "ok"
@@ -600,6 +618,18 @@ type DateInput struct {
 	// Date Defaults to today
 	Date *openapi_types.Date `json:"date,omitempty"`
 }
+
+// DevelopedInput defines model for DevelopedInput.
+type DevelopedInput struct {
+	// Date Defaults to today.
+	Date *openapi_types.Date `json:"date,omitempty"`
+
+	// Target Sets the plan's target; left out keeps it.
+	Target *DevelopedInputTarget `json:"target,omitempty"`
+}
+
+// DevelopedInputTarget Sets the plan's target; left out keeps it.
+type DevelopedInputTarget string
 
 // ExpiryMonth Example: {"month":6,"year":2027}
 type ExpiryMonth struct {
@@ -1708,6 +1738,9 @@ type AddRollsJSONRequestBody = BulkRollsInput
 // PutRollJSONRequestBody defines body for PutRoll for application/json ContentType.
 type PutRollJSONRequestBody = RollInput
 
+// MarkRollDevelopedJSONRequestBody defines body for MarkRollDeveloped for application/json ContentType.
+type MarkRollDevelopedJSONRequestBody = DevelopedInput
+
 // FinishRollJSONRequestBody defines body for FinishRoll for application/json ContentType.
 type FinishRollJSONRequestBody = DateInput
 
@@ -1894,6 +1927,9 @@ type ServerInterface interface {
 	// PutRoll Edit a roll (UC-16). Send If-Match with the version you loaded so a newer change is not overwritten.
 	// (PUT /rolls/{id})
 	PutRoll(c *gin.Context, id Id, params PutRollParams)
+	// MarkRollDeveloped Record the day a roll's film was developed ("Đã tráng")
+	// (PUT /rolls/{id}/developed)
+	MarkRollDeveloped(c *gin.Context, id Id)
 	// FinishRoll Mark a roll as finished shooting (UC-19)
 	// (PUT /rolls/{id}/finish)
 	FinishRoll(c *gin.Context, id Id)
@@ -1924,6 +1960,12 @@ type ServerInterface interface {
 	// PutProcessing Send a roll for processing, or edit a job (UC-24, UC-28)
 	// (PUT /rolls/{id}/processing/{jobId})
 	PutProcessing(c *gin.Context, id Id, jobId openapi_types.UUID)
+	// UnmarkRollForScan Remove a roll's "Cần scan" mark
+	// (DELETE /rolls/{id}/scan-request)
+	UnmarkRollForScan(c *gin.Context, id Id)
+	// MarkRollForScan Mark a roll "Cần scan" (to be scanned, or scanned again)
+	// (PUT /rolls/{id}/scan-request)
+	MarkRollForScan(c *gin.Context, id Id)
 	// ListScannerKinds Scan options of each scanner kind; the entry without a kind is for scanners whose kind is unknown
 	// (GET /scanner-kinds)
 	ListScannerKinds(c *gin.Context)
@@ -3465,6 +3507,31 @@ func (siw *ServerInterfaceWrapper) PutRoll(c *gin.Context) {
 	siw.Handler.PutRoll(c, id, params)
 }
 
+// MarkRollDeveloped operation middleware
+func (siw *ServerInterfaceWrapper) MarkRollDeveloped(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.MarkRollDeveloped(c, id)
+}
+
 // FinishRoll operation middleware
 func (siw *ServerInterfaceWrapper) FinishRoll(c *gin.Context) {
 
@@ -3740,6 +3807,56 @@ func (siw *ServerInterfaceWrapper) PutProcessing(c *gin.Context) {
 	}
 
 	siw.Handler.PutProcessing(c, id, jobId)
+}
+
+// UnmarkRollForScan operation middleware
+func (siw *ServerInterfaceWrapper) UnmarkRollForScan(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UnmarkRollForScan(c, id)
+}
+
+// MarkRollForScan operation middleware
+func (siw *ServerInterfaceWrapper) MarkRollForScan(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.MarkRollForScan(c, id)
 }
 
 // ListScannerKinds operation middleware
@@ -4119,6 +4236,9 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PUT(options.BaseURL+"/rolls/:id/finish", wrapper.FinishRoll)
 	router.PUT(options.BaseURL+"/rolls/:id/notes", wrapper.PutRollNotes)
 	router.PUT(options.BaseURL+"/rolls/:id/plan", wrapper.PutRollPlan)
+	router.PUT(options.BaseURL+"/rolls/:id/developed", wrapper.MarkRollDeveloped)
+	router.DELETE(options.BaseURL+"/rolls/:id/scan-request", wrapper.UnmarkRollForScan)
+	router.PUT(options.BaseURL+"/rolls/:id/scan-request", wrapper.MarkRollForScan)
 	router.GET(options.BaseURL+"/rolls/:id/processing", wrapper.ListRollProcessing)
 	router.PUT(options.BaseURL+"/rolls/:id/processing/:jobId", wrapper.PutProcessing)
 	router.GET(options.BaseURL+"/rolls/:id/frames", wrapper.ListRollFrames)
@@ -7644,6 +7764,99 @@ func (response PutRoll422JSONResponse) VisitPutRollResponse(w http.ResponseWrite
 	return err
 }
 
+type MarkRollDevelopedRequestObject struct {
+	Id   Id `json:"id"`
+	Body *MarkRollDevelopedJSONRequestBody
+}
+
+type MarkRollDevelopedResponseObject interface {
+	VisitMarkRollDevelopedResponse(w http.ResponseWriter) error
+}
+
+type MarkRollDeveloped200JSONResponse RollDetail
+
+func (response MarkRollDeveloped200JSONResponse) VisitMarkRollDevelopedResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MarkRollDeveloped400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response MarkRollDeveloped400JSONResponse) VisitMarkRollDevelopedResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MarkRollDeveloped401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response MarkRollDeveloped401JSONResponse) VisitMarkRollDevelopedResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MarkRollDeveloped404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response MarkRollDeveloped404JSONResponse) VisitMarkRollDevelopedResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MarkRollDeveloped409JSONResponse struct{ ConflictJSONResponse }
+
+func (response MarkRollDeveloped409JSONResponse) VisitMarkRollDevelopedResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MarkRollDeveloped422JSONResponse struct{ UnprocessableJSONResponse }
+
+func (response MarkRollDeveloped422JSONResponse) VisitMarkRollDevelopedResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type FinishRollRequestObject struct {
 	Id   Id `json:"id"`
 	Body *FinishRollJSONRequestBody
@@ -8444,6 +8657,106 @@ func (response PutProcessing422JSONResponse) VisitPutProcessingResponse(w http.R
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UnmarkRollForScanRequestObject struct {
+	Id Id `json:"id"`
+}
+
+type UnmarkRollForScanResponseObject interface {
+	VisitUnmarkRollForScanResponse(w http.ResponseWriter) error
+}
+
+type UnmarkRollForScan200JSONResponse RollDetail
+
+func (response UnmarkRollForScan200JSONResponse) VisitUnmarkRollForScanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UnmarkRollForScan401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UnmarkRollForScan401JSONResponse) VisitUnmarkRollForScanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UnmarkRollForScan404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UnmarkRollForScan404JSONResponse) VisitUnmarkRollForScanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MarkRollForScanRequestObject struct {
+	Id Id `json:"id"`
+}
+
+type MarkRollForScanResponseObject interface {
+	VisitMarkRollForScanResponse(w http.ResponseWriter) error
+}
+
+type MarkRollForScan200JSONResponse RollDetail
+
+func (response MarkRollForScan200JSONResponse) VisitMarkRollForScanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MarkRollForScan401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response MarkRollForScan401JSONResponse) VisitMarkRollForScanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MarkRollForScan404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response MarkRollForScan404JSONResponse) VisitMarkRollForScanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -9396,6 +9709,9 @@ type StrictServerInterface interface {
 	// PutRoll Edit a roll (UC-16). Send If-Match with the version you loaded so a newer change is not overwritten.
 	// (PUT /rolls/{id})
 	PutRoll(ctx context.Context, request PutRollRequestObject) (PutRollResponseObject, error)
+	// MarkRollDeveloped Record the day a roll's film was developed ("Đã tráng")
+	// (PUT /rolls/{id}/developed)
+	MarkRollDeveloped(ctx context.Context, request MarkRollDevelopedRequestObject) (MarkRollDevelopedResponseObject, error)
 	// FinishRoll Mark a roll as finished shooting (UC-19)
 	// (PUT /rolls/{id}/finish)
 	FinishRoll(ctx context.Context, request FinishRollRequestObject) (FinishRollResponseObject, error)
@@ -9426,6 +9742,12 @@ type StrictServerInterface interface {
 	// PutProcessing Send a roll for processing, or edit a job (UC-24, UC-28)
 	// (PUT /rolls/{id}/processing/{jobId})
 	PutProcessing(ctx context.Context, request PutProcessingRequestObject) (PutProcessingResponseObject, error)
+	// UnmarkRollForScan Remove a roll's "Cần scan" mark
+	// (DELETE /rolls/{id}/scan-request)
+	UnmarkRollForScan(ctx context.Context, request UnmarkRollForScanRequestObject) (UnmarkRollForScanResponseObject, error)
+	// MarkRollForScan Mark a roll "Cần scan" (to be scanned, or scanned again)
+	// (PUT /rolls/{id}/scan-request)
+	MarkRollForScan(ctx context.Context, request MarkRollForScanRequestObject) (MarkRollForScanResponseObject, error)
 	// ListScannerKinds Scan options of each scanner kind; the entry without a kind is for scanners whose kind is unknown
 	// (GET /scanner-kinds)
 	ListScannerKinds(ctx context.Context, request ListScannerKindsRequestObject) (ListScannerKindsResponseObject, error)
@@ -11024,6 +11346,42 @@ func (sh *strictHandler) PutRoll(ctx *gin.Context, id Id, params PutRollParams) 
 	}
 }
 
+// MarkRollDeveloped operation middleware
+func (sh *strictHandler) MarkRollDeveloped(ctx *gin.Context, id Id) {
+	var request MarkRollDevelopedRequestObject
+
+	request.Id = id
+
+	var body MarkRollDevelopedJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(ctx, err)
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.MarkRollDeveloped(ctx, request.(MarkRollDevelopedRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "MarkRollDeveloped")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(MarkRollDevelopedResponseObject); ok {
+		if err := validResponse.VisitMarkRollDevelopedResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // FinishRoll operation middleware
 func (sh *strictHandler) FinishRoll(ctx *gin.Context, id Id) {
 	var request FinishRollRequestObject
@@ -11332,6 +11690,58 @@ func (sh *strictHandler) PutProcessing(ctx *gin.Context, id Id, jobId openapi_ty
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(PutProcessingResponseObject); ok {
 		if err := validResponse.VisitPutProcessingResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UnmarkRollForScan operation middleware
+func (sh *strictHandler) UnmarkRollForScan(ctx *gin.Context, id Id) {
+	var request UnmarkRollForScanRequestObject
+
+	request.Id = id
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.UnmarkRollForScan(ctx, request.(UnmarkRollForScanRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UnmarkRollForScan")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(UnmarkRollForScanResponseObject); ok {
+		if err := validResponse.VisitUnmarkRollForScanResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// MarkRollForScan operation middleware
+func (sh *strictHandler) MarkRollForScan(ctx *gin.Context, id Id) {
+	var request MarkRollForScanRequestObject
+
+	request.Id = id
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.MarkRollForScan(ctx, request.(MarkRollForScanRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "MarkRollForScan")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(MarkRollForScanResponseObject); ok {
+		if err := validResponse.VisitMarkRollForScanResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {

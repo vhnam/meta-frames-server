@@ -77,6 +77,9 @@ WHERE id = $1 AND owner_id = $8 AND deleted_at IS NULL RETURNING *;
 -- name: SetScansReceived :one
 UPDATE processing SET scans_received_at = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL RETURNING *;
 
+-- name: SetDevelopedAt :exec
+UPDATE processing SET developed_at = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL;
+
 -- name: SetNegativesReturned :one
 UPDATE processing SET negatives_returned_at = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL RETURNING *;
 

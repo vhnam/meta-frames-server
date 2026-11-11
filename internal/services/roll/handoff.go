@@ -114,11 +114,6 @@ func (service *Service) HandOver(ctx context.Context, input HandOverInput) ([]Su
 			if err := processing.CreateJob(ctx, queries, rolls[item.RollID], service.newID(), job, handedAt, handoffID); err != nil {
 				return forRoll(item.RollID, err)
 			}
-			if processing.JobProducesScans(item.Type) {
-				if err := queries.ClearRollScanRequest(ctx, gen.ClearRollScanRequestParams{ID: item.RollID, OwnerID: owner}); err != nil {
-					return err
-				}
-			}
 		}
 
 		if handed, err = summariesByID(ctx, queries, rollIDs); err != nil {

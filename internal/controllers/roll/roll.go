@@ -239,6 +239,34 @@ func (controller *Controller) PutRollPlan(ctx context.Context, request api.PutRo
 	return api.PutRollPlan200JSONResponse(toAPIRollDetail(detail)), nil
 }
 
+func (controller *Controller) MarkRollDeveloped(ctx context.Context, request api.MarkRollDevelopedRequestObject) (api.MarkRollDevelopedResponseObject, error) {
+	input := rollsvc.DevelopedInput{}
+	if body := request.Body; body != nil {
+		input.DevelopedAt, input.Target = convert.FromAPIDate(body.Date), (*string)(body.Target)
+	}
+	detail, err := controller.rolls.MarkDeveloped(ctx, request.Id, input)
+	if err != nil {
+		return nil, err
+	}
+	return api.MarkRollDeveloped200JSONResponse(toAPIRollDetail(detail)), nil
+}
+
+func (controller *Controller) MarkRollForScan(ctx context.Context, request api.MarkRollForScanRequestObject) (api.MarkRollForScanResponseObject, error) {
+	detail, err := controller.rolls.SetScanRequest(ctx, request.Id, true)
+	if err != nil {
+		return nil, err
+	}
+	return api.MarkRollForScan200JSONResponse(toAPIRollDetail(detail)), nil
+}
+
+func (controller *Controller) UnmarkRollForScan(ctx context.Context, request api.UnmarkRollForScanRequestObject) (api.UnmarkRollForScanResponseObject, error) {
+	detail, err := controller.rolls.SetScanRequest(ctx, request.Id, false)
+	if err != nil {
+		return nil, err
+	}
+	return api.UnmarkRollForScan200JSONResponse(toAPIRollDetail(detail)), nil
+}
+
 func (controller *Controller) LoadRoll(ctx context.Context, request api.LoadRollRequestObject) (api.LoadRollResponseObject, error) {
 	body := request.Body
 	detail, err := controller.rolls.Load(ctx, request.Id, rollsvc.LoadInput{

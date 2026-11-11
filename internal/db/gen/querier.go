@@ -138,6 +138,7 @@ type Querier interface {
 	ScannerInUse(ctx context.Context, scannerID uuid.UUID) (bool, error)
 	SetBuiltInLensActive(ctx context.Context, arg SetBuiltInLensActiveParams) error
 	SetCameraActive(ctx context.Context, arg SetCameraActiveParams) (Camera, error)
+	SetDevelopedAt(ctx context.Context, arg SetDevelopedAtParams) error
 	SetFrameNotes(ctx context.Context, arg SetFrameNotesParams) (Frame, error)
 	// The negatives of every live job of the handoff come back with the roll.
 	SetHandoffNegativesReturned(ctx context.Context, arg SetHandoffNegativesReturnedParams) error
@@ -145,6 +146,8 @@ type Querier interface {
 	SetNegativesReturned(ctx context.Context, arg SetNegativesReturnedParams) (Processing, error)
 	SetRollDescription(ctx context.Context, arg SetRollDescriptionParams) (Roll, error)
 	SetRollPlan(ctx context.Context, arg SetRollPlanParams) (Roll, error)
+	// The first mark stays: marking again keeps its date.
+	SetRollScanRequest(ctx context.Context, arg SetRollScanRequestParams) error
 	SetRollStatus(ctx context.Context, arg SetRollStatusParams) error
 	SetScansReceived(ctx context.Context, arg SetScansReceivedParams) (Processing, error)
 	SoftDeleteBuiltInLenses(ctx context.Context, arg SoftDeleteBuiltInLensesParams) error
