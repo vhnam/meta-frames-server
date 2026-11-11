@@ -99,14 +99,6 @@ func (service *Service) HandOver(ctx context.Context, input HandOverInput) ([]Su
 			if err != nil {
 				return err
 			}
-			// shortcut: until slice 3b no request closes a handoff, so an open one blocks the roll.
-			open, err := queries.RollHasOpenHandoff(ctx, gen.RollHasOpenHandoffParams{RollID: item.RollID, OwnerID: owner})
-			if err != nil {
-				return err
-			}
-			if open {
-				return forRoll(item.RollID, apperror.Conflict("negatives_at_lab", "a lab still holds this roll; record its return first"))
-			}
 			if err := checkCanHandOver(summary, item.Type); err != nil {
 				return forRoll(item.RollID, err)
 			}
@@ -148,9 +140,41 @@ func (service *Service) HandOver(ctx context.Context, input HandOverInput) ([]Su
 	return handed, err
 }
 
+// ReturnHandoff records a roll back from the lab of one handoff, also when every job of it was
+// cancelled. A handoff already returned changes nothing.
+func (service *Service) ReturnHandoff(ctx context.Context, handoffID uuid.UUID, returnedAt *time.Time) (Summary, error) {
+	var summary Summary
+	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
+		owner := requestctx.Owner(ctx)
+		handoff, err := queries.GetLabHandoff(ctx, gen.GetLabHandoffParams{ID: handoffID, OwnerID: owner})
+		if err != nil {
+			return shared.NotFoundOr(err, "lab handoff")
+		}
+		// the roll first, then the handoff: the same order as a return through a job
+		if _, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: handoff.RollID, OwnerID: owner}); err != nil {
+			return err
+		}
+		if handoff, err = queries.GetLabHandoffForUpdate(ctx, gen.GetLabHandoffForUpdateParams{ID: handoffID, OwnerID: owner}); err != nil {
+			return err
+		}
+		if handoff.ReturnedAt == nil {
+			if err := processing.ReturnHandoff(ctx, queries, handoff, shared.DateOrDefault(returnedAt, service.clock.Today())); err != nil {
+				return err
+			}
+			if err := processing.RefreshRollStatus(ctx, queries, handoff.RollID); err != nil {
+				return err
+			}
+		}
+		summary, err = getRollSummary(ctx, queries, handoff.RollID)
+		return err
+	})
+	return summary, err
+}
+
 // checkCanHandOver decides whether a roll waits to go to a lab, and for which job: a finished roll
 // to be developed, a developed roll waiting for its planned scan, or a completed roll marked for a
-// scan. The negatives must be home: a roll a lab still holds waits for the same-lab rule (slice 3c).
+// scan. The negatives must be home (no open handoff): a roll a lab still holds waits for the
+// same-lab rule (slice 3c).
 func checkCanHandOver(summary Summary, jobType string) error {
 	if summary.NegativesAtLab {
 		return apperror.Conflict("negatives_at_lab", "a lab still holds this roll; record its return first")

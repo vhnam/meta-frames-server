@@ -31,7 +31,7 @@ type Memory struct {
 	Stocks        map[uuid.UUID]gen.FilmStock
 	Rolls         map[uuid.UUID]gen.Roll
 	Jobs          map[uuid.UUID]gen.Processing
-	Handoffs      []gen.InsertLabHandoffParams
+	Handoffs      map[uuid.UUID]gen.LabHandoff
 	Frames        map[uuid.UUID]gen.Frame
 	Scans         map[uuid.UUID]gen.Scan
 	ScanOrders    []gen.ProcessingScanOrder
@@ -56,7 +56,7 @@ type Memory struct {
 func NewMemory() *Memory {
 	return &Memory{
 		Cameras: map[uuid.UUID]gen.Camera{}, Lenses: map[uuid.UUID]gen.Lens{}, LoadedCameras: map[uuid.UUID]bool{},
-		Stocks: map[uuid.UUID]gen.FilmStock{}, Rolls: map[uuid.UUID]gen.Roll{}, Jobs: map[uuid.UUID]gen.Processing{},
+		Stocks: map[uuid.UUID]gen.FilmStock{}, Rolls: map[uuid.UUID]gen.Roll{}, Jobs: map[uuid.UUID]gen.Processing{}, Handoffs: map[uuid.UUID]gen.LabHandoff{},
 		Frames: map[uuid.UUID]gen.Frame{}, Scans: map[uuid.UUID]gen.Scan{}, Idempotency: map[string]gen.IdempotencyKey{}, Labs: map[uuid.UUID]gen.Lab{},
 		Users: map[uuid.UUID]gen.AppUser{}, Sessions: map[string]gen.UserSession{},
 		Scanners: map[uuid.UUID]gen.Scanner{
@@ -751,18 +751,79 @@ func (queries *Memory) InsertProcessing(_ context.Context, arg gen.InsertProcess
 	return job, nil
 }
 
-// RollHasOpenHandoff: the memory store never returns a handoff, so every stored one is open.
-func (queries *Memory) RollHasOpenHandoff(_ context.Context, arg gen.RollHasOpenHandoffParams) (bool, error) {
-	for _, handoff := range queries.Handoffs {
-		if handoff.RollID == arg.RollID {
-			return true, nil
-		}
+func (queries *Memory) InsertLabHandoff(_ context.Context, arg gen.InsertLabHandoffParams) error {
+	queries.Handoffs[arg.ID] = gen.LabHandoff{
+		ID: arg.ID, OwnerID: arg.OwnerID, RollID: arg.RollID, LabID: arg.LabID, BatchID: arg.BatchID, HandedAt: arg.HandedAt, Notes: arg.Notes,
 	}
-	return false, nil
+	return nil
 }
 
-func (queries *Memory) InsertLabHandoff(_ context.Context, arg gen.InsertLabHandoffParams) error {
-	queries.Handoffs = append(queries.Handoffs, arg)
+func (queries *Memory) GetOpenLabHandoff(_ context.Context, arg gen.GetOpenLabHandoffParams) (gen.LabHandoff, error) {
+	for _, handoff := range queries.Handoffs {
+		if handoff.RollID == arg.RollID && handoff.ReturnedAt == nil {
+			return handoff, nil
+		}
+	}
+	return gen.LabHandoff{}, pgx.ErrNoRows
+}
+
+func (queries *Memory) legacyLabJob(job gen.Processing, rollID uuid.UUID) bool {
+	return job.RollID == rollID && !job.DeletedAt.Valid && job.LabID != nil && job.HandoffID == nil && job.NegativesReturnedAt == nil
+}
+
+func (queries *Memory) RollLegacyLabHolders(_ context.Context, arg gen.RollLegacyLabHoldersParams) ([]gen.RollLegacyLabHoldersRow, error) {
+	var rows []gen.RollLegacyLabHoldersRow
+	for _, job := range queries.Jobs {
+		if !queries.legacyLabJob(job, arg.RollID) {
+			continue
+		}
+		index := slices.IndexFunc(rows, func(row gen.RollLegacyLabHoldersRow) bool { return row.LabID == *job.LabID })
+		switch {
+		case index < 0:
+			rows = append(rows, gen.RollLegacyLabHoldersRow{LabID: *job.LabID, FirstSentAt: job.SentAt})
+		case job.SentAt.Before(rows[index].FirstSentAt):
+			rows[index].FirstSentAt = job.SentAt
+		}
+	}
+	return rows, nil
+}
+
+func (queries *Memory) AdoptLegacyLabJobs(_ context.Context, arg gen.AdoptLegacyLabJobsParams) error {
+	for id, job := range queries.Jobs {
+		if queries.legacyLabJob(job, arg.RollID) && *job.LabID == arg.LabID {
+			job.HandoffID = &arg.HandoffID
+			queries.Jobs[id] = job
+		}
+	}
+	return nil
+}
+
+func (queries *Memory) GetLabHandoff(_ context.Context, arg gen.GetLabHandoffParams) (gen.LabHandoff, error) {
+	if handoff, ok := queries.Handoffs[arg.ID]; ok {
+		return handoff, nil
+	}
+	return gen.LabHandoff{}, pgx.ErrNoRows
+}
+
+func (queries *Memory) GetLabHandoffForUpdate(ctx context.Context, arg gen.GetLabHandoffForUpdateParams) (gen.LabHandoff, error) {
+	return queries.GetLabHandoff(ctx, gen.GetLabHandoffParams(arg))
+}
+
+func (queries *Memory) CloseLabHandoff(_ context.Context, arg gen.CloseLabHandoffParams) error {
+	if handoff, ok := queries.Handoffs[arg.ID]; ok && handoff.ReturnedAt == nil {
+		handoff.ReturnedAt = arg.ReturnedAt
+		queries.Handoffs[arg.ID] = handoff
+	}
+	return nil
+}
+
+func (queries *Memory) SetHandoffNegativesReturned(_ context.Context, arg gen.SetHandoffNegativesReturnedParams) error {
+	for id, job := range queries.Jobs {
+		if job.HandoffID != nil && *job.HandoffID == *arg.HandoffID && !job.DeletedAt.Valid && job.NegativesReturnedAt == nil {
+			job.NegativesReturnedAt = arg.NegativesReturnedAt
+			queries.Jobs[id] = job
+		}
+	}
 	return nil
 }
 

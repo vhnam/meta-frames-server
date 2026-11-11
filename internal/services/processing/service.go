@@ -324,7 +324,13 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 			}
 		} else {
 			created = true
-			if err := CreateJob(ctx, queries, roll, jobID, input, sentAt, nil); err != nil {
+			var handoffID *uuid.UUID
+			if input.LabID != nil {
+				if handoffID, err = joinOrOpenHandoff(ctx, queries, rollID, *input.LabID, sentAt); err != nil {
+					return err
+				}
+			}
+			if err := CreateJob(ctx, queries, roll, jobID, input, sentAt, handoffID); err != nil {
 				return err
 			}
 		}
@@ -361,6 +367,78 @@ func CreateJob(ctx context.Context, queries gen.Querier, roll gen.Roll, jobID uu
 		return err
 	}
 	return queries.SetRollStatus(ctx, gen.SetRollStatusParams{ID: roll.ID, Status: domain.RollStatusAtLab, OwnerID: requestctx.Owner(ctx)})
+}
+
+// LockJob locks the job's roll, then the job: every write on a roll takes the roll first, so two
+// writes on one roll (a job return and a handoff return, say) cannot deadlock.
+func LockJob(ctx context.Context, queries gen.Querier, jobID uuid.UUID) (gen.Processing, error) {
+	owner := requestctx.Owner(ctx)
+	job, err := queries.GetProcessing(ctx, gen.GetProcessingParams{ID: jobID, OwnerID: owner})
+	if err != nil {
+		return gen.Processing{}, shared.NotFoundOr(err, "processing job")
+	}
+	if _, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: job.RollID, OwnerID: owner}); err != nil {
+		return gen.Processing{}, err
+	}
+	// the roll of a job never changes; the job may have been deleted meanwhile
+	job, err = queries.GetProcessingForUpdate(ctx, gen.GetProcessingForUpdateParams{ID: jobID, OwnerID: owner})
+	return job, shared.NotFoundOr(err, "processing job")
+}
+
+// joinOrOpenHandoff is the roll's stay at the lab a new lab job goes to (D8.1): the roll's open
+// handoff at that lab, or a new one. An open handoff at another lab refuses the job.
+func joinOrOpenHandoff(ctx context.Context, queries gen.Querier, rollID, labID uuid.UUID, handedAt time.Time) (*uuid.UUID, error) {
+	owner := requestctx.Owner(ctx)
+	open, err := queries.GetOpenLabHandoff(ctx, gen.GetOpenLabHandoffParams{RollID: rollID, OwnerID: owner})
+	switch {
+	case err == nil && open.LabID == labID:
+		return &open.ID, nil
+	case err == nil:
+		return nil, apperror.Conflict("negatives_at_lab", "another lab holds this roll; record its return first")
+	case !db.IsNoRows(err):
+		return nil, err
+	}
+	// An old lab job with no handoff and no return also holds the roll (D8).
+	holders, err := queries.RollLegacyLabHolders(ctx, gen.RollLegacyLabHoldersParams{RollID: rollID, OwnerID: owner})
+	if err != nil {
+		return nil, err
+	}
+	for _, holder := range holders {
+		if holder.LabID != labID {
+			return nil, apperror.Conflict("negatives_at_lab", "another lab holds this roll; record its return first")
+		}
+		// same lab: the stay began with the old jobs
+		if holder.FirstSentAt.Before(handedAt) {
+			handedAt = holder.FirstSentAt
+		}
+	}
+	handoffID := uuid.New()
+	// a single job is a batch of one
+	if err := queries.InsertLabHandoff(ctx, gen.InsertLabHandoffParams{
+		ID: handoffID, OwnerID: owner, RollID: rollID, LabID: labID, BatchID: handoffID, HandedAt: handedAt,
+	}); err != nil {
+		return nil, err
+	}
+	if len(holders) > 0 {
+		// The old jobs join the new stay, so one return brings the whole roll back.
+		if err := queries.AdoptLegacyLabJobs(ctx, gen.AdoptLegacyLabJobsParams{HandoffID: handoffID, RollID: rollID, OwnerID: owner, LabID: labID}); err != nil {
+			return nil, err
+		}
+	}
+	return &handoffID, nil
+}
+
+// ReturnHandoff records the roll back from the lab (D8.4): the handoff closes and every live job of
+// it gets the return date, if it has none. The caller locks the roll and refreshes its status.
+func ReturnHandoff(ctx context.Context, queries gen.Querier, handoff gen.LabHandoff, returnedAt time.Time) error {
+	if returnedAt.Before(handoff.HandedAt) {
+		return apperror.Unprocessable("returned_before_handed", "the return date is before the roll was handed to the lab")
+	}
+	owner := requestctx.Owner(ctx)
+	if err := queries.CloseLabHandoff(ctx, gen.CloseLabHandoffParams{ID: handoff.ID, ReturnedAt: &returnedAt, OwnerID: owner}); err != nil {
+		return err
+	}
+	return queries.SetHandoffNegativesReturned(ctx, gen.SetHandoffNegativesReturnedParams{HandoffID: &handoff.ID, NegativesReturnedAt: &returnedAt, OwnerID: owner})
 }
 
 // syncOrderItems makes the job's order lines equal to the given ones. They must be on one order from
@@ -443,15 +521,12 @@ func resolveProcess(ctx context.Context, queries gen.Querier, stockID uuid.UUID,
 func (service *Service) RecordScansReceived(ctx context.Context, jobID uuid.UUID, receivedAt *time.Time) (View, error) {
 	var view View
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		job, err := queries.GetProcessingForUpdate(ctx, gen.GetProcessingForUpdateParams{ID: jobID, OwnerID: requestctx.Owner(ctx)})
+		job, err := LockJob(ctx, queries, jobID)
 		if err != nil {
-			return shared.NotFoundOr(err, "processing job")
+			return err
 		}
 		if !JobProducesScans(job.Type) {
 			return apperror.Conflict("no_scans_expected", "this job type does not produce scans")
-		}
-		if _, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: job.RollID, OwnerID: requestctx.Owner(ctx)}); err != nil {
-			return err
 		}
 		date := shared.DateOrDefault(receivedAt, service.clock.Today())
 		if _, err := queries.SetScansReceived(ctx, gen.SetScansReceivedParams{ID: jobID, ScansReceivedAt: &date, OwnerID: requestctx.Owner(ctx)}); err != nil {
@@ -470,16 +545,28 @@ func (service *Service) RecordScansReceived(ctx context.Context, jobID uuid.UUID
 func (service *Service) RecordNegativesReturned(ctx context.Context, jobID uuid.UUID, returnedAt *time.Time) (View, error) {
 	var view View
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		job, err := queries.GetProcessingForUpdate(ctx, gen.GetProcessingForUpdateParams{ID: jobID, OwnerID: requestctx.Owner(ctx)})
+		job, err := LockJob(ctx, queries, jobID)
 		if err != nil {
-			return shared.NotFoundOr(err, "processing job")
-		}
-		if _, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: job.RollID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return err
 		}
 		date := shared.DateOrDefault(returnedAt, service.clock.Today())
-		if _, err := queries.SetNegativesReturned(ctx, gen.SetNegativesReturnedParams{ID: jobID, NegativesReturnedAt: &date, OwnerID: requestctx.Owner(ctx)}); err != nil {
-			return err
+		if job.HandoffID == nil {
+			// an old job with no handoff comes back on its own
+			if _, err := queries.SetNegativesReturned(ctx, gen.SetNegativesReturnedParams{ID: jobID, NegativesReturnedAt: &date, OwnerID: requestctx.Owner(ctx)}); err != nil {
+				return err
+			}
+		} else {
+			handoff, err := queries.GetLabHandoffForUpdate(ctx, gen.GetLabHandoffForUpdateParams{ID: *job.HandoffID, OwnerID: requestctx.Owner(ctx)})
+			if err != nil {
+				return err
+			}
+			// A repeated old request finds the job dated or its handoff closed and changes nothing,
+			// so it cannot close a newer handoff.
+			if handoff.ReturnedAt == nil && job.NegativesReturnedAt == nil {
+				if err := ReturnHandoff(ctx, queries, handoff, date); err != nil {
+					return err
+				}
+			}
 		}
 		if err := RefreshRollStatus(ctx, queries, job.RollID); err != nil {
 			return err
@@ -498,9 +585,9 @@ func (service *Service) NegativesAtLab(ctx context.Context) ([]gen.NegativesAtLa
 // Delete soft-deletes a job that has no scans, then recomputes the roll's status (UC-28).
 func (service *Service) Delete(ctx context.Context, jobID uuid.UUID) error {
 	return service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		job, err := queries.GetProcessingForUpdate(ctx, gen.GetProcessingForUpdateParams{ID: jobID, OwnerID: requestctx.Owner(ctx)})
+		job, err := LockJob(ctx, queries, jobID)
 		if err != nil {
-			return shared.NotFoundOr(err, "processing job")
+			return err
 		}
 		hasScans, err := queries.ProcessingHasScans(ctx, gen.ProcessingHasScansParams{ProcessingID: jobID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
@@ -508,9 +595,6 @@ func (service *Service) Delete(ctx context.Context, jobID uuid.UUID) error {
 		}
 		if hasScans {
 			return apperror.Conflict("job_has_scans", "a job with scans cannot be deleted; delete its scans first")
-		}
-		if _, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: job.RollID, OwnerID: requestctx.Owner(ctx)}); err != nil {
-			return err
 		}
 		// a deleted job lets go of its order lines
 		if err := queries.DeleteJobOrderItemsExcept(ctx, gen.DeleteJobOrderItemsExceptParams{ProcessingID: jobID, Keep: []uuid.UUID{}}); err != nil {

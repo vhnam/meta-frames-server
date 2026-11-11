@@ -24,6 +24,16 @@ func (harness *harness) newLab(name string) string {
 	return labID
 }
 
+// jobOf returns the id of the roll's only live job of that type.
+func (harness *harness) jobOf(rollID, jobType string) string {
+	harness.test.Helper()
+	var jobID string
+	if err := harness.pool.QueryRow(context.Background(), `SELECT id::text FROM processing WHERE roll_id = $1 AND type = $2 AND deleted_at IS NULL`, rollID, jobType).Scan(&jobID); err != nil {
+		harness.test.Fatal(err)
+	}
+	return jobID
+}
+
 func handOver(labID string, rolls ...map[string]any) map[string]any {
 	return map[string]any{"labId": labID, "handedAt": "2026-10-10", "rolls": rolls}
 }
@@ -154,33 +164,29 @@ func TestHandOverRefusesTheWholeBatch(test *testing.T) {
 		if refused.Body["code"] != testCase.wantCode || (testCase.wantRoll != "" && !strings.Contains(message, testCase.wantRoll)) {
 			test.Fatalf("%s: body = %s", testCase.name, refused.Raw)
 		}
-		if harness.count(`SELECT count(*) FROM lab_handoff`) != 0 || harness.count(`SELECT count(*) FROM processing WHERE roll_id = $1`, ready) != 0 || harness.rollOf(ready)["stage"] != "done_shooting" {
+		if harness.count(`SELECT count(*) FROM lab_handoff WHERE roll_id = $1`, ready) != 0 || harness.count(`SELECT count(*) FROM processing WHERE roll_id = $1`, ready) != 0 || harness.rollOf(ready)["stage"] != "done_shooting" {
 			test.Fatalf("%s: a refused batch saved something", testCase.name)
 		}
 	}
 }
 
-// Until slice 3b no request closes a handoff: a roll back from the lab through the job endpoint
-// is refused with a reason, not a unique-index error.
-func TestHandOverRefusesARollWithAnOpenHandoff(test *testing.T) {
+// A return through the job endpoint closes the handoff, so the roll can go again.
+func TestHandOverAcceptsARollBackFromTheLab(test *testing.T) {
 	harness := newHarness(test)
 	seeded := seedGear(harness)
 	labID := harness.newLab("Lab A")
 	rollID := harness.finishedRoll(seeded)
 	harness.expect(harness.call("POST", "/lab-handoffs", handOver(labID, handed(rollID, "develop"))), http.StatusCreated)
 
-	var jobID string
-	if err := harness.pool.QueryRow(context.Background(), `SELECT id::text FROM processing WHERE roll_id = $1`, rollID).Scan(&jobID); err != nil {
-		test.Fatal(err)
-	}
-	harness.expect(harness.call("PUT", "/processing/"+jobID+"/negatives-returned", nil), http.StatusOK)
+	jobID := harness.jobOf(rollID, "develop")
+	harness.expect(harness.call("PUT", "/processing/"+jobID+"/negatives-returned", map[string]any{"date": "2026-10-12"}), http.StatusOK)
 	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/plan", map[string]any{"target": "scanned"}), http.StatusOK)
 
 	body := handOver(labID, handed(rollID, "scan"))
 	body["scanOrders"] = []map[string]any{{"scanner": "noritsu"}}
-	refused := harness.expect(harness.call("POST", "/lab-handoffs", body), http.StatusConflict)
-	if refused.Body["code"] != "negatives_at_lab" || harness.count(`SELECT count(*) FROM processing WHERE roll_id = $1`, rollID) != 1 {
-		test.Fatalf("body = %s", refused.Raw)
+	harness.expect(harness.call("POST", "/lab-handoffs", body), http.StatusCreated)
+	if open := harness.count(`SELECT count(*) FROM lab_handoff WHERE roll_id = $1 AND returned_at IS NULL`, rollID); open != 1 || harness.count(`SELECT count(*) FROM lab_handoff WHERE roll_id = $1`, rollID) != 2 {
+		test.Fatalf("open handoffs = %d", open)
 	}
 }
 
@@ -211,5 +217,220 @@ func TestRefusedHandOverCreatesNoScanner(test *testing.T) {
 	harness.expect(harness.call("POST", "/lab-handoffs", body), http.StatusCreated)
 	if got := harness.count(`SELECT count(*) FROM scanner`); got != scanners+1 {
 		test.Fatalf("after an accepted batch: scanners = %d, want %d", got, scanners+1)
+	}
+}
+
+// D8.1 and D8.4: lab jobs share the roll's stay at the lab, and one return brings all of it back.
+func TestLabJobsShareOneHandoffUntilTheRollComesBack(test *testing.T) {
+	harness := newHarness(test)
+	seeded := seedGear(harness)
+	labID := harness.newLab("Lab A")
+	rollID := harness.finishedRoll(seeded)
+
+	firstJob := newID()
+	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+firstJob, map[string]any{
+		"labId": labID, "type": "develop_scan", "sentAt": "2026-10-01", "scanOrders": []map[string]any{{"scanner": "noritsu"}},
+	}), http.StatusCreated)
+	harness.execSQL(`UPDATE processing SET developed_at = DATE '2026-10-03' WHERE id = $1`, firstJob)
+	harness.expect(harness.call("PUT", "/processing/"+firstJob+"/scans-received", map[string]any{"date": "2026-10-05"}), http.StatusOK)
+	roll := harness.rollOf(rollID)
+	if roll["stage"] != "completed" || roll["negativesAtLab"] != true || roll["openHandoffId"] == nil {
+		test.Fatalf("scanned, negatives at the lab = %v", roll)
+	}
+	handoffID := roll["openHandoffId"].(string)
+
+	// A rescan at the same lab joins the stay.
+	secondJob := newID()
+	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+secondJob, map[string]any{
+		"labId": labID, "type": "scan", "sentAt": "2026-10-06", "scanOrders": []map[string]any{{"scanner": "frontier"}},
+	}), http.StatusCreated)
+	if joined := harness.count(`SELECT count(*) FROM processing WHERE roll_id = $1 AND handoff_id = $2`, rollID, handoffID); joined != 2 || harness.count(`SELECT count(*) FROM lab_handoff WHERE roll_id = $1`, rollID) != 1 {
+		test.Fatalf("jobs in the handoff = %d", joined)
+	}
+
+	harness.expect(harness.call("PUT", "/processing/"+firstJob+"/negatives-returned", map[string]any{"date": "2026-10-10"}), http.StatusOK)
+	roll = harness.rollOf(rollID)
+	if roll["negativesAtLab"] != false || roll["openHandoffId"] != nil {
+		test.Fatalf("after the return = %v", roll)
+	}
+	if dated := harness.count(`SELECT count(*) FROM processing WHERE handoff_id = $1 AND negatives_returned_at = DATE '2026-10-10'`, handoffID); dated != 2 {
+		test.Fatalf("jobs with the return date = %d", dated)
+	}
+	if harness.count(`SELECT count(*) FROM lab_handoff WHERE id = $1 AND returned_at = DATE '2026-10-10'`, handoffID) != 1 {
+		test.Fatal("the handoff is not closed on the return date")
+	}
+}
+
+// D8.4: an old return request sent again cannot close a newer stay at the lab.
+func TestRepeatedReturnLeavesANewerHandoffOpen(test *testing.T) {
+	harness := newHarness(test)
+	seeded := seedGear(harness)
+	labID := harness.newLab("Lab A")
+	rollID := harness.finishedRoll(seeded)
+
+	octoberJob := newID()
+	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+octoberJob, map[string]any{"labId": labID, "type": "develop", "sentAt": "2026-10-01"}), http.StatusCreated)
+	octoberReturn := map[string]any{"date": "2026-10-10"}
+	harness.expect(harness.call("PUT", "/processing/"+octoberJob+"/negatives-returned", octoberReturn), http.StatusOK)
+
+	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+newID(), map[string]any{
+		"labId": labID, "type": "scan", "sentAt": "2026-11-01", "scanOrders": []map[string]any{{"scanner": "noritsu"}},
+	}), http.StatusCreated)
+	harness.expect(harness.call("PUT", "/processing/"+octoberJob+"/negatives-returned", octoberReturn), http.StatusOK)
+
+	if roll := harness.rollOf(rollID); roll["negativesAtLab"] != true || roll["openHandoffId"] == nil {
+		test.Fatalf("November stay = %v", roll)
+	}
+	if open := harness.count(`SELECT count(*) FROM lab_handoff WHERE roll_id = $1 AND returned_at IS NULL AND handed_at = DATE '2026-11-01'`, rollID); open != 1 {
+		test.Fatalf("open November handoffs = %d", open)
+	}
+}
+
+// D8.5: cancelling the last service keeps the stay; the handoff return still brings the roll back.
+func TestReturnLabHandoffWithNoLiveJob(test *testing.T) {
+	harness := newHarness(test)
+	seeded := seedGear(harness)
+	labID := harness.newLab("Lab A")
+
+	rollID := harness.finishedRoll(seeded)
+	scanJob := newID()
+	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+scanJob, map[string]any{
+		"type": "develop_scan", "sentAt": "2026-10-01", "scanOrders": []map[string]any{{"scanner": "noritsu"}},
+	}), http.StatusCreated)
+	harness.expect(harness.call("PUT", "/processing/"+scanJob+"/scans-received", map[string]any{"date": "2026-10-05"}), http.StatusOK)
+	harness.execSQL(`UPDATE roll SET scan_requested_at = now() WHERE id = $1`, rollID)
+
+	body := handOver(labID, handed(rollID, "scan"))
+	body["scanOrders"] = []map[string]any{{"scanner": "frontier"}}
+	harness.expect(harness.call("POST", "/lab-handoffs", body), http.StatusCreated)
+	harness.expect(harness.call("DELETE", "/processing/"+harness.jobOf(rollID, "scan"), nil), http.StatusNoContent)
+	roll := harness.rollOf(rollID)
+	if roll["stage"] != "completed" || roll["negativesAtLab"] != true || roll["openHandoffId"] == nil {
+		test.Fatalf("after cancelling the scan = %v", roll)
+	}
+	handoffID := roll["openHandoffId"].(string)
+
+	tooEarly := harness.expect(harness.call("PUT", "/lab-handoffs/"+handoffID+"/returned", map[string]any{"date": "2026-10-01"}), http.StatusUnprocessableEntity)
+	if tooEarly.Body["code"] != "returned_before_handed" {
+		test.Fatalf("early return = %s", tooEarly.Raw)
+	}
+	returned := harness.expect(harness.call("PUT", "/lab-handoffs/"+handoffID+"/returned", map[string]any{"date": "2026-10-12"}), http.StatusOK)
+	if returned.Body["negativesAtLab"] != false || returned.Body["openHandoffId"] != nil {
+		test.Fatalf("returned roll = %s", returned.Raw)
+	}
+	again := harness.expect(harness.call("PUT", "/lab-handoffs/"+handoffID+"/returned", map[string]any{"date": "2026-10-20"}), http.StatusOK)
+	if !bytes.Equal(again.Raw, returned.Raw) || harness.count(`SELECT count(*) FROM lab_handoff WHERE id = $1 AND returned_at = DATE '2026-10-12'`, handoffID) != 1 {
+		test.Fatalf("second return changed the roll: %s", again.Raw)
+	}
+	harness.expect(harness.call("PUT", "/lab-handoffs/"+newID()+"/returned", nil), http.StatusNotFound)
+}
+
+// D8.7: an old lab job with no handoff still means the lab holds the roll.
+func TestOldLabJobWithNoHandoffKeepsTheRollAtTheLab(test *testing.T) {
+	harness := newHarness(test)
+	seeded := seedGear(harness)
+	labID := harness.newLab("Lab A")
+	rollID := harness.finishedRoll(seeded)
+	jobID := newID()
+	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+jobID, map[string]any{"labId": labID, "type": "develop", "sentAt": "2026-10-01"}), http.StatusCreated)
+	// what a job from before handoffs looks like
+	harness.execSQL(`UPDATE processing SET handoff_id = NULL WHERE id = $1`, jobID)
+	harness.execSQL(`DELETE FROM lab_handoff WHERE roll_id = $1`, rollID)
+
+	if roll := harness.rollOf(rollID); roll["negativesAtLab"] != true || roll["openHandoffId"] != nil {
+		test.Fatalf("old job roll = %v", roll)
+	}
+	listed := false
+	for _, item := range harness.listOf("/negatives-at-lab") {
+		listed = listed || item["processingId"] == jobID
+	}
+	if !listed {
+		test.Fatal("the old job is missing from the negatives-at-lab report")
+	}
+}
+
+// D8.1: while lab A holds the roll, a job at lab B is refused, not a second open handoff.
+func TestLabJobIsRefusedWhileAnotherLabHoldsTheRoll(test *testing.T) {
+	harness := newHarness(test)
+	seeded := seedGear(harness)
+	labA, labB := harness.newLab("Lab A"), harness.newLab("Lab B")
+	rollID := harness.finishedRoll(seeded)
+
+	jobID := newID()
+	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+jobID, map[string]any{
+		"labId": labA, "type": "develop_scan", "sentAt": "2026-10-01", "scanOrders": []map[string]any{{"scanner": "noritsu"}},
+	}), http.StatusCreated)
+	harness.expect(harness.call("PUT", "/processing/"+jobID+"/scans-received", map[string]any{"date": "2026-10-05"}), http.StatusOK)
+
+	refused := harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+newID(), map[string]any{
+		"labId": labB, "type": "scan", "sentAt": "2026-10-06", "scanOrders": []map[string]any{{"scanner": "frontier"}},
+	}), http.StatusConflict)
+	if refused.Body["code"] != "negatives_at_lab" || harness.count(`SELECT count(*) FROM lab_handoff WHERE roll_id = $1`, rollID) != 1 ||
+		harness.count(`SELECT count(*) FROM processing WHERE roll_id = $1`, rollID) != 1 {
+		test.Fatalf("job at lab B = %s", refused.Raw)
+	}
+}
+
+// D8: an old lab job with no handoff holds the roll like an open handoff does.
+func TestOldLabJobHoldsTheRollForNewLabJobs(test *testing.T) {
+	harness := newHarness(test)
+	seeded := seedGear(harness)
+	labA, labB := harness.newLab("Lab A"), harness.newLab("Lab B")
+	rollID := harness.finishedRoll(seeded)
+	oldJob := newID()
+	harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+oldJob, map[string]any{
+		"labId": labA, "type": "develop_scan", "sentAt": "2026-10-01", "scanOrders": []map[string]any{{"scanner": "noritsu"}},
+	}), http.StatusCreated)
+	harness.expect(harness.call("PUT", "/processing/"+oldJob+"/scans-received", map[string]any{"date": "2026-10-05"}), http.StatusOK)
+	// what a job from before handoffs looks like
+	harness.execSQL(`UPDATE processing SET handoff_id = NULL WHERE id = $1`, oldJob)
+	harness.execSQL(`DELETE FROM lab_handoff WHERE roll_id = $1`, rollID)
+
+	scan := func(labID string) response {
+		return harness.call("PUT", "/rolls/"+rollID+"/processing/"+newID(), map[string]any{
+			"labId": labID, "type": "scan", "sentAt": "2026-10-06", "scanOrders": []map[string]any{{"scanner": "frontier"}},
+		})
+	}
+	if refused := harness.expect(scan(labB), http.StatusConflict); refused.Body["code"] != "negatives_at_lab" {
+		test.Fatalf("job at lab B = %s", refused.Raw)
+	}
+	// At the same lab a new stay opens from the old job's date, and the old job joins it.
+	harness.expect(scan(labA), http.StatusCreated)
+	roll := harness.rollOf(rollID)
+	if roll["openHandoffId"] == nil || harness.count(`SELECT count(*) FROM processing WHERE roll_id = $1 AND handoff_id IS NULL`, rollID) != 0 ||
+		harness.count(`SELECT count(*) FROM lab_handoff WHERE roll_id = $1 AND handed_at = DATE '2026-10-01'`, rollID) != 1 {
+		test.Fatalf("after a job at the lab that holds the roll = %v", roll)
+	}
+
+	// One return through the old job brings the whole roll back.
+	harness.expect(harness.call("PUT", "/processing/"+oldJob+"/negatives-returned", map[string]any{"date": "2026-10-10"}), http.StatusOK)
+	if roll := harness.rollOf(rollID); roll["negativesAtLab"] != false || roll["openHandoffId"] != nil {
+		test.Fatalf("after one return = %v", roll)
+	}
+	if harness.count(`SELECT count(*) FROM processing WHERE roll_id = $1 AND negatives_returned_at = DATE '2026-10-10'`, rollID) != 2 {
+		test.Fatal("a job of the roll has no return date")
+	}
+}
+
+// A return through a job and through its handoff at the same time: both succeed, none deadlocks.
+func TestConcurrentReturnsOfOneHandoff(test *testing.T) {
+	harness := newHarness(test)
+	seeded := seedGear(harness)
+	labID := harness.newLab("Lab A")
+	for round := range 10 {
+		rollID := harness.finishedRoll(seeded)
+		jobID := newID()
+		harness.expect(harness.call("PUT", "/rolls/"+rollID+"/processing/"+jobID, map[string]any{"labId": labID, "type": "develop", "sentAt": "2026-10-01"}), http.StatusCreated)
+		handoffID := harness.rollOf(rollID)["openHandoffId"].(string)
+		date := map[string]any{"date": "2026-10-10"}
+		statuses := race(2, func(index int) response {
+			if index == 0 {
+				return harness.call("PUT", "/processing/"+jobID+"/negatives-returned", date)
+			}
+			return harness.call("PUT", "/lab-handoffs/"+handoffID+"/returned", date)
+		})
+		if statuses[http.StatusOK] != 2 {
+			test.Fatalf("round %d: statuses = %v", round, statuses)
+		}
 	}
 }

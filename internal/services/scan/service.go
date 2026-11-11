@@ -341,14 +341,11 @@ func (service *Service) ImportFile(ctx context.Context, job gen.Processing, opti
 func (service *Service) CompleteImport(ctx context.Context, jobID uuid.UUID, importedCount int) (processing.View, error) {
 	var view processing.View
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		job, err := queries.GetProcessingForUpdate(ctx, gen.GetProcessingForUpdateParams{ID: jobID, OwnerID: requestctx.Owner(ctx)})
+		job, err := processing.LockJob(ctx, queries, jobID)
 		if err != nil {
 			return err
 		}
 		if job.ScansReceivedAt == nil && importedCount > 0 {
-			if _, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: job.RollID, OwnerID: requestctx.Owner(ctx)}); err != nil {
-				return err
-			}
 			today := service.clock.Today()
 			if _, err := queries.SetScansReceived(ctx, gen.SetScansReceivedParams{ID: jobID, ScansReceivedAt: &today, OwnerID: requestctx.Owner(ctx)}); err != nil {
 				return err

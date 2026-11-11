@@ -41,8 +41,34 @@ RETURNING *;
 INSERT INTO lab_handoff (id, owner_id, roll_id, lab_id, batch_id, handed_at, notes)
 VALUES ($1, $2, $3, $4, $5, $6, $7);
 
--- name: RollHasOpenHandoff :one
-SELECT EXISTS (SELECT 1 FROM lab_handoff WHERE roll_id = $1 AND owner_id = $2 AND returned_at IS NULL);
+-- name: GetOpenLabHandoff :one
+SELECT * FROM lab_handoff WHERE roll_id = $1 AND owner_id = $2 AND returned_at IS NULL;
+
+-- Labs of old lab jobs (before handoffs) whose negatives are not back: they still hold the roll.
+-- name: RollLegacyLabHolders :many
+SELECT lab_id::uuid AS lab_id, min(sent_at)::date AS first_sent_at FROM processing
+WHERE roll_id = $1 AND owner_id = $2 AND deleted_at IS NULL AND lab_id IS NOT NULL AND handoff_id IS NULL
+  AND negatives_returned_at IS NULL
+GROUP BY lab_id;
+
+-- name: AdoptLegacyLabJobs :exec
+UPDATE processing SET handoff_id = sqlc.arg(handoff_id)::uuid
+WHERE roll_id = sqlc.arg(roll_id) AND owner_id = sqlc.arg(owner_id) AND lab_id = sqlc.arg(lab_id)::uuid
+  AND deleted_at IS NULL AND handoff_id IS NULL AND negatives_returned_at IS NULL;
+
+-- name: GetLabHandoff :one
+SELECT * FROM lab_handoff WHERE id = $1 AND owner_id = $2;
+
+-- name: GetLabHandoffForUpdate :one
+SELECT * FROM lab_handoff WHERE id = $1 AND owner_id = $2 FOR UPDATE;
+
+-- name: CloseLabHandoff :exec
+UPDATE lab_handoff SET returned_at = $2 WHERE id = $1 AND owner_id = $3 AND returned_at IS NULL;
+
+-- The negatives of every live job of the handoff come back with the roll.
+-- name: SetHandoffNegativesReturned :exec
+UPDATE processing SET negatives_returned_at = $2
+WHERE handoff_id = $1 AND owner_id = $3 AND deleted_at IS NULL AND negatives_returned_at IS NULL;
 
 -- name: UpdateProcessing :one
 UPDATE processing SET lab_id = $2, sent_at = $3, scans_expected_at = $4, negatives_expected_at = $5, price = $6, notes = $7, process = $9
@@ -68,7 +94,10 @@ FROM processing p
 JOIN lab l ON l.id = p.lab_id
 JOIN roll r ON r.id = p.roll_id
 JOIN film_stock fs ON fs.id = r.film_stock_id
-WHERE p.owner_id = $1 AND p.negatives_returned_at IS NULL AND p.deleted_at IS NULL AND r.deleted_at IS NULL
+LEFT JOIN lab_handoff h ON h.id = p.handoff_id
+-- A job in a handoff waits for the handoff's return; an old job with none, for its own.
+WHERE p.owner_id = $1 AND p.deleted_at IS NULL AND r.deleted_at IS NULL
+  AND CASE WHEN p.handoff_id IS NULL THEN p.negatives_returned_at IS NULL ELSE h.returned_at IS NULL END
 ORDER BY p.sent_at;
 
 -- name: ListProcessingScans :many

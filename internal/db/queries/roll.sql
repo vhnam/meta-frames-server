@@ -44,8 +44,12 @@ UPDATE roll SET deleted_at = now() WHERE id = $1 AND owner_id = $2 AND deleted_a
 -- name: ListRollSummaries :many
 SELECT r.*, fs.brand AS stock_brand, fs.name AS stock_name, fs.box_iso,
        c.brand AS camera_brand, c.model AS camera_model,
-       EXISTS (SELECT 1 FROM processing p
-               WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.lab_id IS NOT NULL AND p.negatives_returned_at IS NULL) AS negatives_at_lab,
+       -- A lab holds the roll during an open handoff, or while an old lab job with no handoff is unreturned.
+       (EXISTS (SELECT 1 FROM lab_handoff h WHERE h.roll_id = r.id AND h.returned_at IS NULL)
+        OR EXISTS (SELECT 1 FROM processing p
+                   WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.lab_id IS NOT NULL AND p.handoff_id IS NULL
+                     AND p.negatives_returned_at IS NULL))::boolean AS negatives_at_lab,
+       (SELECT h.id FROM lab_handoff h WHERE h.roll_id = r.id AND h.returned_at IS NULL) AS open_handoff_id,
        -- A development is recorded once a develop job has any result back.
        EXISTS (SELECT 1 FROM processing p
                WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.type IN ('develop', 'develop_scan')

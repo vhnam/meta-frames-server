@@ -493,8 +493,12 @@ func (q *Queries) ListRollScans(ctx context.Context, arg ListRollScansParams) ([
 const listRollSummaries = `-- name: ListRollSummaries :many
 SELECT r.id, r.film_stock_id, r.camera_id, r.format, r.exposures, r.status, r.shot_iso, r.expiry_year, r.expiry_month, r.price, r.description, r.started_at, r.finished_at, r.created_at, r.updated_at, r.deleted_at, r.owner_id, r.version, r.target, r.develop_by, r.scan_by, r.scan_requested_at, fs.brand AS stock_brand, fs.name AS stock_name, fs.box_iso,
        c.brand AS camera_brand, c.model AS camera_model,
-       EXISTS (SELECT 1 FROM processing p
-               WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.lab_id IS NOT NULL AND p.negatives_returned_at IS NULL) AS negatives_at_lab,
+       -- A lab holds the roll during an open handoff, or while an old lab job with no handoff is unreturned.
+       (EXISTS (SELECT 1 FROM lab_handoff h WHERE h.roll_id = r.id AND h.returned_at IS NULL)
+        OR EXISTS (SELECT 1 FROM processing p
+                   WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.lab_id IS NOT NULL AND p.handoff_id IS NULL
+                     AND p.negatives_returned_at IS NULL))::boolean AS negatives_at_lab,
+       (SELECT h.id FROM lab_handoff h WHERE h.roll_id = r.id AND h.returned_at IS NULL) AS open_handoff_id,
        -- A development is recorded once a develop job has any result back.
        EXISTS (SELECT 1 FROM processing p
                WHERE p.roll_id = r.id AND p.deleted_at IS NULL AND p.type IN ('develop', 'develop_scan')
@@ -577,6 +581,7 @@ type ListRollSummariesRow struct {
 	CameraBrand     *string
 	CameraModel     *string
 	NegativesAtLab  bool
+	OpenHandoffID   uuid.UUID
 	Developed       bool
 	Scanned         bool
 	OpenJobTypes    []string
@@ -633,6 +638,7 @@ func (q *Queries) ListRollSummaries(ctx context.Context, arg ListRollSummariesPa
 			&i.CameraBrand,
 			&i.CameraModel,
 			&i.NegativesAtLab,
+			&i.OpenHandoffID,
 			&i.Developed,
 			&i.Scanned,
 			&i.OpenJobTypes,
