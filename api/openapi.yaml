@@ -2946,7 +2946,9 @@ paths:
         Puts the date on the roll's open develop or develop_scan job. A job at home also gets the
         negatives date, since the negatives are home, so a home develop job closes. A roll that is
         done shooting with no job gets a home develop job, closed on that date. Any other roll is
-        `409 nothing_to_develop`; a date before the job was sent is `422 developed_before_sent`; a
+        `409 nothing_to_develop`; a date before the job was sent is `422 developed_before_sent`, after its negatives came back
+        `422 developed_after_negatives_returned`, and before the roll was finished (no job yet)
+        `422 developed_before_finished`; a
         home job while a lab holds the roll is `409 negatives_at_lab`. `target`, when given, sets the
         plan's target; `developed` also clears `scanBy`.
       requestBody:
@@ -5467,6 +5469,10 @@ components:
         scansExpectedAt: { type: string, format: date }
         negativesExpectedAt: { type: string, format: date }
         negativesReturnedAt: { type: string, format: date }
+        developedAt:
+          type: string
+          format: date
+          description: The day the film was developed ("Đã tráng"); develop and develop_scan jobs only
         price:
           type: integer
           description: From its order lines added up, with the order's VAT and discount shared out, when the job is on an order; otherwise the job's own price

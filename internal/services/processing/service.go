@@ -190,7 +190,7 @@ func BuildViews(ctx context.Context, queries gen.Querier, rollID uuid.UUID) ([]V
 	for index, row := range rows {
 		job := gen.Processing{
 			ID: row.ID, RollID: row.RollID, LabID: row.LabID, Type: row.Type, Process: row.Process, SentAt: row.SentAt,
-			ScansReceivedAt: row.ScansReceivedAt, ScansExpectedAt: row.ScansExpectedAt, NegativesExpectedAt: row.NegativesExpectedAt, NegativesReturnedAt: row.NegativesReturnedAt, Price: row.Price, Notes: row.Notes,
+			ScansReceivedAt: row.ScansReceivedAt, ScansExpectedAt: row.ScansExpectedAt, NegativesExpectedAt: row.NegativesExpectedAt, NegativesReturnedAt: row.NegativesReturnedAt, DevelopedAt: row.DevelopedAt, Price: row.Price, Notes: row.Notes,
 		}
 		views[index] = View{Job: job, LabName: row.LabName, ScanOrders: ordersByJob[row.ID], IsOpen: isJobOpen(job), Price: row.Price}
 		if link := linksByJob[row.ID]; link != nil {
@@ -413,7 +413,13 @@ func RecordDeveloped(ctx context.Context, queries gen.Querier, roll gen.Roll, de
 		if developedAt.Before(job.SentAt) {
 			return apperror.Unprocessable("developed_before_sent", "the film cannot be developed before the job was sent")
 		}
+		if job.NegativesReturnedAt != nil && developedAt.After(*job.NegativesReturnedAt) {
+			return apperror.Unprocessable("developed_after_negatives_returned", "the film cannot be developed after its negatives came back")
+		}
 	case roll.Status == domain.RollStatusDoneShooting && len(rows) == 0:
+		if roll.FinishedAt != nil && developedAt.Before(*roll.FinishedAt) {
+			return apperror.Unprocessable("developed_before_finished", "the film cannot be developed before the roll was finished")
+		}
 		if err := refuseWhileALabHolds(ctx, queries, roll.ID); err != nil {
 			return err
 		}
@@ -540,10 +546,29 @@ func ReturnHandoff(ctx context.Context, queries gen.Querier, handoff gen.LabHand
 		return apperror.Unprocessable("returned_before_handed", "the return date is before the roll was handed to the lab")
 	}
 	owner := requestctx.Owner(ctx)
+	rows, err := queries.ListRollProcessing(ctx, gen.ListRollProcessingParams{RollID: handoff.RollID, OwnerID: owner})
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if row.HandoffID != nil && *row.HandoffID == handoff.ID && row.NegativesReturnedAt == nil {
+			if err := checkReturnedAfterDeveloped(row.DevelopedAt, returnedAt); err != nil {
+				return err
+			}
+		}
+	}
 	if err := queries.CloseLabHandoff(ctx, gen.CloseLabHandoffParams{ID: handoff.ID, ReturnedAt: &returnedAt, OwnerID: owner}); err != nil {
 		return err
 	}
 	return queries.SetHandoffNegativesReturned(ctx, gen.SetHandoffNegativesReturnedParams{HandoffID: &handoff.ID, NegativesReturnedAt: &returnedAt, OwnerID: owner})
+}
+
+// checkReturnedAfterDeveloped refuses negatives back before the film was developed.
+func checkReturnedAfterDeveloped(developedAt *time.Time, returnedAt time.Time) error {
+	if developedAt != nil && returnedAt.Before(*developedAt) {
+		return apperror.Unprocessable("returned_before_developed", "the negatives cannot come back before the film was developed")
+	}
+	return nil
 }
 
 // syncOrderItems makes the job's order lines equal to the given ones. They must be on one order from
@@ -657,6 +682,9 @@ func (service *Service) RecordNegativesReturned(ctx context.Context, jobID uuid.
 		date := shared.DateOrDefault(returnedAt, service.clock.Today())
 		if job.HandoffID == nil {
 			// an old job with no handoff comes back on its own
+			if err := checkReturnedAfterDeveloped(job.DevelopedAt, date); err != nil {
+				return err
+			}
 			if _, err := queries.SetNegativesReturned(ctx, gen.SetNegativesReturnedParams{ID: jobID, NegativesReturnedAt: &date, OwnerID: requestctx.Owner(ctx)}); err != nil {
 				return err
 			}
