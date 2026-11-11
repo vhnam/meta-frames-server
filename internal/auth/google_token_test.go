@@ -179,3 +179,25 @@ func TestGoogleTokenAnswers404WhenNotConfigured(test *testing.T) {
 	client := newClient(test, testutil.NewMemory(), &testutil.Mailbox{})
 	client.expect(client.signInWithToken(goodToken), http.StatusNotFound, "not_configured")
 }
+
+func TestGoogleTokenRefreshesThePictureAndDropsANonHTTPSOne(test *testing.T) {
+	memory := testutil.NewMemory()
+	claims := tokenClaims()
+	claims.Picture = "https://lh3.googleusercontent.com/a/old"
+	tokenClient(test, memory, claims).signInWithToken(goodToken)
+
+	claims.Picture = "https://lh3.googleusercontent.com/a/new"
+	client := tokenClient(test, memory, claims)
+	user := client.expect(client.signInWithToken(goodToken), http.StatusOK, "").body["user"].(map[string]any)
+	if user["avatarUrl"] != claims.Picture {
+		test.Fatalf("user = %v, want the new picture", user)
+	}
+
+	// A picture that is not https is never stored; the last good one stays.
+	claims.Picture = "javascript:alert(1)"
+	client = tokenClient(test, memory, claims)
+	user = client.expect(client.signInWithToken(goodToken), http.StatusOK, "").body["user"].(map[string]any)
+	if user["avatarUrl"] != "https://lh3.googleusercontent.com/a/new" {
+		test.Fatalf("user = %v, want the last https picture", user)
+	}
+}

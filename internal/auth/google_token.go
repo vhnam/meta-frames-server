@@ -31,6 +31,7 @@ type GoogleIDClaims struct {
 	Email         string
 	EmailVerified bool
 	Name          string
+	Picture       string
 }
 
 // GoogleIDTokenVerifier checks a token's signature, expiry and issuer and returns its claims. It
@@ -71,6 +72,7 @@ func verifyGoogleIDToken(ctx context.Context, idToken string) (GoogleIDClaims, e
 		Email:         claim("email"),
 		EmailVerified: fmt.Sprint(payload.Claims["email_verified"]) == "true",
 		Name:          claim("name"),
+		Picture:       claim("picture"),
 	}, nil
 }
 
@@ -116,6 +118,7 @@ func (accounts *Auth) signInWithGoogleToken(ctx *gin.Context) {
 		detailEmail:         claims.Email,
 		detailEmailVerified: strconv.FormatBool(claims.EmailVerified),
 		detailName:          claims.Name,
+		detailAvatar:        claims.Picture,
 	})
 	switch {
 	case errors.Is(err, ErrEmailNotVerified):

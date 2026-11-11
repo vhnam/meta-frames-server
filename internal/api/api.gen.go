@@ -1476,6 +1476,8 @@ type StockType string
 
 // User Example: {"createdAt":"2026-10-07T09:00:00Z","email":"ansel@example.com","id":"5a0c2f6e-8d31-4b7a-9e15-3c7f1d2b4a60","name":"Ansel"}
 type User struct {
+	// AvatarUrl Profile picture of the linked Google account (https). Absent without one.
+	AvatarUrl *string             `json:"avatarUrl,omitempty"`
 	CreatedAt time.Time           `json:"createdAt"`
 	Email     openapi_types.Email `json:"email"`
 	Id        openapi_types.UUID  `json:"id"`

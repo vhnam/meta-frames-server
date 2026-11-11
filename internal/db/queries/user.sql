@@ -8,14 +8,15 @@ SELECT * FROM app_user WHERE recover_selector = $1;
 SELECT * FROM app_user WHERE oauth2_provider = $1 AND oauth2_uid = $2;
 
 -- name: InsertUser :one
-INSERT INTO app_user (id, email, name, password_hash, oauth2_provider, oauth2_uid)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO app_user (id, email, name, password_hash, oauth2_provider, oauth2_uid, avatar_url)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING *;
 
 -- name: UpdateUser :one
 UPDATE app_user
 SET name = $2, password_hash = $3, recover_selector = $4, recover_verifier = $5, recover_token_expiry = $6,
-    attempt_count = $7, last_attempt = $8, locked_until = $9, oauth2_provider = $10, oauth2_uid = $11
+    attempt_count = $7, last_attempt = $8, locked_until = $9, oauth2_provider = $10, oauth2_uid = $11,
+    avatar_url = $12
 WHERE id = $1
 RETURNING *;
 

@@ -1242,7 +1242,7 @@ func (queries *Memory) InsertUser(ctx context.Context, arg gen.InsertUserParams)
 	now := pgtype.Timestamptz{Time: time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC), Valid: true}
 	user := gen.AppUser{
 		ID: arg.ID, Email: arg.Email, Name: arg.Name, PasswordHash: arg.PasswordHash,
-		Oauth2Provider: arg.Oauth2Provider, Oauth2Uid: arg.Oauth2Uid, CreatedAt: now, UpdatedAt: now,
+		Oauth2Provider: arg.Oauth2Provider, Oauth2Uid: arg.Oauth2Uid, AvatarUrl: arg.AvatarUrl, CreatedAt: now, UpdatedAt: now,
 	}
 	queries.Users[arg.ID] = user
 	return user, nil
@@ -1256,7 +1256,7 @@ func (queries *Memory) UpdateUser(_ context.Context, arg gen.UpdateUserParams) (
 	user.Name, user.PasswordHash = arg.Name, arg.PasswordHash
 	user.RecoverSelector, user.RecoverVerifier, user.RecoverTokenExpiry = arg.RecoverSelector, arg.RecoverVerifier, arg.RecoverTokenExpiry
 	user.AttemptCount, user.LastAttempt, user.LockedUntil = arg.AttemptCount, arg.LastAttempt, arg.LockedUntil
-	user.Oauth2Provider, user.Oauth2Uid = arg.Oauth2Provider, arg.Oauth2Uid
+	user.Oauth2Provider, user.Oauth2Uid, user.AvatarUrl = arg.Oauth2Provider, arg.Oauth2Uid, arg.AvatarUrl
 	queries.Users[arg.ID] = user
 	return user, nil
 }
