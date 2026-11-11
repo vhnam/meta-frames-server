@@ -23,6 +23,7 @@ const (
 	detailEmail         = "email"
 	detailEmailVerified = "email_verified"
 	detailName          = "name"
+	detailAvatar        = "picture"
 )
 
 // GoogleConfig enables "Sign in with Google". The client comes from the Google Cloud console
@@ -74,6 +75,7 @@ type googleUserInfo struct {
 	Email         string `json:"email"`
 	EmailVerified bool   `json:"email_verified"`
 	Name          string `json:"name"`
+	Picture       string `json:"picture"`
 }
 
 // googleUserDetails reads the signed-in Google account from the OpenID Connect userinfo endpoint.
@@ -100,6 +102,7 @@ func googleUserDetails(userInfoURL string) func(context.Context, oauth2.Config, 
 			detailEmail:         info.Email,
 			detailEmailVerified: strconv.FormatBool(info.EmailVerified),
 			detailName:          info.Name,
+			detailAvatar:        info.Picture,
 		}, nil
 	}
 }

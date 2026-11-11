@@ -159,3 +159,14 @@ func (client *session) cookieNamed(name string) *http.Cookie {
 	}
 	return nil
 }
+
+func TestGoogleSignInKeepsTheAccountPicture(test *testing.T) {
+	google, memory := newFakeGoogle(test), testutil.NewMemory()
+	const picture = "https://lh3.googleusercontent.com/a/ansel"
+	google.Account["picture"] = picture
+	client := google.client(test, memory)
+	client.signInWithGoogle("/")
+	if me := client.expect(client.me(), http.StatusOK, ""); me.body["avatarUrl"] != picture {
+		test.Fatalf("me = %v, want avatarUrl %q", me.body, picture)
+	}
+}

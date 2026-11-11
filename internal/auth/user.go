@@ -27,6 +27,7 @@ type User struct {
 	LockedUntil     time.Time
 	OAuth2Provider  string // "google" for an account linked to Google
 	OAuth2UID       string // the provider's id for the account ("sub")
+	AvatarURL       string // the Google profile picture, an https URL
 	CreatedAt       time.Time
 }
 
@@ -55,6 +56,7 @@ func fromRow(row gen.AppUser) *User {
 		LockedUntil:     convert.Timestamp(row.LockedUntil),
 		OAuth2Provider:  valueOrEmpty(row.Oauth2Provider),
 		OAuth2UID:       valueOrEmpty(row.Oauth2Uid),
+		AvatarURL:       valueOrEmpty(row.AvatarUrl),
 		CreatedAt:       convert.Timestamp(row.CreatedAt),
 	}
 }
@@ -65,6 +67,10 @@ func (user *User) API() api.User {
 	if user.Name != "" {
 		name := user.Name
 		view.Name = &name
+	}
+	if user.AvatarURL != "" {
+		avatar := user.AvatarURL
+		view.AvatarUrl = &avatar
 	}
 	return view
 }

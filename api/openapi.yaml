@@ -4223,6 +4223,10 @@ components:
         id: { type: string, format: uuid }
         email: { type: string, format: email }
         name: { type: string }
+        avatarUrl:
+          type: string
+          format: uri
+          description: Profile picture of the linked Google account (https). Absent without one.
         createdAt: { type: string, format: date-time }
       example:
         id: 5a0c2f6e-8d31-4b7a-9e15-3c7f1d2b4a60

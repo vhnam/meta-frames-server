@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
 	"strings"
 	"time"
 
@@ -79,6 +80,7 @@ func (storer *Storer) Save(ctx context.Context, user authboss.User) error {
 		LockedUntil:        timestamp(account.LockedUntil),
 		Oauth2Provider:     emptyToNil(account.OAuth2Provider),
 		Oauth2Uid:          emptyToNil(account.OAuth2UID),
+		AvatarUrl:          emptyToNil(account.AvatarURL),
 	})
 	if db.IsNoRows(err) {
 		return authboss.ErrUserNotFound
@@ -104,6 +106,7 @@ func (storer *Storer) Create(ctx context.Context, user authboss.User) error {
 			PasswordHash:   emptyToNil(account.PasswordHash),
 			Oauth2Provider: emptyToNil(account.OAuth2Provider),
 			Oauth2Uid:      emptyToNil(account.OAuth2UID),
+			AvatarUrl:      emptyToNil(account.AvatarURL),
 		})
 		if err != nil {
 			return err
@@ -144,7 +147,7 @@ func (storer *Storer) NewFromOAuth2(ctx context.Context, provider string, detail
 	queries := storer.store.Queries()
 	row, err := queries.GetUserByOAuth2(ctx, gen.GetUserByOAuth2Params{Oauth2Provider: &provider, Oauth2Uid: &uid})
 	if err == nil {
-		return withName(fromRow(row), details[detailName]), nil
+		return withProfile(fromRow(row), details), nil
 	}
 	if !db.IsNoRows(err) {
 		return nil, err
@@ -155,7 +158,7 @@ func (storer *Storer) NewFromOAuth2(ctx context.Context, provider string, detail
 
 	row, err = queries.GetUserByEmail(ctx, email)
 	if db.IsNoRows(err) {
-		return &User{Email: email, Name: details[detailName], OAuth2Provider: provider, OAuth2UID: uid}, nil
+		return withProfile(&User{Email: email, OAuth2Provider: provider, OAuth2UID: uid}, details), nil
 	}
 	if err != nil {
 		return nil, err
@@ -165,15 +168,28 @@ func (storer *Storer) NewFromOAuth2(ctx context.Context, provider string, detail
 		return nil, ErrIdentityConflict
 	}
 	existing.OAuth2Provider, existing.OAuth2UID = provider, uid
-	return withName(existing, details[detailName]), nil
+	return withProfile(existing, details), nil
 }
 
-// withName fills in the provider's display name when the account has none.
-func withName(user *User, name string) *User {
+// withProfile fills in the provider's display name when the account has none, and takes the
+// provider's current picture: the account cannot set its own, and Google changes the URL.
+func withProfile(user *User, details map[string]string) *User {
 	if user.Name == "" {
-		user.Name = name
+		user.Name = details[detailName]
+	}
+	if avatar := httpsURL(details[detailAvatar]); avatar != "" {
+		user.AvatarURL = avatar
 	}
 	return user
+}
+
+// httpsURL keeps only an absolute https URL, so a client can put it in an <img> as it is.
+func httpsURL(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+		return ""
+	}
+	return raw
 }
 
 // SaveOAuth2 inserts a new account or updates a linked one.

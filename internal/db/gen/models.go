@@ -27,6 +27,7 @@ type AppUser struct {
 	LockedUntil        pgtype.Timestamptz
 	Oauth2Provider     *string
 	Oauth2Uid          *string
+	AvatarUrl          *string
 }
 
 type AuditLog struct {
