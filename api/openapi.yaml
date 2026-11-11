@@ -2941,7 +2941,7 @@ paths:
     put:
       tags: [Rolls]
       operationId: markRollDeveloped
-      summary: Record the day a roll's film was developed ("Đã tráng")
+      summary: Record the day a roll's film was developed
       description: >-
         Puts the date on the roll's open develop or develop_scan job. A job at home also gets the
         negatives date, since the negatives are home, so a home develop job closes. A roll that is
@@ -2977,7 +2977,7 @@ paths:
     put:
       tags: [Rolls]
       operationId: markRollForScan
-      summary: Mark a roll "Cần scan" (to be scanned, or scanned again)
+      summary: Mark a roll "Needs scan" (to be scanned, or scanned again)
       description: >-
         Allowed wherever the roll is. Marking again keeps the first date. The next scan job on the
         roll removes the mark. The summary says `needsScan`.
@@ -2992,7 +2992,7 @@ paths:
     delete:
       tags: [Rolls]
       operationId: unmarkRollForScan
-      summary: Remove a roll's "Cần scan" mark
+      summary: Remove a roll's "Needs scan" mark
       responses:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "200":
@@ -5472,7 +5472,7 @@ components:
         developedAt:
           type: string
           format: date
-          description: The day the film was developed ("Đã tráng"); develop and develop_scan jobs only
+          description: The day the film was developed; develop and develop_scan jobs only
         price:
           type: integer
           description: From its order lines added up, with the order's VAT and discount shared out, when the job is on an order; otherwise the job's own price

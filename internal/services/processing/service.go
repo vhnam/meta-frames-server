@@ -381,7 +381,7 @@ func CreateJob(ctx context.Context, queries gen.Querier, roll gen.Roll, jobID uu
 	if err := syncScanOrders(ctx, queries, jobID, input.ScanOrders); err != nil {
 		return err
 	}
-	// D3: a new scan clears the roll's "Cần scan" mark
+	// D3: a new scan clears the roll's "Needs scan" mark
 	if JobProducesScans(input.Type) {
 		if err := queries.ClearRollScanRequest(ctx, gen.ClearRollScanRequestParams{ID: roll.ID, OwnerID: requestctx.Owner(ctx)}); err != nil {
 			return err
@@ -390,7 +390,7 @@ func CreateJob(ctx context.Context, queries gen.Querier, roll gen.Roll, jobID uu
 	return queries.SetRollStatus(ctx, gen.SetRollStatusParams{ID: roll.ID, Status: domain.RollStatusAtLab, OwnerID: requestctx.Owner(ctx)})
 }
 
-// RecordDeveloped records "Đã tráng" on a roll the caller has locked (D4): the date its film was
+// RecordDeveloped records "Developed" on a roll the caller has locked (D4): the date its film was
 // developed goes on its open develop or develop_scan job. A home job also gets the negatives
 // date, since the negatives are home. A roll done shooting with no job gets a home develop job,
 // closed on that date.

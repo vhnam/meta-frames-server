@@ -12,7 +12,7 @@ import (
 	"meta-frames-server/internal/services/shared"
 )
 
-// DevelopedInput is "Đã tráng" (D4).
+// DevelopedInput is "Developed" (D4).
 type DevelopedInput struct {
 	DevelopedAt *time.Time
 	// Target, when given, sets the plan's target. Develop only clears scanBy, which needs a scan.
@@ -48,7 +48,7 @@ func (service *Service) MarkDeveloped(ctx context.Context, rollID uuid.UUID, inp
 	return detail, err
 }
 
-// SetScanRequest marks a roll "Cần scan" (D3), or removes the mark. Allowed wherever the roll is;
+// SetScanRequest marks a roll "Needs scan" (D3), or removes the mark. Allowed wherever the roll is;
 // marking again keeps the first date.
 func (service *Service) SetScanRequest(ctx context.Context, rollID uuid.UUID, requested bool) (Detail, error) {
 	var detail Detail
