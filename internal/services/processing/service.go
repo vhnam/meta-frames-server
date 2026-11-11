@@ -381,7 +381,59 @@ func CreateJob(ctx context.Context, queries gen.Querier, roll gen.Roll, jobID uu
 	if err := syncScanOrders(ctx, queries, jobID, input.ScanOrders); err != nil {
 		return err
 	}
+	// D3: a new scan clears the roll's "Cần scan" mark
+	if JobProducesScans(input.Type) {
+		if err := queries.ClearRollScanRequest(ctx, gen.ClearRollScanRequestParams{ID: roll.ID, OwnerID: requestctx.Owner(ctx)}); err != nil {
+			return err
+		}
+	}
 	return queries.SetRollStatus(ctx, gen.SetRollStatusParams{ID: roll.ID, Status: domain.RollStatusAtLab, OwnerID: requestctx.Owner(ctx)})
+}
+
+// RecordDeveloped records "Đã tráng" on a roll the caller has locked (D4): the date its film was
+// developed goes on its open develop or develop_scan job. A home job also gets the negatives
+// date, since the negatives are home. A roll done shooting with no job gets a home develop job,
+// closed on that date.
+func RecordDeveloped(ctx context.Context, queries gen.Querier, roll gen.Roll, developedAt time.Time) error {
+	owner := requestctx.Owner(ctx)
+	rows, err := queries.ListRollProcessing(ctx, gen.ListRollProcessingParams{RollID: roll.ID, OwnerID: owner})
+	if err != nil {
+		return err
+	}
+	var job *gen.ListRollProcessingRow
+	for index, row := range rows {
+		developing := row.Type == domain.JobTypeDevelop || row.Type == domain.JobTypeDevelopScan
+		if developing && row.DevelopedAt == nil && isJobOpen(gen.Processing{Type: row.Type, ScansReceivedAt: row.ScansReceivedAt, NegativesReturnedAt: row.NegativesReturnedAt}) {
+			job = &rows[index]
+			break
+		}
+	}
+	switch {
+	case job != nil:
+		if developedAt.Before(job.SentAt) {
+			return apperror.Unprocessable("developed_before_sent", "the film cannot be developed before the job was sent")
+		}
+	case roll.Status == domain.RollStatusDoneShooting && len(rows) == 0:
+		if err := refuseWhileALabHolds(ctx, queries, roll.ID); err != nil {
+			return err
+		}
+		jobID := uuid.New()
+		if err := CreateJob(ctx, queries, roll, jobID, Input{Type: domain.JobTypeDevelop}, developedAt, nil); err != nil {
+			return err
+		}
+		job = &gen.ListRollProcessingRow{ID: jobID, Type: domain.JobTypeDevelop}
+	default:
+		return apperror.Conflict("nothing_to_develop", "the roll has no develop job waiting for its developed date")
+	}
+	if err := queries.SetDevelopedAt(ctx, gen.SetDevelopedAtParams{ID: job.ID, DevelopedAt: &developedAt, OwnerID: owner}); err != nil {
+		return err
+	}
+	if job.LabID == nil {
+		if _, err := queries.SetNegativesReturned(ctx, gen.SetNegativesReturnedParams{ID: job.ID, NegativesReturnedAt: &developedAt, OwnerID: owner}); err != nil {
+			return err
+		}
+	}
+	return RefreshRollStatus(ctx, queries, roll.ID)
 }
 
 // LockJob locks the job's roll, then the job: every write on a roll takes the roll first, so two

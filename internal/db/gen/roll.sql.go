@@ -891,6 +891,21 @@ func (q *Queries) SetRollPlan(ctx context.Context, arg SetRollPlanParams) (Roll,
 	return i, err
 }
 
+const setRollScanRequest = `-- name: SetRollScanRequest :exec
+UPDATE roll SET scan_requested_at = COALESCE(scan_requested_at, now()) WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
+`
+
+type SetRollScanRequestParams struct {
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+}
+
+// The first mark stays: marking again keeps its date.
+func (q *Queries) SetRollScanRequest(ctx context.Context, arg SetRollScanRequestParams) error {
+	_, err := q.db.Exec(ctx, setRollScanRequest, arg.ID, arg.OwnerID)
+	return err
+}
+
 const setRollStatus = `-- name: SetRollStatus :exec
 UPDATE roll SET status = $2 WHERE id = $1 AND owner_id = $3 AND deleted_at IS NULL
 `

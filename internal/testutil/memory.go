@@ -486,6 +486,15 @@ func (queries *Memory) SetRollPlan(_ context.Context, arg gen.SetRollPlanParams)
 	return queries.saveRoll(roll), nil
 }
 
+func (queries *Memory) SetRollScanRequest(_ context.Context, arg gen.SetRollScanRequestParams) error {
+	roll := queries.Rolls[arg.ID]
+	if !roll.ScanRequestedAt.Valid {
+		roll.ScanRequestedAt = pgtype.Timestamptz{Time: time.Now(), Valid: true}
+		queries.saveRoll(roll)
+	}
+	return nil
+}
+
 func (queries *Memory) ClearRollScanRequest(_ context.Context, arg gen.ClearRollScanRequestParams) error {
 	roll := queries.Rolls[arg.ID]
 	roll.ScanRequestedAt = pgtype.Timestamptz{}
@@ -824,6 +833,13 @@ func (queries *Memory) SetHandoffNegativesReturned(_ context.Context, arg gen.Se
 			queries.Jobs[id] = job
 		}
 	}
+	return nil
+}
+
+func (queries *Memory) SetDevelopedAt(_ context.Context, arg gen.SetDevelopedAtParams) error {
+	job := queries.Jobs[arg.ID]
+	job.DevelopedAt = arg.DevelopedAt
+	queries.Jobs[arg.ID] = job
 	return nil
 }
 

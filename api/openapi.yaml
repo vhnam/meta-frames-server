@@ -2935,6 +2935,71 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/Unprocessable" }
 
+  /rolls/{id}/developed:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Rolls]
+      operationId: markRollDeveloped
+      summary: Record the day a roll's film was developed ("Đã tráng")
+      description: >-
+        Puts the date on the roll's open develop or develop_scan job. A job at home also gets the
+        negatives date, since the negatives are home, so a home develop job closes. A roll that is
+        done shooting with no job gets a home develop job, closed on that date. Any other roll is
+        `409 nothing_to_develop`; a date before the job was sent is `422 developed_before_sent`; a
+        home job while a lab holds the roll is `409 negatives_at_lab`. `target`, when given, sets the
+        plan's target; `developed` also clears `scanBy`.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DevelopedInput" }
+            examples:
+              scanNext:
+                summary: Developed today, to be scanned
+                value: { target: scanned }
+      responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "200":
+          description: Roll
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RollDetail" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
+  /rolls/{id}/scan-request:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Rolls]
+      operationId: markRollForScan
+      summary: Mark a roll "Cần scan" (to be scanned, or scanned again)
+      description: >-
+        Allowed wherever the roll is. Marking again keeps the first date. The next scan job on the
+        roll removes the mark. The summary says `needsScan`.
+      responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "200":
+          description: Roll
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RollDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Rolls]
+      operationId: unmarkRollForScan
+      summary: Remove a roll's "Cần scan" mark
+      responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "200":
+          description: Roll
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RollDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /rolls/{id}/processing:
     parameters:
       - $ref: "#/components/parameters/Id"
@@ -5086,6 +5151,15 @@ components:
         notes: Golden hour on the bridge
         baseNotes: ""
 
+    DevelopedInput:
+      type: object
+      additionalProperties: false
+      properties:
+        date: { type: string, format: date, description: Defaults to today. }
+        target:
+          type: string
+          enum: [developed, scanned]
+          description: Sets the plan's target; left out keeps it.
     HandOverInput:
       type: object
       additionalProperties: false
