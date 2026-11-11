@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `make lint` runs golangci-lint v2 from this module (`go tool golangci-lint`).
 - `GET /rolls` lists the newest start date first. Rolls with no start date come last, then the newest added date, then id.
 - `negativesAtLab` is true while a lab holds the roll, whatever the roll's status: it has an open handoff, or an old lab job with no handoff whose negatives are not recorded back. `GET /negatives-at-lab` follows the same rule per job.
 - Recording negatives returned on a job in a handoff closes the handoff and gives every live job of it the date. A job already dated, or a closed handoff, changes nothing, so a repeated old request cannot close a newer handoff. Old jobs with no handoff work as before.
