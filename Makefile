@@ -47,7 +47,7 @@ cover:
 	go tool cover -func=coverage.filtered.out | tail -1
 
 lint:
-	golangci-lint run
+	go tool golangci-lint run
 
 db-up:
 	docker compose -f deployments/compose.yml up -d --wait
