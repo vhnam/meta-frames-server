@@ -97,7 +97,7 @@ func TestHandOverSendsWaitingRollsForAScan(test *testing.T) {
 		test.Fatalf("waiting roll = %v", roll)
 	}
 
-	// Scanned and closed, then marked "Cần scan".
+	// Scanned and closed, then marked "Needs scan".
 	marked := harness.finishedRoll(seeded)
 	scanJob := newID()
 	harness.expect(harness.call("PUT", "/rolls/"+marked+"/processing/"+scanJob, map[string]any{"labId": labID, "type": "develop_scan", "scanOrders": []map[string]any{{"scanner": "noritsu"}}}), http.StatusCreated)

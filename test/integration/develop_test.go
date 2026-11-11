@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// markDeveloped sends "Đã tráng"; a nil body sends no payload.
+// markDeveloped sends "Developed"; a nil body sends no payload.
 func (harness *harness) markDeveloped(rollID string, body map[string]any) response {
 	if body == nil {
 		return harness.call("PUT", "/rolls/"+rollID+"/developed", nil)
@@ -61,7 +61,7 @@ func TestDevelopedDateGoesOnTheOpenDevelopJob(test *testing.T) {
 	}
 	// nothing left to develop
 	if again := harness.expect(harness.markDeveloped(homeRoll, nil), http.StatusConflict); again.Body["code"] != "nothing_to_develop" {
-		test.Fatalf("second Đã tráng = %s", again.Raw)
+		test.Fatalf("second mark developed = %s", again.Raw)
 	}
 
 	// a home develop_scan job gets both dates but stays open until its scans arrive
@@ -108,7 +108,7 @@ func TestDevelopedWithNoJobCreatesAClosedHomeJob(test *testing.T) {
 	}
 }
 
-// Đã tráng refuses a date outside the roll's history, and saves nothing.
+// Mark developed refuses a date outside the roll's history, and saves nothing.
 func TestDevelopedDateMustFitTheRollHistory(test *testing.T) {
 	harness := newHarness(test)
 	seeded := seedGear(harness)
@@ -120,7 +120,7 @@ func TestDevelopedDateMustFitTheRollHistory(test *testing.T) {
 		test.Fatalf("before finished = %s", refused.Raw)
 	}
 	if harness.count(`SELECT count(*) FROM processing WHERE roll_id = $1`, noJob) != 0 {
-		test.Fatal("a refused Đã tráng created a job")
+		test.Fatal("a refused mark developed created a job")
 	}
 
 	rollID, jobID := harness.finishedRoll(seeded), newID()
@@ -132,7 +132,7 @@ func TestDevelopedDateMustFitTheRollHistory(test *testing.T) {
 		test.Fatalf("after negatives returned = %s", refused.Raw)
 	}
 	if harness.count(`SELECT count(*) FROM processing WHERE id = $1 AND developed_at IS NULL`, jobID) != 1 {
-		test.Fatal("a refused Đã tráng saved a date")
+		test.Fatal("a refused mark developed saved a date")
 	}
 	harness.expect(harness.markDeveloped(rollID, map[string]any{"date": "2026-10-05"}), http.StatusOK)
 }
@@ -169,7 +169,7 @@ func TestReturnDateMustNotPrecedeTheDevelopedDate(test *testing.T) {
 	}
 }
 
-// D3: mark and unmark "Cần scan"; a single scan job removes the mark.
+// D3: mark and unmark "Needs scan"; a single scan job removes the mark.
 func TestScanRequestMarkAndASingleScanJob(test *testing.T) {
 	harness := newHarness(test)
 	seeded := seedGear(harness)
@@ -191,7 +191,7 @@ func TestScanRequestMarkAndASingleScanJob(test *testing.T) {
 	}
 }
 
-// End to end through the job API: develop at home, Đã tráng, scan at home, done.
+// End to end through the job API: develop at home, mark developed, scan at home, done.
 func TestHomeDevelopThenHomeScan(test *testing.T) {
 	harness := newHarness(test)
 	seeded := seedGear(harness)
