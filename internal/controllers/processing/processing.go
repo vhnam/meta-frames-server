@@ -7,7 +7,6 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"meta-frames-server/internal/api"
-	"meta-frames-server/internal/common/convert"
 	"meta-frames-server/internal/common/pointers"
 	"meta-frames-server/internal/domain"
 	processingsvc "meta-frames-server/internal/services/processing"
@@ -29,10 +28,10 @@ func ToAPIProcessing(view processingsvc.View) api.Processing {
 	job := view.Job
 	mapped := api.Processing{
 		Id: job.ID, RollId: job.RollID, LabId: job.LabID, Type: api.ProcessingType(job.Type), Process: api.Process(job.Process),
-		SentAt: convert.APIDate(job.SentAt), ScansReceivedAt: convert.ToAPIDate(job.ScansReceivedAt),
-		ScansExpectedAt:     convert.ToAPIDate(job.ScansExpectedAt),
-		NegativesExpectedAt: convert.ToAPIDate(job.NegativesExpectedAt),
-		NegativesReturnedAt: convert.ToAPIDate(job.NegativesReturnedAt), DevelopedAt: convert.ToAPIDate(job.DevelopedAt), Price: pointers.Int(view.Price), Notes: job.Notes,
+		SentAt: api.APIDate(job.SentAt), ScansReceivedAt: api.ToAPIDate(job.ScansReceivedAt),
+		ScansExpectedAt:     api.ToAPIDate(job.ScansExpectedAt),
+		NegativesExpectedAt: api.ToAPIDate(job.NegativesExpectedAt),
+		NegativesReturnedAt: api.ToAPIDate(job.NegativesReturnedAt), DevelopedAt: api.ToAPIDate(job.DevelopedAt), Price: pointers.Int(view.Price), Notes: job.Notes,
 		ScanOrders: make([]api.ScanOrder, len(view.ScanOrders)), IsOpen: view.IsOpen,
 	}
 	if view.LabName != "" {
@@ -111,8 +110,8 @@ func ScanOrderInputs(ctx context.Context, pick func(context.Context, *uuid.UUID,
 func (controller *Controller) PutProcessing(ctx context.Context, request api.PutProcessingRequestObject) (api.PutProcessingResponseObject, error) {
 	body := request.Body
 	input := processingsvc.Input{
-		LabID: body.LabId, Type: string(body.Type), SentAt: convert.FromAPIDate(body.SentAt),
-		ScansExpectedAt: convert.FromAPIDate(body.ScansExpectedAt), NegativesExpectedAt: convert.FromAPIDate(body.NegativesExpectedAt), Price: body.Price, OrderItemIDs: pointers.Value(body.OrderItemIds), Notes: body.Notes,
+		LabID: body.LabId, Type: string(body.Type), SentAt: api.FromAPIDate(body.SentAt),
+		ScansExpectedAt: api.FromAPIDate(body.ScansExpectedAt), NegativesExpectedAt: api.FromAPIDate(body.NegativesExpectedAt), Price: body.Price, OrderItemIDs: pointers.Value(body.OrderItemIds), Notes: body.Notes,
 	}
 	if body.Process != nil {
 		input.Process = pointers.To(string(*body.Process))
@@ -141,7 +140,7 @@ func (controller *Controller) SetProcessingOrderItems(ctx context.Context, reque
 }
 
 func (controller *Controller) RecordScansReceived(ctx context.Context, request api.RecordScansReceivedRequestObject) (api.RecordScansReceivedResponseObject, error) {
-	view, err := controller.processing.RecordScansReceived(ctx, request.Id, convert.OptionalDate(request.Body))
+	view, err := controller.processing.RecordScansReceived(ctx, request.Id, api.OptionalDate(request.Body))
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +148,7 @@ func (controller *Controller) RecordScansReceived(ctx context.Context, request a
 }
 
 func (controller *Controller) RecordNegativesReturned(ctx context.Context, request api.RecordNegativesReturnedRequestObject) (api.RecordNegativesReturnedResponseObject, error) {
-	view, err := controller.processing.RecordNegativesReturned(ctx, request.Id, convert.OptionalDate(request.Body))
+	view, err := controller.processing.RecordNegativesReturned(ctx, request.Id, api.OptionalDate(request.Body))
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +164,7 @@ func (controller *Controller) ListNegativesAtLab(ctx context.Context, _ api.List
 	for index, row := range rows {
 		mapped[index] = api.NegativesAtLabItem{
 			ProcessingId: row.ID, RollId: row.RollID, LabName: row.LabName, Type: api.ProcessingType(row.Type),
-			SentAt: convert.APIDate(row.SentAt), DaysSinceSent: int(row.DaysSinceSent), StockName: row.StockBrand + " " + row.StockName,
+			SentAt: api.APIDate(row.SentAt), DaysSinceSent: int(row.DaysSinceSent), StockName: row.StockBrand + " " + row.StockName,
 		}
 	}
 	return api.ListNegativesAtLab200JSONResponse(mapped), nil

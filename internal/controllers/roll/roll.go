@@ -9,7 +9,6 @@ import (
 
 	"meta-frames-server/internal/api"
 	"meta-frames-server/internal/common/apperror"
-	"meta-frames-server/internal/common/convert"
 	"meta-frames-server/internal/common/pointers"
 	"meta-frames-server/internal/controllers/filmstock"
 	"meta-frames-server/internal/controllers/lens"
@@ -44,7 +43,7 @@ func ToAPIRollSummary(summary rollsvc.Summary) api.RollSummary {
 		Id: summary.ID, FilmStockId: summary.FilmStockID, StockBrand: summary.StockBrand, StockName: summary.StockName,
 		CameraId: summary.CameraID, Format: int(summary.Format), Exposures: int(summary.Exposures),
 		Status: api.RollStatus(summary.Status), ShotIso: pointers.Int(summary.ShotIso), Price: pointers.Int(summary.Price),
-		Description: summary.Description, StartedAt: convert.ToAPIDate(summary.StartedAt), FinishedAt: convert.ToAPIDate(summary.FinishedAt),
+		Description: summary.Description, StartedAt: api.ToAPIDate(summary.StartedAt), FinishedAt: api.ToAPIDate(summary.FinishedAt),
 		NegativesAtLab: summary.NegativesAtLab, Developed: summary.Developed, Scanned: summary.Scanned,
 		OpenJobTypes: make([]api.ProcessingType, len(summary.OpenJobTypes)), OpenAtLab: summary.OpenAtLab,
 		Plan: api.RollPlan{
@@ -106,7 +105,7 @@ func (controller *Controller) ListRolls(ctx context.Context, request api.ListRol
 	params := request.Params
 	filter := rollsvc.Filter{
 		FilmStockID: params.FilmStockId, CameraID: params.CameraId, LensID: params.LensId, Format: params.Format,
-		StartedFrom: convert.FromAPIDate(params.StartedFrom), StartedTo: convert.FromAPIDate(params.StartedTo),
+		StartedFrom: api.FromAPIDate(params.StartedFrom), StartedTo: api.FromAPIDate(params.StartedTo),
 	}
 	if params.Status != nil {
 		filter.Status = pointers.To(string(*params.Status))
@@ -146,7 +145,7 @@ func (controller *Controller) AddRolls(ctx context.Context, request api.AddRolls
 func (controller *Controller) HandOverRolls(ctx context.Context, request api.HandOverRollsRequestObject) (api.HandOverRollsResponseObject, error) {
 	body := request.Body
 	input := rollsvc.HandOverInput{
-		LabID: body.LabId, HandedAt: convert.FromAPIDate(body.HandedAt), Notes: body.Notes,
+		LabID: body.LabId, HandedAt: api.FromAPIDate(body.HandedAt), Notes: body.Notes,
 		ResolveScanOrders: func(queries gen.Querier) ([]processingsvc.ScanOrderInput, error) {
 			pick := func(ctx context.Context, scannerID *uuid.UUID, code *string) (uuid.UUID, error) {
 				return controller.scanners.PickForOrderIn(ctx, queries, scannerID, code)
@@ -166,7 +165,7 @@ func (controller *Controller) HandOverRolls(ctx context.Context, request api.Han
 }
 
 func (controller *Controller) ReturnLabHandoff(ctx context.Context, request api.ReturnLabHandoffRequestObject) (api.ReturnLabHandoffResponseObject, error) {
-	summary, err := controller.rolls.ReturnHandoff(ctx, request.Id, convert.OptionalDate(request.Body))
+	summary, err := controller.rolls.ReturnHandoff(ctx, request.Id, api.OptionalDate(request.Body))
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +210,7 @@ func (controller *Controller) PutRoll(ctx context.Context, request api.PutRollRe
 	detail, err := controller.rolls.Update(ctx, request.Id, rollsvc.Input{
 		FilmStockID: body.FilmStockId, Format: body.Format, Exposures: body.Exposures, Price: body.Price,
 		ExpiryYear: expiryYear, ExpiryMonth: expiryMonth, ShotISO: body.ShotIso,
-		StartedAt: convert.FromAPIDate(body.StartedAt), FinishedAt: convert.FromAPIDate(body.FinishedAt), Description: body.Description,
+		StartedAt: api.FromAPIDate(body.StartedAt), FinishedAt: api.FromAPIDate(body.FinishedAt), Description: body.Description,
 		IfMatch: ifMatch,
 	})
 	if err != nil {
@@ -242,7 +241,7 @@ func (controller *Controller) PutRollPlan(ctx context.Context, request api.PutRo
 func (controller *Controller) MarkRollDeveloped(ctx context.Context, request api.MarkRollDevelopedRequestObject) (api.MarkRollDevelopedResponseObject, error) {
 	input := rollsvc.DevelopedInput{}
 	if body := request.Body; body != nil {
-		input.DevelopedAt, input.Target = convert.FromAPIDate(body.Date), (*string)(body.Target)
+		input.DevelopedAt, input.Target = api.FromAPIDate(body.Date), (*string)(body.Target)
 	}
 	detail, err := controller.rolls.MarkDeveloped(ctx, request.Id, input)
 	if err != nil {
@@ -270,7 +269,7 @@ func (controller *Controller) UnmarkRollForScan(ctx context.Context, request api
 func (controller *Controller) LoadRoll(ctx context.Context, request api.LoadRollRequestObject) (api.LoadRollResponseObject, error) {
 	body := request.Body
 	detail, err := controller.rolls.Load(ctx, request.Id, rollsvc.LoadInput{
-		CameraID: body.CameraId, StartedAt: convert.FromAPIDate(body.StartedAt), ShotISO: body.ShotIso, LensIDs: body.LensIds,
+		CameraID: body.CameraId, StartedAt: api.FromAPIDate(body.StartedAt), ShotISO: body.ShotIso, LensIDs: body.LensIds,
 	})
 	if err != nil {
 		return nil, err
@@ -291,7 +290,7 @@ func (controller *Controller) FinishRoll(ctx context.Context, request api.Finish
 	if request.Body != nil {
 		finishedAt = request.Body
 	}
-	detail, err := controller.rolls.Finish(ctx, request.Id, convert.OptionalDate(finishedAt))
+	detail, err := controller.rolls.Finish(ctx, request.Id, api.OptionalDate(finishedAt))
 	if err != nil {
 		return nil, err
 	}
@@ -305,7 +304,7 @@ func (controller *Controller) GetExpiry(ctx context.Context, _ api.GetExpiryRequ
 	}
 	mapped := api.ExpiryView{Expiring: make([]api.ExpiryRoll, len(report.Expiring)), NoExpiry: toAPIRollSummaries(report.NoExpiry)}
 	for index, expiring := range report.Expiring {
-		mapped.Expiring[index] = api.ExpiryRoll{Roll: ToAPIRollSummary(expiring.Roll), ExpiresOn: convert.APIDate(expiring.ExpiresOn), Expired: expiring.Expired}
+		mapped.Expiring[index] = api.ExpiryRoll{Roll: ToAPIRollSummary(expiring.Roll), ExpiresOn: api.APIDate(expiring.ExpiresOn), Expired: expiring.Expired}
 	}
 	return api.GetExpiry200JSONResponse(mapped), nil
 }

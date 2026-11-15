@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"meta-frames-server/internal/api"
-	"meta-frames-server/internal/common/convert"
 	"meta-frames-server/internal/common/pointers"
+	"meta-frames-server/internal/db"
 	laborderservice "meta-frames-server/internal/services/laborder"
 )
 
@@ -19,7 +19,7 @@ func New(orders *laborderservice.Service) *Controller { return &Controller{order
 
 func toAPIJob(job laborderservice.Job) api.LabOrderJob {
 	mapped := api.LabOrderJob{
-		Id: job.ID, RollId: job.RollID, Type: api.ProcessingType(job.Type), SentAt: convert.APIDate(job.SentAt),
+		Id: job.ID, RollId: job.RollID, Type: api.ProcessingType(job.Type), SentAt: api.APIDate(job.SentAt),
 		StockName: job.StockName, Format: int(job.Format), Exposures: int(job.Exposures),
 	}
 	if job.OrderItemIDs != nil {
@@ -42,16 +42,16 @@ func toAPIOrder(view laborderservice.View) api.LabOrder {
 		}
 	}
 	return api.LabOrder{
-		Id: order.ID, LabId: order.LabID, LabName: view.LabName, Code: order.Code, OrderedAt: convert.Timestamp(order.OrderedAt),
-		DueDate: convert.ToAPIDate(order.DueDate), Vat: int(order.Vat), Discount: int(order.Discount), Notes: order.Notes,
+		Id: order.ID, LabId: order.LabID, LabName: view.LabName, Code: order.Code, OrderedAt: db.Timestamp(order.OrderedAt),
+		DueDate: api.ToAPIDate(order.DueDate), Vat: int(order.Vat), Discount: int(order.Discount), Notes: order.Notes,
 		Subtotal: view.Subtotal(), Total: view.Total(), Items: items,
-		CreatedAt: convert.Timestamp(order.CreatedAt), UpdatedAt: convert.Timestamp(order.UpdatedAt),
+		CreatedAt: db.Timestamp(order.CreatedAt), UpdatedAt: db.Timestamp(order.UpdatedAt),
 	}
 }
 
 func toInput(body *api.LabOrderInput) laborderservice.Input {
 	input := laborderservice.Input{
-		LabID: body.LabId, Code: body.Code, OrderedAt: body.OrderedAt, DueDate: convert.FromAPIDate(body.DueDate),
+		LabID: body.LabId, Code: body.Code, OrderedAt: body.OrderedAt, DueDate: api.FromAPIDate(body.DueDate),
 		VAT: pointers.Value(body.Vat), Discount: pointers.Value(body.Discount), Notes: body.Notes,
 		Items: make([]laborderservice.ItemInput, len(body.Items)),
 	}
