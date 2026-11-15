@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-11-15
+
 ### Added
 
 - `RollSummary` reports the roll's jobs: `developed` (a develop or develop_scan job has a developed date, negatives or scans back), `scanned` (a job has scans received), `openJobTypes` (the types of jobs still waiting for scans or negatives, each type once) and `openAtLab` (an open job is at a lab). `openAtLab` is false while the only open jobs are processed at home, even though the status is then `at_lab`.
@@ -113,7 +115,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `POST /rolls/bulk` with an `Idempotency-Key` failed while saving the response, because the JSON was sent as bytea hex.
 - `GET /cameras` returned 500 when a loaded roll had no start date. The camera now reports `daysLoaded` as 0 in that case.
 
-[Unreleased]: https://github.com/vhnam/meta-frames/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/vhnam/meta-frames/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/vhnam/meta-frames/compare/v3.0.0...v4.0.0
 [3.0.0]: https://github.com/vhnam/meta-frames/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/vhnam/meta-frames/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/vhnam/meta-frames/releases/tag/v1.0.0
