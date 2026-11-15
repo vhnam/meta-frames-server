@@ -7,8 +7,8 @@ import (
 
 	"meta-frames-server/internal/api"
 	"meta-frames-server/internal/common/apperror"
-	"meta-frames-server/internal/common/convert"
 	"meta-frames-server/internal/common/pointers"
+	"meta-frames-server/internal/db"
 	"meta-frames-server/internal/db/gen"
 	"meta-frames-server/internal/domain"
 	filmstocksvc "meta-frames-server/internal/services/filmstock"
@@ -30,7 +30,7 @@ func ToAPIFilmStock(stock gen.FilmStock) api.FilmStock {
 		Process: api.Process(stock.Process), Packaging: api.Packaging(stock.Packaging),
 		StockOrigin: stock.StockOrigin, PackOrigin: stock.PackOrigin, Description: stock.Description,
 		BaseStockId: stock.BaseStockID,
-		CreatedAt:   convert.Timestamp(stock.CreatedAt), UpdatedAt: convert.Timestamp(stock.UpdatedAt),
+		CreatedAt:   db.Timestamp(stock.CreatedAt), UpdatedAt: db.Timestamp(stock.UpdatedAt),
 	}
 }
 

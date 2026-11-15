@@ -9,7 +9,7 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"meta-frames-server/internal/api"
-	"meta-frames-server/internal/common/convert"
+	"meta-frames-server/internal/db"
 	"meta-frames-server/internal/db/gen"
 )
 
@@ -50,14 +50,14 @@ func fromRow(row gen.AppUser) *User {
 		PasswordHash:    valueOrEmpty(row.PasswordHash),
 		RecoverSelector: valueOrEmpty(row.RecoverSelector),
 		RecoverVerifier: valueOrEmpty(row.RecoverVerifier),
-		RecoverExpiry:   convert.Timestamp(row.RecoverTokenExpiry),
+		RecoverExpiry:   db.Timestamp(row.RecoverTokenExpiry),
 		AttemptCount:    int(row.AttemptCount),
-		LastAttempt:     convert.Timestamp(row.LastAttempt),
-		LockedUntil:     convert.Timestamp(row.LockedUntil),
+		LastAttempt:     db.Timestamp(row.LastAttempt),
+		LockedUntil:     db.Timestamp(row.LockedUntil),
 		OAuth2Provider:  valueOrEmpty(row.Oauth2Provider),
 		OAuth2UID:       valueOrEmpty(row.Oauth2Uid),
 		AvatarURL:       valueOrEmpty(row.AvatarUrl),
-		CreatedAt:       convert.Timestamp(row.CreatedAt),
+		CreatedAt:       db.Timestamp(row.CreatedAt),
 	}
 }
 
