@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Internal: the date and timestamp helpers moved from `internal/common/convert` to `internal/api` and `internal/db`. The API does not change.
+
 ## [4.0.0] - 2026-11-15
 
 ### Added
