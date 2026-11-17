@@ -11,7 +11,6 @@ import (
 
 	"meta-frames-server/internal/api"
 	"meta-frames-server/internal/common/apperror"
-	"meta-frames-server/internal/common/convert"
 	"meta-frames-server/internal/common/pointers"
 	"meta-frames-server/internal/db/gen"
 	"meta-frames-server/internal/domain"
@@ -279,7 +278,7 @@ func (controller *Controller) ImportScans(ctx context.Context, request api.Impor
 		return nil, err
 	}
 	if processing.Job.ScansReceivedAt != nil {
-		result.ScansReceivedAt = convert.APIDate(*processing.Job.ScansReceivedAt)
+		result.ScansReceivedAt = api.APIDate(*processing.Job.ScansReceivedAt)
 	}
 	return api.ImportScans200JSONResponse(result), nil
 }

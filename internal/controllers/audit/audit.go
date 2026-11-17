@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 
 	"meta-frames-server/internal/api"
-	"meta-frames-server/internal/common/convert"
 	"meta-frames-server/internal/common/pointers"
+	"meta-frames-server/internal/db"
 	"meta-frames-server/internal/db/gen"
 	auditsvc "meta-frames-server/internal/services/audit"
 )
@@ -23,7 +23,7 @@ func toAPIAuditLog(row gen.AuditLog) api.AuditLog {
 	return api.AuditLog{
 		Id: row.ID, EntityType: api.AuditEntityType(row.EntityType), EntityId: row.EntityID, Action: api.AuditAction(row.Action),
 		Before: decodeSnapshot(row.Before), After: decodeSnapshot(row.After),
-		Actor: row.Actor, RequestId: row.RequestID, CreatedAt: convert.Timestamp(row.CreatedAt),
+		Actor: row.Actor, RequestId: row.RequestID, CreatedAt: db.Timestamp(row.CreatedAt),
 	}
 }
 

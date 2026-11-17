@@ -7,9 +7,9 @@ import (
 
 	"meta-frames-server/internal/api"
 	"meta-frames-server/internal/common/apperror"
-	"meta-frames-server/internal/common/convert"
 	"meta-frames-server/internal/common/pointers"
 	"meta-frames-server/internal/controllers/lens"
+	"meta-frames-server/internal/db"
 	camerasvc "meta-frames-server/internal/services/camera"
 )
 
@@ -26,13 +26,13 @@ func toAPICamera(view camerasvc.View) api.Camera {
 		Id: view.Camera.ID, Brand: view.Camera.Brand, Model: view.Camera.Model, Mount: view.Camera.Mount,
 		Description: view.Camera.Description, HasFixedLens: view.Camera.HasFixedLens, IsActive: view.Camera.IsActive,
 		BuiltInLensId: view.BuiltInLensID,
-		CreatedAt:     convert.Timestamp(view.Camera.CreatedAt), UpdatedAt: convert.Timestamp(view.Camera.UpdatedAt),
+		CreatedAt:     db.Timestamp(view.Camera.CreatedAt), UpdatedAt: db.Timestamp(view.Camera.UpdatedAt),
 	}
 	if view.LoadedRoll != nil {
 		loaded := view.LoadedRoll
 		camera.LoadedRoll = &api.LoadedRoll{
 			RollId: loaded.RollID, StockId: loaded.StockID, StockBrand: loaded.StockBrand, StockName: loaded.StockName,
-			ShotIso: pointers.Int(loaded.ShotISO), StartedAt: convert.ToAPIDate(loaded.StartedAt), DaysLoaded: int(loaded.DaysLoaded),
+			ShotIso: pointers.Int(loaded.ShotISO), StartedAt: api.ToAPIDate(loaded.StartedAt), DaysLoaded: int(loaded.DaysLoaded),
 		}
 	}
 	return camera

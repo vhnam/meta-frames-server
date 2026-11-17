@@ -10,7 +10,6 @@ import (
 	"meta-frames-server/internal/api"
 	"meta-frames-server/internal/common/apperror"
 	"meta-frames-server/internal/common/clock"
-	"meta-frames-server/internal/common/convert"
 	"meta-frames-server/internal/common/pointers"
 	"meta-frames-server/internal/common/requestctx"
 	"meta-frames-server/internal/db/gen"
@@ -94,7 +93,7 @@ func TestRecordScansReceivedAndNegativesReturned(test *testing.T) {
 	jobID := uuid.New()
 	f.send(test, jobID)
 
-	given := convert.APIDate(time.Date(2026, 9, 20, 0, 0, 0, 0, time.UTC))
+	given := api.APIDate(time.Date(2026, 9, 20, 0, 0, 0, 0, time.UTC))
 	received, err := f.controller.RecordScansReceived(ctx, api.RecordScansReceivedRequestObject{Id: jobID, Body: &api.DateInput{Date: &given}})
 	if err != nil || received.(api.RecordScansReceived200JSONResponse).ScansReceivedAt == nil {
 		test.Fatalf("received=%#v err=%v", received, err)
