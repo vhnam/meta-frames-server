@@ -7,7 +7,7 @@ import (
 
 	"meta-frames-server/internal/api"
 	"meta-frames-server/internal/common/apperror"
-	"meta-frames-server/internal/common/convert"
+	"meta-frames-server/internal/db"
 	"meta-frames-server/internal/db/gen"
 	lenssvc "meta-frames-server/internal/services/lens"
 )
@@ -25,7 +25,7 @@ func toAPILens(lens gen.Lens) api.Lens {
 		Id: lens.ID, Brand: lens.Brand, Model: lens.Model, Mount: lens.Mount, Description: lens.Description,
 		FocalLength: int(lens.FocalLength), MaxAperture: lens.MaxAperture,
 		IsBuiltIn: lens.IsBuiltIn, IsActive: lens.IsActive,
-		CreatedAt: convert.Timestamp(lens.CreatedAt), UpdatedAt: convert.Timestamp(lens.UpdatedAt),
+		CreatedAt: db.Timestamp(lens.CreatedAt), UpdatedAt: db.Timestamp(lens.UpdatedAt),
 	}
 }
 

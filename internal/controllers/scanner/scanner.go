@@ -7,8 +7,8 @@ import (
 
 	"meta-frames-server/internal/api"
 	"meta-frames-server/internal/common/apperror"
-	"meta-frames-server/internal/common/convert"
 	"meta-frames-server/internal/common/pointers"
+	"meta-frames-server/internal/db"
 	"meta-frames-server/internal/db/gen"
 	"meta-frames-server/internal/domain"
 	scannersvc "meta-frames-server/internal/services/scanner"
@@ -26,7 +26,7 @@ func toAPIScanner(scanner gen.Scanner) api.Scanner {
 	mapped := api.Scanner{
 		Id: scanner.ID, Brand: scanner.Brand, Model: scanner.Model, Name: domain.ScannerName(scanner.Brand, scanner.Model),
 		Notes: scanner.Notes, BuiltIn: scannersvc.IsBuiltIn(scanner), DefaultSettings: api.ScanSettings(domain.DecodeScanSettings(scanner.DefaultSettings)),
-		CreatedAt: convert.Timestamp(scanner.CreatedAt), UpdatedAt: convert.Timestamp(scanner.UpdatedAt),
+		CreatedAt: db.Timestamp(scanner.CreatedAt), UpdatedAt: db.Timestamp(scanner.UpdatedAt),
 	}
 	if scanner.Kind != nil {
 		kind := api.ScannerKind(*scanner.Kind)

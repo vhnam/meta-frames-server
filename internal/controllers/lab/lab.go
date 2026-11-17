@@ -7,7 +7,7 @@ import (
 
 	"meta-frames-server/internal/api"
 	"meta-frames-server/internal/common/apperror"
-	"meta-frames-server/internal/common/convert"
+	"meta-frames-server/internal/db"
 	labsvc "meta-frames-server/internal/services/lab"
 )
 
@@ -23,7 +23,7 @@ func toAPILab(view labsvc.View) api.Lab {
 	lab := view.Lab
 	return api.Lab{
 		Id: lab.ID, Name: lab.Name, Address: lab.Address, ScannerIds: view.ScannerIDs, DefaultScannerId: view.DefaultScannerID,
-		CreatedAt: convert.Timestamp(lab.CreatedAt), UpdatedAt: convert.Timestamp(lab.UpdatedAt),
+		CreatedAt: db.Timestamp(lab.CreatedAt), UpdatedAt: db.Timestamp(lab.UpdatedAt),
 	}
 }
 

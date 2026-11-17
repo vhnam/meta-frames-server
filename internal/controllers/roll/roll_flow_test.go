@@ -10,7 +10,6 @@ import (
 	"meta-frames-server/internal/api"
 	"meta-frames-server/internal/common/apperror"
 	"meta-frames-server/internal/common/clock"
-	"meta-frames-server/internal/common/convert"
 	"meta-frames-server/internal/common/pointers"
 	"meta-frames-server/internal/db/gen"
 	"meta-frames-server/internal/domain"
@@ -62,7 +61,7 @@ func TestListAndGetRolls(test *testing.T) {
 	f := newFixture()
 	ctx := context.Background()
 	status := api.RollStatus(domain.RollStatusInStock)
-	from := convert.APIDate(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	from := api.APIDate(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 
 	listed, err := f.controller.ListRolls(ctx, api.ListRollsRequestObject{Params: api.ListRollsParams{Status: &status, StartedFrom: &from}})
 	if err != nil || len(listed.(api.ListRolls200JSONResponse)) != 1 {
@@ -118,7 +117,7 @@ func TestLoadRollLensesAndFinish(test *testing.T) {
 	if _, err := f.controller.FinishRoll(ctx, api.FinishRollRequestObject{Id: f.rollID, Body: &api.DateInput{}}); err != nil {
 		test.Fatalf("finishing again on the same day is a no-op: %v", err)
 	}
-	otherDay := convert.APIDate(time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC))
+	otherDay := api.APIDate(time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC))
 	if _, err := f.controller.FinishRoll(ctx, api.FinishRollRequestObject{Id: f.rollID, Body: &api.DateInput{Date: &otherDay}}); err == nil {
 		test.Fatal("finishing again on another day must fail")
 	}
