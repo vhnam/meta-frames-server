@@ -43,7 +43,11 @@ Settings come from environment variables. See [configs/.env.example](configs/.en
 | `make test` | Unit and integration tests (needs Docker) |
 | `make cover` | Coverage of hand-written code |
 | `make lint` | golangci-lint |
+| `make scan` | Trivy scan: vulnerabilities, secrets and misconfigurations |
+| `make hooks` | Use the git hooks in `.githooks/` (run once per clone) |
 | `make db-reset` | Wipe and restart the local database |
+
+Security scan: install [Trivy](https://trivy.dev/) (`brew install trivy`) and run `make hooks` once. The pre-push hook then runs the scan and blocks the push on a HIGH or CRITICAL secret or misconfiguration, or a HIGH or CRITICAL vulnerability that has a fix. Settings are in `trivy.yaml`; local `.env` and `google_sign_in.json` files are not scanned. To accept a finding, add its ID to `.trivyignore` with a comment that says why.
 
 Workflow: edit `api/openapi.yaml` first, then run `make gen`. Keep the spec examples valid, because `internal/server/spec_test.go` checks them.
 
