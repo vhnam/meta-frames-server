@@ -1,0 +1,4 @@
+# Password-reset token example in the OpenAPI spec (commit 511f605). Not a credential. The example is now a placeholder.
+511f605dd8950380263065a8a86ab83a6d37dfb0:internal/api/api.gen.go:generic-api-key:691
+511f605dd8950380263065a8a86ab83a6d37dfb0:api/openapi.yaml:generic-api-key:240
+511f605dd8950380263065a8a86ab83a6d37dfb0:api/openapi.yaml:generic-api-key:3354
