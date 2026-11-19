@@ -7,9 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Trivy security scan. `make scan` checks the Go dependencies for known vulnerabilities and the repository for secrets and misconfigurations (`trivy.yaml`). After `make hooks`, the pre-push hook runs it and blocks the push on a HIGH or CRITICAL finding.
+
 ### Changed
 
 - Internal: the date and timestamp helpers moved from `internal/common/convert` to `internal/api` and `internal/db`. The API does not change.
+- The container image states `USER nonroot:nonroot`. The distroless base already ran as that user, so runtime behavior does not change.
+
+### Security
+
+- `golang.org/x/net` 0.61.0 to 0.62.0 (CVE-2026-78661, denial of service through crafted HTML input).
+- `github.com/moby/go-archive` 0.2.0 to 0.3.0 (CVE-2026-17106, file write through link following in tar extraction). Only the integration tests use it, through testcontainers.
 
 ## [4.0.0] - 2026-11-15
 
