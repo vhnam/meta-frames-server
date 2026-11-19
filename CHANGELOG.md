@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Trivy security scan. `make scan` checks the Go dependencies for known vulnerabilities and the repository for secrets and misconfigurations (`trivy.yaml`). After `make hooks`, the pre-push hook runs it and blocks the push on a HIGH or CRITICAL finding.
+- Gitleaks secret scan. `make secrets` checks the git history for secrets. The pre-commit hook checks the staged changes and blocks the commit when it finds a secret.
 
 ### Changed
 
