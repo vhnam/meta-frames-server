@@ -1,4 +1,4 @@
-.PHONY: gen run run-prod migrate-prod-status migrate-prod deploy dev test test-unit cover lint docker-build db-up db-down db-reset
+.PHONY: gen run run-prod migrate-prod-status migrate-prod deploy dev test test-unit cover lint scan hooks docker-build db-up db-down db-reset
 
 # Exports the settings in .env (if present) to the server. The shell reads the file, so
 # "KEY=value   # comment" lines work; values in .env win over the current environment.
@@ -48,6 +48,14 @@ cover:
 
 lint:
 	go tool golangci-lint run
+
+# Vulnerability, secret and misconfiguration scan. Settings: trivy.yaml.
+scan:
+	trivy fs .
+
+# Use the tracked hooks in .githooks (pre-push runs the Trivy scan).
+hooks:
+	git config core.hooksPath .githooks
 
 db-up:
 	docker compose -f deployments/compose.yml up -d --wait
