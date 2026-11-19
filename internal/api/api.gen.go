@@ -1132,7 +1132,7 @@ type RegisterInput struct {
 	Password string              `json:"password"`
 }
 
-// ResetPasswordInput Example: {"password":"Fresh-Neg4tive","token":"q3Jv0b5i8W1Xw9yQ5lD0p6c8R2nS7tU4vA1bC3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5zA7bC9dE1fG3hI5jK7lM9nO1pQ3rS5tU7vW9xY1zA3bC5dE7fA=="}
+// ResetPasswordInput Example: {"password":"Fresh-Neg4tive","token":"reset-token-from-email"}
 type ResetPasswordInput struct {
 	Password string `json:"password"`
 	Token    string `json:"token"`

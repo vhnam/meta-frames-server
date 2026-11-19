@@ -239,7 +239,7 @@ paths:
               reset:
                 summary: Token from the email and the new password
                 value:
-                  token: "q3Jv0b5i8W1Xw9yQ5lD0p6c8R2nS7tU4vA1bC3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5zA7bC9dE1fG3hI5jK7lM9nO1pQ3rS5tU7vW9xY1zA3bC5dE7fA=="
+                  token: "reset-token-from-email"
                   password: "Fresh-Neg4tive"
       responses:
         "200":
@@ -4297,7 +4297,7 @@ components:
         token: { type: string, minLength: 1 }
         password: { type: string, minLength: 8, maxLength: 72 }
       example:
-        token: "q3Jv0b5i8W1Xw9yQ5lD0p6c8R2nS7tU4vA1bC3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5zA7bC9dE1fG3hI5jK7lM9nO1pQ3rS5tU7vW9xY1zA3bC5dE7fA=="
+        token: "reset-token-from-email"
         password: "Fresh-Neg4tive"
 
     ActiveInput:
