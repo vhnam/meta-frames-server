@@ -85,3 +85,32 @@ func TestLoadReportsEveryProblemAndHidesPasswords(test *testing.T) {
 		test.Fatalf("error leaks the password: %v", err)
 	}
 }
+
+func TestLoadCollectsMobileClientIDs(test *testing.T) {
+	cases := map[string]struct {
+		android, ios, legacy string
+		want                 []string
+	}{
+		"android only":          {android: "android-client", want: []string{"android-client"}},
+		"ios only":              {ios: " ios-client ", want: []string{"ios-client"}},
+		"both":                  {android: "android-client", ios: "ios-client", want: []string{"android-client", "ios-client"}},
+		"blank":                 {android: "  ", ios: "", want: nil},
+		"removed variable only": {legacy: "old-client", want: nil},
+		"legacy with current":   {android: " android-client ", legacy: "old-client", want: []string{"android-client"}},
+		"comma in platform ID":  {ios: " ios-one,ios-two ", want: []string{"ios-one,ios-two"}},
+	}
+	for name, testCase := range cases {
+		test.Run(name, func(test *testing.T) {
+			test.Setenv("GOOGLE_ANDROID_CLIENT_ID", testCase.android)
+			test.Setenv("GOOGLE_IOS_CLIENT_ID", testCase.ios)
+			test.Setenv("GOOGLE_MOBILE_CLIENT_IDS", testCase.legacy)
+			loaded, err := Load()
+			if err != nil {
+				test.Fatal(err)
+			}
+			if !reflect.DeepEqual(loaded.GoogleMobileClientIDs, testCase.want) {
+				test.Fatalf("GoogleMobileClientIDs = %q, want %q", loaded.GoogleMobileClientIDs, testCase.want)
+			}
+		})
+	}
+}
