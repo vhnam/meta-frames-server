@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Internal: the date and timestamp helpers moved from `internal/common/convert` to `internal/api` and `internal/db`. The API does not change.
 - The container image states `USER nonroot:nonroot`. The distroless base already ran as that user, so runtime behavior does not change.
+- Internal: the release steps and the naming rule in `AGENTS.md` no longer name `package.json`, `vp lint`, or valibot, which the server does not use. The GitNexus rules use plain wording, and the impact check no longer applies to comment, docs, and formatting edits.
 
 ### Removed
 
