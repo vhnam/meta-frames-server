@@ -31,7 +31,7 @@ type Config struct {
 	// Sign in with Google; disabled unless both are set.
 	GoogleClientID     string
 	GoogleClientSecret string
-	// iOS and Android OAuth clients allowed to sign in with an ID token.
+	// Android and iOS OAuth client ids allowed to sign in with an ID token; empty ones are left out.
 	GoogleMobileClientIDs []string
 }
 
@@ -55,8 +55,11 @@ func Load() (Config, error) {
 
 		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
 		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
-
-		GoogleMobileClientIDs: splitList(os.Getenv("GOOGLE_MOBILE_CLIENT_IDS")),
+	}
+	for _, name := range []string{"GOOGLE_ANDROID_CLIENT_ID", "GOOGLE_IOS_CLIENT_ID"} {
+		if clientID := strings.TrimSpace(os.Getenv(name)); clientID != "" {
+			config.GoogleMobileClientIDs = append(config.GoogleMobileClientIDs, clientID)
+		}
 	}
 
 	maxConns, err := nonNegativeInt32("DB_MAX_CONNS")

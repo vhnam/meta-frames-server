@@ -345,7 +345,7 @@ paths:
       summary: Sign in a mobile app with a Google ID token
       description: |
         For native apps, which get an ID token from the device's Google account picker. The server checks the token
-        against Google's keys and requires its audience to be `GOOGLE_CLIENT_ID` or one of `GOOGLE_MOBILE_CLIENT_IDS`.
+        against Google's keys and requires its audience to be `GOOGLE_CLIENT_ID`, `GOOGLE_ANDROID_CLIENT_ID`, or `GOOGLE_IOS_CLIENT_ID`.
         It then finds or creates the account as the browser flow does and sets the session cookie, like `/auth/login`.
       requestBody:
         required: true

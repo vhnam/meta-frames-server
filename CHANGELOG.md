@@ -11,11 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Trivy security scan. `make scan` checks the Go dependencies for known vulnerabilities and the repository for secrets and misconfigurations (`trivy.yaml`). After `make hooks`, the pre-push hook runs it and blocks the push on a HIGH or CRITICAL finding.
 - Gitleaks secret scan. `make secrets` checks the git history for secrets. The pre-commit hook checks the staged changes and blocks the commit when it finds a secret.
+- `GOOGLE_ANDROID_CLIENT_ID` and `GOOGLE_IOS_CLIENT_ID` name the Android and iOS OAuth clients that `POST /auth/google/token` accepts, besides `GOOGLE_CLIENT_ID`. Each holds one client id.
 
 ### Changed
 
 - Internal: the date and timestamp helpers moved from `internal/common/convert` to `internal/api` and `internal/db`. The API does not change.
 - The container image states `USER nonroot:nonroot`. The distroless base already ran as that user, so runtime behavior does not change.
+
+### Removed
+
+- **Breaking:** `GOOGLE_MOBILE_CLIENT_IDS`. The server ignores it. Set `GOOGLE_ANDROID_CLIENT_ID` and `GOOGLE_IOS_CLIENT_ID` before you deploy. Until you do, `POST /auth/google/token` rejects ID tokens issued to the Android or iOS client. Tokens issued to `GOOGLE_CLIENT_ID` still work.
 
 ### Security
 
