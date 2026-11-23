@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-11-24
+
 ### Added
 
 - Trivy security scan. `make scan` checks the Go dependencies for known vulnerabilities and the repository for secrets and misconfigurations (`trivy.yaml`). After `make hooks`, the pre-push hook runs it and blocks the push on a HIGH or CRITICAL finding.
@@ -137,7 +139,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `POST /rolls/bulk` with an `Idempotency-Key` failed while saving the response, because the JSON was sent as bytea hex.
 - `GET /cameras` returned 500 when a loaded roll had no start date. The camera now reports `daysLoaded` as 0 in that case.
 
-[Unreleased]: https://github.com/vhnam/meta-frames/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/vhnam/meta-frames/compare/v5.0.0...HEAD
+[5.0.0]: https://github.com/vhnam/meta-frames/compare/v4.0.0...v5.0.0
 [4.0.0]: https://github.com/vhnam/meta-frames/compare/v3.0.0...v4.0.0
 [3.0.0]: https://github.com/vhnam/meta-frames/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/vhnam/meta-frames/compare/v1.0.0...v2.0.0
