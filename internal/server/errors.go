@@ -24,9 +24,16 @@ func WriteProblem(ctx *gin.Context, status int, code, message string) {
 	ctx.AbortWithStatusJSON(status, api.Problem{Code: code, Message: message})
 }
 
-// RequestErrorHandler handles malformed requests detected by the generated server.
-func RequestErrorHandler(ctx *gin.Context, err error) {
-	WriteProblem(ctx, http.StatusBadRequest, "bad_request", err.Error())
+// RequestErrorHandler handles malformed requests detected by the generated server. The message is
+// fixed: the decoder's error text can name Go types.
+func RequestErrorHandler(ctx *gin.Context, _ error) {
+	WriteProblem(ctx, http.StatusBadRequest, "bad_request", "invalid request")
+}
+
+// ParameterErrorHandler handles path and query parameter binding errors of the generated wrapper.
+// The message is fixed: the binding error names Go types (for example uuid.UUID).
+func ParameterErrorHandler(ctx *gin.Context, _ error, status int) {
+	WriteProblem(ctx, status, "bad_request", "invalid path or query parameter")
 }
 
 // ResponseErrorHandler turns errors returned by controllers into HTTP responses.

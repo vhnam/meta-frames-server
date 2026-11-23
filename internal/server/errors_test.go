@@ -80,7 +80,19 @@ func TestRequestErrorHandlerReportsBadRequest(test *testing.T) {
 	if recorder.Code != http.StatusBadRequest {
 		test.Fatalf("status = %d", recorder.Code)
 	}
-	if problem := decodeProblem(test, recorder); problem.Code != "bad_request" || problem.Message != "invalid UUID" {
+	if problem := decodeProblem(test, recorder); problem.Code != "bad_request" || problem.Message != "invalid request" {
+		test.Fatalf("problem = %+v", problem)
+	}
+}
+
+func TestParameterErrorHandlerKeepsWrapperStatus(test *testing.T) {
+	ctx, recorder := newTestContext()
+	ParameterErrorHandler(ctx, errors.New("cannot decode *uuid.UUID"), http.StatusUnprocessableEntity)
+
+	if recorder.Code != http.StatusUnprocessableEntity {
+		test.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnprocessableEntity)
+	}
+	if problem := decodeProblem(test, recorder); problem.Code != "bad_request" || problem.Message != "invalid path or query parameter" {
 		test.Fatalf("problem = %+v", problem)
 	}
 }

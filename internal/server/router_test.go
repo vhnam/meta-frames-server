@@ -81,6 +81,41 @@ func TestInvalidRequestsAreRejectedWithAProblemBody(test *testing.T) {
 	}
 }
 
+func TestMalformedParametersReturnSanitizedProblem(test *testing.T) {
+	handler := newHandler(test)
+	for _, path := range []string{
+		"/rolls/not-a-uuid",
+		"/cameras/not-a-uuid",
+		"/rolls?cameraId=not-a-uuid",
+	} {
+		test.Run(path, func(test *testing.T) {
+			recorder := serve(handler, httptest.NewRequest(http.MethodGet, path, nil))
+			assertBadRequestProblem(test, recorder, "invalid path or query parameter")
+		})
+	}
+}
+
+func TestMalformedUploadReturnsSanitizedDecodeProblem(test *testing.T) {
+	// The upload route skips OpenAPI body validation, so its multipart decoder handles this request.
+	request := httptest.NewRequest(http.MethodPost, "/processing/"+uuid.NewString()+"/scans", strings.NewReader("invalid upload"))
+	request.Header.Set("Content-Type", "multipart/form-data")
+	assertBadRequestProblem(test, serve(newHandler(test), request), "invalid request")
+}
+
+func assertBadRequestProblem(test *testing.T, recorder *httptest.ResponseRecorder, message string) {
+	test.Helper()
+	if recorder.Code != http.StatusBadRequest {
+		test.Fatalf("status=%d body=%s", recorder.Code, recorder.Body)
+	}
+	if problem := decodeProblem(test, recorder); problem.Code != "bad_request" || problem.Message != message {
+		test.Fatalf("problem = %+v, want bad_request with %q", problem, message)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(recorder.Body.Bytes(), &fields); err != nil || len(fields) != 2 {
+		test.Fatalf("body = %q, want only code and message", recorder.Body.String())
+	}
+}
+
 func TestBusinessErrorsKeepTheirStatus(test *testing.T) {
 	recorder := serve(newHandler(test), httptest.NewRequest("GET", "/cameras/"+uuid.NewString(), nil))
 	if recorder.Code != http.StatusNotFound || !strings.Contains(recorder.Body.String(), "not_found") {
