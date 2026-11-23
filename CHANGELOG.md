@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `golang.org/x/net` 0.61.0 to 0.62.0 (CVE-2026-78661, denial of service through crafted HTML input).
 - `github.com/moby/go-archive` 0.2.0 to 0.3.0 (CVE-2026-17106, file write through link following in tar extraction). Only the integration tests use it, through testcontainers.
+- A malformed id or parameter now returns the standard `{code, message}` error body, without internal type names. A request body the server cannot decode now returns the fixed message "invalid request" instead of the decoder's error text.
 
 ## [4.0.0] - 2026-11-15
 

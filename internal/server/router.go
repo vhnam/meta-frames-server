@@ -60,7 +60,7 @@ func NewHandler(appControllers api.StrictServerInterface, accounts *auth.Auth, c
 		HandlerErrorFunc:         ResponseErrorHandler,
 		ResponseErrorHandlerFunc: ResponseErrorHandler,
 	})
-	api.RegisterHandlers(router, strictHandler)
+	api.RegisterHandlersWithOptions(router, strictHandler, api.GinServerOptions{ErrorHandler: ParameterErrorHandler})
 	return router, nil
 }
 
