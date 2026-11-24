@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Accounts have a currency (`VND`, `USD` or `EUR`, default `VND`) and a currency lock. A migration locks every account that already holds money data: a roll or job price (zero and deleted records count), a lab order, or audit history that shows one, such as a cleared price or a deleted order line. Claiming records from before accounts existed locks the new owner the same way. No amount changes. The setting is not exposed in the API yet.
+
 ## [5.1.0] - 2026-11-24
 
 ### Security

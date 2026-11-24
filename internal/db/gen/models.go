@@ -28,6 +28,8 @@ type AppUser struct {
 	Oauth2Provider     *string
 	Oauth2Uid          *string
 	AvatarUrl          *string
+	CurrencyCode       string
+	CurrencyLocked     bool
 }
 
 type AuditLog struct {

@@ -50,7 +50,7 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, userID uuid.UUID) erro
 }
 
 const getSessionUser = `-- name: GetSessionUser :one
-SELECT app_user.id, app_user.email, app_user.name, app_user.password_hash, app_user.recover_selector, app_user.recover_verifier, app_user.recover_token_expiry, app_user.created_at, app_user.updated_at, app_user.attempt_count, app_user.last_attempt, app_user.locked_until, app_user.oauth2_provider, app_user.oauth2_uid, app_user.avatar_url FROM user_session JOIN app_user ON app_user.id = user_session.user_id
+SELECT app_user.id, app_user.email, app_user.name, app_user.password_hash, app_user.recover_selector, app_user.recover_verifier, app_user.recover_token_expiry, app_user.created_at, app_user.updated_at, app_user.attempt_count, app_user.last_attempt, app_user.locked_until, app_user.oauth2_provider, app_user.oauth2_uid, app_user.avatar_url, app_user.currency_code, app_user.currency_locked FROM user_session JOIN app_user ON app_user.id = user_session.user_id
 WHERE user_session.token_hash = $1 AND user_session.expires_at > now()
 `
 
@@ -73,12 +73,14 @@ func (q *Queries) GetSessionUser(ctx context.Context, tokenHash []byte) (AppUser
 		&i.Oauth2Provider,
 		&i.Oauth2Uid,
 		&i.AvatarUrl,
+		&i.CurrencyCode,
+		&i.CurrencyLocked,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url FROM app_user WHERE email = $1
+SELECT id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked FROM app_user WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (AppUser, error) {
@@ -100,12 +102,14 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (AppUser, er
 		&i.Oauth2Provider,
 		&i.Oauth2Uid,
 		&i.AvatarUrl,
+		&i.CurrencyCode,
+		&i.CurrencyLocked,
 	)
 	return i, err
 }
 
 const getUserByOAuth2 = `-- name: GetUserByOAuth2 :one
-SELECT id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url FROM app_user WHERE oauth2_provider = $1 AND oauth2_uid = $2
+SELECT id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked FROM app_user WHERE oauth2_provider = $1 AND oauth2_uid = $2
 `
 
 type GetUserByOAuth2Params struct {
@@ -132,12 +136,14 @@ func (q *Queries) GetUserByOAuth2(ctx context.Context, arg GetUserByOAuth2Params
 		&i.Oauth2Provider,
 		&i.Oauth2Uid,
 		&i.AvatarUrl,
+		&i.CurrencyCode,
+		&i.CurrencyLocked,
 	)
 	return i, err
 }
 
 const getUserByRecoverSelector = `-- name: GetUserByRecoverSelector :one
-SELECT id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url FROM app_user WHERE recover_selector = $1
+SELECT id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked FROM app_user WHERE recover_selector = $1
 `
 
 func (q *Queries) GetUserByRecoverSelector(ctx context.Context, recoverSelector *string) (AppUser, error) {
@@ -159,6 +165,8 @@ func (q *Queries) GetUserByRecoverSelector(ctx context.Context, recoverSelector 
 		&i.Oauth2Provider,
 		&i.Oauth2Uid,
 		&i.AvatarUrl,
+		&i.CurrencyCode,
+		&i.CurrencyLocked,
 	)
 	return i, err
 }
@@ -181,7 +189,7 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) er
 const insertUser = `-- name: InsertUser :one
 INSERT INTO app_user (id, email, name, password_hash, oauth2_provider, oauth2_uid, avatar_url)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url
+RETURNING id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked
 `
 
 type InsertUserParams struct {
@@ -221,6 +229,8 @@ func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) (AppUser
 		&i.Oauth2Provider,
 		&i.Oauth2Uid,
 		&i.AvatarUrl,
+		&i.CurrencyCode,
+		&i.CurrencyLocked,
 	)
 	return i, err
 }
@@ -231,7 +241,7 @@ SET name = $2, password_hash = $3, recover_selector = $4, recover_verifier = $5,
     attempt_count = $7, last_attempt = $8, locked_until = $9, oauth2_provider = $10, oauth2_uid = $11,
     avatar_url = $12
 WHERE id = $1
-RETURNING id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url
+RETURNING id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked
 `
 
 type UpdateUserParams struct {
@@ -281,6 +291,8 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (AppUser
 		&i.Oauth2Provider,
 		&i.Oauth2Uid,
 		&i.AvatarUrl,
+		&i.CurrencyCode,
+		&i.CurrencyLocked,
 	)
 	return i, err
 }
