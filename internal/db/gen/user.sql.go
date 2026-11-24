@@ -108,6 +108,35 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (AppUser, er
 	return i, err
 }
 
+const getUserByID = `-- name: GetUserByID :one
+SELECT id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked FROM app_user WHERE id = $1
+`
+
+func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (AppUser, error) {
+	row := q.db.QueryRow(ctx, getUserByID, id)
+	var i AppUser
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Name,
+		&i.PasswordHash,
+		&i.RecoverSelector,
+		&i.RecoverVerifier,
+		&i.RecoverTokenExpiry,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AttemptCount,
+		&i.LastAttempt,
+		&i.LockedUntil,
+		&i.Oauth2Provider,
+		&i.Oauth2Uid,
+		&i.AvatarUrl,
+		&i.CurrencyCode,
+		&i.CurrencyLocked,
+	)
+	return i, err
+}
+
 const getUserByOAuth2 = `-- name: GetUserByOAuth2 :one
 SELECT id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked FROM app_user WHERE oauth2_provider = $1 AND oauth2_uid = $2
 `
@@ -235,6 +264,35 @@ func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) (AppUser
 	return i, err
 }
 
+const lockUserForCurrency = `-- name: LockUserForCurrency :one
+SELECT id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked FROM app_user WHERE id = $1 FOR NO KEY UPDATE
+`
+
+func (q *Queries) LockUserForCurrency(ctx context.Context, id uuid.UUID) (AppUser, error) {
+	row := q.db.QueryRow(ctx, lockUserForCurrency, id)
+	var i AppUser
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Name,
+		&i.PasswordHash,
+		&i.RecoverSelector,
+		&i.RecoverVerifier,
+		&i.RecoverTokenExpiry,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AttemptCount,
+		&i.LastAttempt,
+		&i.LockedUntil,
+		&i.Oauth2Provider,
+		&i.Oauth2Uid,
+		&i.AvatarUrl,
+		&i.CurrencyCode,
+		&i.CurrencyLocked,
+	)
+	return i, err
+}
+
 const updateUser = `-- name: UpdateUser :one
 UPDATE app_user
 SET name = $2, password_hash = $3, recover_selector = $4, recover_verifier = $5, recover_token_expiry = $6,
@@ -274,6 +332,40 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (AppUser
 		arg.Oauth2Uid,
 		arg.AvatarUrl,
 	)
+	var i AppUser
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Name,
+		&i.PasswordHash,
+		&i.RecoverSelector,
+		&i.RecoverVerifier,
+		&i.RecoverTokenExpiry,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AttemptCount,
+		&i.LastAttempt,
+		&i.LockedUntil,
+		&i.Oauth2Provider,
+		&i.Oauth2Uid,
+		&i.AvatarUrl,
+		&i.CurrencyCode,
+		&i.CurrencyLocked,
+	)
+	return i, err
+}
+
+const updateUserCurrency = `-- name: UpdateUserCurrency :one
+UPDATE app_user SET currency_code = $2 WHERE id = $1 RETURNING id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked
+`
+
+type UpdateUserCurrencyParams struct {
+	ID           uuid.UUID
+	CurrencyCode string
+}
+
+func (q *Queries) UpdateUserCurrency(ctx context.Context, arg UpdateUserCurrencyParams) (AppUser, error) {
+	row := q.db.QueryRow(ctx, updateUserCurrency, arg.ID, arg.CurrencyCode)
 	var i AppUser
 	err := row.Scan(
 		&i.ID,

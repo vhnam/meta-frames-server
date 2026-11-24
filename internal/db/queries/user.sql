@@ -1,6 +1,9 @@
 -- name: GetUserByEmail :one
 SELECT * FROM app_user WHERE email = $1;
 
+-- name: GetUserByID :one
+SELECT * FROM app_user WHERE id = $1;
+
 -- name: GetUserByRecoverSelector :one
 SELECT * FROM app_user WHERE recover_selector = $1;
 
@@ -39,3 +42,9 @@ DELETE FROM user_session WHERE expires_at <= now();
 -- Hands records created before accounts existed to a new account (see 00010_ownership.sql).
 -- name: ClaimUnownedData :exec
 SELECT claim_unowned_data($1);
+
+-- name: LockUserForCurrency :one
+SELECT * FROM app_user WHERE id = $1 FOR NO KEY UPDATE;
+
+-- name: UpdateUserCurrency :one
+UPDATE app_user SET currency_code = $2 WHERE id = $1 RETURNING *;

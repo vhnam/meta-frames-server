@@ -1216,6 +1216,13 @@ func (queries *Memory) GetUserByEmail(_ context.Context, email string) (gen.AppU
 	return gen.AppUser{}, pgx.ErrNoRows
 }
 
+func (queries *Memory) GetUserByID(_ context.Context, id uuid.UUID) (gen.AppUser, error) {
+	if user, found := queries.Users[id]; found {
+		return user, nil
+	}
+	return gen.AppUser{}, pgx.ErrNoRows
+}
+
 func (queries *Memory) GetUserByRecoverSelector(_ context.Context, selector *string) (gen.AppUser, error) {
 	for _, user := range queries.Users {
 		if user.RecoverSelector != nil && selector != nil && *user.RecoverSelector == *selector {

@@ -2,6 +2,10 @@
 package server
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"regexp"
 	"time"
@@ -53,7 +57,7 @@ func NewHandler(appControllers api.StrictServerInterface, accounts *auth.Auth, c
 		AllowCredentials: true,
 		MaxAge:           5 * time.Minute,
 	}))
-	router.Use(accounts.LoadUser(), sessionCheck, requestContext(), requestValidation(swagger))
+	router.Use(accounts.LoadUser(), sessionCheck, requestContext(), singleJSONValue(http.MethodPut, "/auth/me/currency"), requestValidation(swagger))
 	accounts.Mount(router)
 
 	strictHandler := api.NewStrictHandlerWithOptions(appControllers, nil, api.StrictGinServerOptions{
@@ -89,6 +93,38 @@ func requestContext() gin.HandlerFunc {
 		ctx.Next()
 	}
 }
+
+// singleJSONValue refuses a body for method and route that is not exactly one JSON value. The
+// validator and the binding each decode one value and ignore what follows, so `{...}{}` would
+// pass them. It runs for one route only: the money setting must never write on a doubtful body.
+func singleJSONValue(method, route string) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		if ctx.Request.Method != method || ctx.FullPath() != route {
+			ctx.Next()
+			return
+		}
+		raw, err := io.ReadAll(http.MaxBytesReader(ctx.Writer, ctx.Request.Body, 1<<20))
+		if err == nil {
+			decoder := json.NewDecoder(bytes.NewReader(raw))
+			var first, second json.RawMessage
+			if err = decoder.Decode(&first); err == nil {
+				err = decoder.Decode(&second)
+				if errors.Is(err, io.EOF) {
+					err = nil
+				} else if err == nil {
+					err = errors.New("data after the JSON value")
+				}
+			}
+		}
+		if err != nil {
+			WriteProblem(ctx, http.StatusBadRequest, "bad_request", "invalid request")
+			return
+		}
+		ctx.Request.Body = io.NopCloser(bytes.NewReader(raw))
+		ctx.Next()
+	}
+}
+
 func requestValidation(swagger *openapi3.T) gin.HandlerFunc {
 	validate := ginmiddleware.OapiRequestValidatorWithOptions(swagger, &ginmiddleware.Options{
 		SilenceServersWarning: true,

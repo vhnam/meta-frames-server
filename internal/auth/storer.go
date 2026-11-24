@@ -112,7 +112,12 @@ func (storer *Storer) Create(ctx context.Context, user authboss.User) error {
 			return err
 		}
 		// Records from before accounts existed go to the first account (later ones find none).
-		return queries.ClaimUnownedData(ctx, row.ID)
+		if err = queries.ClaimUnownedData(ctx, row.ID); err != nil {
+			return err
+		}
+		// The claim can lock the currency, so return the row as it is after the claim.
+		row, err = queries.GetUserByID(ctx, row.ID)
+		return err
 	})
 	if db.IsUniqueViolation(err) {
 		return authboss.ErrUserFound

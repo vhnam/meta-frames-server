@@ -28,6 +28,8 @@ type User struct {
 	OAuth2Provider  string // "google" for an account linked to Google
 	OAuth2UID       string // the provider's id for the account ("sub")
 	AvatarURL       string // the Google profile picture, an https URL
+	CurrencyCode    string // read-only here: only the currency endpoint writes it
+	CurrencyLocked  bool   // read-only here: money writes set it
 	CreatedAt       time.Time
 }
 
@@ -57,13 +59,21 @@ func fromRow(row gen.AppUser) *User {
 		OAuth2Provider:  valueOrEmpty(row.Oauth2Provider),
 		OAuth2UID:       valueOrEmpty(row.Oauth2Uid),
 		AvatarURL:       valueOrEmpty(row.AvatarUrl),
+		CurrencyCode:    row.CurrencyCode,
+		CurrencyLocked:  row.CurrencyLocked,
 		CreatedAt:       db.Timestamp(row.CreatedAt),
 	}
 }
 
+// PublicUser is the public view of an account row: the one mapping from a stored account to api.User.
+func PublicUser(row gen.AppUser) api.User { return fromRow(row).API() }
+
 // API is the public view of the user; it never includes the password hash or recovery state.
 func (user *User) API() api.User {
-	view := api.User{Id: user.ID, Email: openapi_types.Email(user.Email), CreatedAt: user.CreatedAt}
+	view := api.User{
+		Id: user.ID, Email: openapi_types.Email(user.Email), CreatedAt: user.CreatedAt,
+		CurrencyCode: api.CurrencyCode(user.CurrencyCode), CurrencyLocked: user.CurrencyLocked,
+	}
 	if user.Name != "" {
 		name := user.Name
 		view.Name = &name

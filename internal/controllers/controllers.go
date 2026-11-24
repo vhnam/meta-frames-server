@@ -59,7 +59,7 @@ var _ api.StrictServerInterface = (*Controllers)(nil)
 func New(appServices *services.Services) *Controllers {
 	return &Controllers{
 		HealthController:     &HealthController{},
-		accountController:    account.New(),
+		accountController:    account.New(appServices.Accounts),
 		auditController:      audit.New(appServices.Audit),
 		cameraController:     camera.New(appServices.Cameras),
 		lensController:       lens.New(appServices.Lenses),
