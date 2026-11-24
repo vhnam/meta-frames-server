@@ -4,7 +4,10 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
+
 	"meta-frames-server/internal/common/clock"
+	"meta-frames-server/internal/db/gen"
 	"meta-frames-server/internal/testutil"
 )
 
@@ -20,7 +23,11 @@ var (
 
 var errBoom = errors.New("boom")
 
-func newMemoryQueries() *memoryQueries { return testutil.NewMemory() }
+func newMemoryQueries() *memoryQueries {
+	queries := testutil.NewMemory()
+	queries.Users[uuid.Nil] = gen.AppUser{ID: uuid.Nil, CurrencyCode: "VND"} // the owner of a bare context
+	return queries
+}
 
 func newMemoryFiles() *memoryFiles { return testutil.NewMemoryFiles() }
 

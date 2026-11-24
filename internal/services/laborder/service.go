@@ -175,6 +175,10 @@ func (service *Service) Save(ctx context.Context, orderID uuid.UUID, input Input
 	)
 	err = service.store.InTransaction(ctx, func(queries gen.Querier) error {
 		owner := requestctx.Owner(ctx)
+		// Every create and update records money, so the account lock comes before the lab and order locks.
+		if err := shared.GuardMoneyWrite(ctx, queries); err != nil {
+			return err
+		}
 		if _, err := queries.GetLab(ctx, gen.GetLabParams{ID: input.LabID, OwnerID: owner}); err != nil {
 			if db.IsNoRows(err) {
 				return apperror.Unprocessable("unknown_lab", "lab does not exist")
