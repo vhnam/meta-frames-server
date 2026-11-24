@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- API responses send HSTS, `nosniff`, and anti-framing headers, except Gin's trailing-slash redirects.
+
 ## [5.0.0] - 2026-11-24
 
 ### Added
