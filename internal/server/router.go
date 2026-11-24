@@ -41,7 +41,8 @@ func NewHandler(appControllers api.StrictServerInterface, accounts *auth.Auth, c
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.ContextWithFallback = true // services read the caller from the request context
-	router.Use(requestid.New(), gin.Recovery())
+	// first, so the headers also reach the 401 from sessionCheck and the 403 from cors
+	router.Use(requestid.New(), gin.Recovery(), securityHeaders())
 	router.Use(gzip.Gzip(gzip.DefaultCompression)) // JSON compresses well; images are excluded by extension
 	// Browsers send Origin on every cross-origin write, and this rejects origins outside the list
 	// with a 403. Together with the SameSite session cookie that is the CSRF defence.
@@ -62,6 +63,18 @@ func NewHandler(appControllers api.StrictServerInterface, accounts *auth.Auth, c
 	})
 	api.RegisterHandlersWithOptions(router, strictHandler, api.GinServerOptions{ErrorHandler: ParameterErrorHandler})
 	return router, nil
+}
+
+// securityHeaders sets the response headers that every API reply carries, errors included.
+func securityHeaders() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		headers := ctx.Writer.Header()
+		headers.Set("Strict-Transport-Security", "max-age=31536000")
+		headers.Set("X-Content-Type-Options", "nosniff")
+		headers.Set("X-Frame-Options", "DENY")
+		headers.Set("Content-Security-Policy", "frame-ancestors 'none'")
+		ctx.Next()
+	}
 }
 
 // requestContext records who is calling (the signed-in account, whose records services are
