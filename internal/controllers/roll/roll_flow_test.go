@@ -33,6 +33,7 @@ func newFixture() fixture {
 	memory.Stocks[stockID] = gen.FilmStock{ID: stockID, Brand: "Kodak", Name: "Gold", BoxIso: "200"}
 	memory.Rolls[rollID] = gen.Roll{ID: rollID, FilmStockID: stockID, Status: domain.RollStatusInStock, Format: 135, Exposures: 36}
 	memory.Cameras[cameraID] = gen.Camera{ID: cameraID, IsActive: true, Mount: pointers.To("F")}
+	memory.Users[uuid.Nil] = gen.AppUser{ID: uuid.Nil, CurrencyCode: "VND"} // the owner of a bare context
 	return fixture{controller: New(all.Rolls, all.Scanners), memory: memory, stockID: stockID, rollID: rollID, cameraID: cameraID}
 }
 

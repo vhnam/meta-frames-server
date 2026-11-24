@@ -48,3 +48,6 @@ SELECT * FROM app_user WHERE id = $1 FOR NO KEY UPDATE;
 
 -- name: UpdateUserCurrency :one
 UPDATE app_user SET currency_code = $2 WHERE id = $1 RETURNING *;
+
+-- name: SetUserCurrencyLocked :exec
+UPDATE app_user SET currency_locked = true WHERE id = $1;

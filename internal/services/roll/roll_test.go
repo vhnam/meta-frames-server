@@ -560,6 +560,7 @@ func newLoadFixture() loadFixture {
 	queries.Stocks[stockID] = gen.FilmStock{ID: stockID, BoxIso: "400"}
 	queries.Rolls[rollID] = gen.Roll{ID: rollID, FilmStockID: stockID, Status: domain.RollStatusInStock}
 	queries.Cameras[cameraID] = gen.Camera{ID: cameraID, IsActive: true, Mount: stringRef("F")}
+	queries.Users[uuid.Nil] = gen.AppUser{ID: uuid.Nil, CurrencyCode: "VND"} // the owner of a bare context
 	return loadFixture{queries: queries, service: New(testutil.Store{Querier: queries}, fixedClock()), rollID: rollID, cameraID: cameraID}
 }
 

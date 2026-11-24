@@ -123,6 +123,8 @@ type Querier interface {
 	ListScanners(ctx context.Context, ownerID uuid.UUID) ([]Scanner, error)
 	ListSiblingStocks(ctx context.Context, arg ListSiblingStocksParams) ([]FilmStock, error)
 	LoadRoll(ctx context.Context, arg LoadRollParams) (Roll, error)
+	// A transaction-scoped lock on one (owner, key), so requests that share a key take turns.
+	LockIdempotencyKey(ctx context.Context, arg LockIdempotencyKeyParams) error
 	LockUserForCurrency(ctx context.Context, id uuid.UUID) (AppUser, error)
 	// A job in a handoff waits for the handoff's return; an old job with none, for its own.
 	NegativesAtLab(ctx context.Context, ownerID uuid.UUID) ([]NegativesAtLabRow, error)
@@ -152,6 +154,7 @@ type Querier interface {
 	SetRollScanRequest(ctx context.Context, arg SetRollScanRequestParams) error
 	SetRollStatus(ctx context.Context, arg SetRollStatusParams) error
 	SetScansReceived(ctx context.Context, arg SetScansReceivedParams) (Processing, error)
+	SetUserCurrencyLocked(ctx context.Context, id uuid.UUID) error
 	SoftDeleteBuiltInLenses(ctx context.Context, arg SoftDeleteBuiltInLensesParams) error
 	SoftDeleteCamera(ctx context.Context, arg SoftDeleteCameraParams) (int64, error)
 	SoftDeleteFilmStock(ctx context.Context, arg SoftDeleteFilmStockParams) (int64, error)

@@ -156,3 +156,7 @@ INSERT INTO idempotency_key (key, owner_id) VALUES ($1, $2) ON CONFLICT DO NOTHI
 
 -- name: FinishIdempotencyKey :exec
 UPDATE idempotency_key SET status = $2, response = $3 WHERE key = $1 AND owner_id = $4;
+
+-- A transaction-scoped lock on one (owner, key), so requests that share a key take turns.
+-- name: LockIdempotencyKey :exec
+SELECT pg_advisory_xact_lock(hashtextextended(sqlc.arg(owner_id)::uuid::text || ':' || sqlc.arg(key)::text, 0));

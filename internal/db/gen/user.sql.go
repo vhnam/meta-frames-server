@@ -293,6 +293,15 @@ func (q *Queries) LockUserForCurrency(ctx context.Context, id uuid.UUID) (AppUse
 	return i, err
 }
 
+const setUserCurrencyLocked = `-- name: SetUserCurrencyLocked :exec
+UPDATE app_user SET currency_locked = true WHERE id = $1
+`
+
+func (q *Queries) SetUserCurrencyLocked(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, setUserCurrencyLocked, id)
+	return err
+}
+
 const updateUser = `-- name: UpdateUser :one
 UPDATE app_user
 SET name = $2, password_hash = $3, recover_selector = $4, recover_verifier = $5, recover_token_expiry = $6,

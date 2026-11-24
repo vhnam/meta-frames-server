@@ -704,8 +704,16 @@ func (queries *Memory) ClaimIdempotencyKey(_ context.Context, arg gen.ClaimIdemp
 }
 
 func (queries *Memory) GetIdempotencyKey(_ context.Context, arg gen.GetIdempotencyKeyParams) (gen.IdempotencyKey, error) {
-	key := arg.Key
-	return queries.Idempotency[key], nil
+	stored, found := queries.Idempotency[arg.Key]
+	if !found {
+		return gen.IdempotencyKey{}, pgx.ErrNoRows
+	}
+	return stored, nil
+}
+
+// LockIdempotencyKey has nothing to wait for: the fake runs one request at a time.
+func (queries *Memory) LockIdempotencyKey(context.Context, gen.LockIdempotencyKeyParams) error {
+	return nil
 }
 
 func (queries *Memory) FinishIdempotencyKey(_ context.Context, arg gen.FinishIdempotencyKeyParams) error {
@@ -1221,6 +1229,19 @@ func (queries *Memory) GetUserByID(_ context.Context, id uuid.UUID) (gen.AppUser
 		return user, nil
 	}
 	return gen.AppUser{}, pgx.ErrNoRows
+}
+
+func (queries *Memory) LockUserForCurrency(ctx context.Context, id uuid.UUID) (gen.AppUser, error) {
+	return queries.GetUserByID(ctx, id)
+}
+
+// SetUserCurrencyLocked changes nothing for an unknown id, like an UPDATE that matches no row.
+func (queries *Memory) SetUserCurrencyLocked(_ context.Context, id uuid.UUID) error {
+	if user, found := queries.Users[id]; found {
+		user.CurrencyLocked = true
+		queries.Users[id] = user
+	}
+	return nil
 }
 
 func (queries *Memory) GetUserByRecoverSelector(_ context.Context, selector *string) (gen.AppUser, error) {

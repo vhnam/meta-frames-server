@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"slices"
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -53,11 +54,11 @@ func NewHandler(appControllers api.StrictServerInterface, accounts *auth.Auth, c
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     corsOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Content-Type", "Idempotency-Key", "If-Match", "If-None-Match"},
+		AllowHeaders:     []string{"Content-Type", "Idempotency-Key", "If-Match", "If-None-Match", "Expected-Currency"},
 		AllowCredentials: true,
 		MaxAge:           5 * time.Minute,
 	}))
-	router.Use(accounts.LoadUser(), sessionCheck, requestContext(), singleJSONValue(http.MethodPut, "/auth/me/currency"), requestValidation(swagger))
+	router.Use(accounts.LoadUser(), sessionCheck, requestContext(), singleJSONValue(moneyRoutes...), requestValidation(swagger))
 	accounts.Mount(router)
 
 	strictHandler := api.NewStrictHandlerWithOptions(appControllers, nil, api.StrictGinServerOptions{
@@ -85,7 +86,7 @@ func securityHeaders() gin.HandlerFunc {
 // limited to) and which request this is, so the audit trail can attribute every change.
 func requestContext() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		meta := requestctx.Meta{RequestID: requestid.Get(ctx)}
+		meta := requestctx.Meta{RequestID: requestid.Get(ctx)}.WithExpectedCurrency(ctx.Request.Header.Values("Expected-Currency"))
 		if user, ok := auth.CurrentUser(ctx.Request.Context()); ok {
 			meta.Actor, meta.OwnerID = user.Email, user.ID
 		}
@@ -94,12 +95,24 @@ func requestContext() gin.HandlerFunc {
 	}
 }
 
-// singleJSONValue refuses a body for method and route that is not exactly one JSON value. The
+// jsonRoute is a method and a Gin route string, such as PUT /rolls/:id.
+type jsonRoute struct{ method, path string }
+
+// moneyRoutes are the routes that record money or the currency. A doubtful body must never write there.
+var moneyRoutes = []jsonRoute{
+	{http.MethodPut, "/auth/me/currency"},
+	{http.MethodPost, "/rolls/bulk"},
+	{http.MethodPut, "/rolls/:id"},
+	{http.MethodPut, "/rolls/:id/processing/:jobId"},
+	{http.MethodPut, "/lab-orders/:id"},
+}
+
+// singleJSONValue refuses a body for the listed routes that is not exactly one JSON value. The
 // validator and the binding each decode one value and ignore what follows, so `{...}{}` would
-// pass them. It runs for one route only: the money setting must never write on a doubtful body.
-func singleJSONValue(method, route string) gin.HandlerFunc {
+// pass them. Other routes are left alone.
+func singleJSONValue(routes ...jsonRoute) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		if ctx.Request.Method != method || ctx.FullPath() != route {
+		if !slices.Contains(routes, jsonRoute{ctx.Request.Method, ctx.FullPath()}) {
 			ctx.Next()
 			return
 		}

@@ -2240,7 +2240,9 @@ paths:
         Send `Expected-Currency` (VND, USD or EUR) when the body records a non-null price. The check does not run for
         a body without a price. A missing header means VND.
         A value that differs from the account currency returns `409 currency_mismatch` before any write.
-        A completed replay with the same `Idempotency-Key` skips the check and returns the original result.
+        A completed replay with the same `Idempotency-Key` skips the currency check. If the key stored the original summaries, the replay
+        returns them unchanged. If the key stored roll IDs (a key from before this release, or a handoff key), the replay rebuilds the
+        summaries from the current rows.
       parameters:
         - { name: Idempotency-Key, in: header, schema: { type: string, maxLength: 200 } }
       requestBody:
