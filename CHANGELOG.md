@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.1.0] - 2026-11-24
+
 ### Security
 
 - API responses send HSTS, `nosniff`, and anti-framing headers, except Gin's trailing-slash redirects.
@@ -143,7 +145,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `POST /rolls/bulk` with an `Idempotency-Key` failed while saving the response, because the JSON was sent as bytea hex.
 - `GET /cameras` returned 500 when a loaded roll had no start date. The camera now reports `daysLoaded` as 0 in that case.
 
-[Unreleased]: https://github.com/vhnam/meta-frames/compare/v5.0.0...HEAD
+[Unreleased]: https://github.com/vhnam/meta-frames/compare/v5.1.0...HEAD
+[5.1.0]: https://github.com/vhnam/meta-frames/compare/v5.0.0...v5.1.0
 [5.0.0]: https://github.com/vhnam/meta-frames/compare/v4.0.0...v5.0.0
 [4.0.0]: https://github.com/vhnam/meta-frames/compare/v3.0.0...v4.0.0
 [3.0.0]: https://github.com/vhnam/meta-frames/compare/v2.0.0...v3.0.0
