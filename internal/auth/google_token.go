@@ -141,6 +141,10 @@ func (accounts *Auth) signInWithGoogleToken(ctx *gin.Context) {
 		return
 	}
 	if err := accounts.storer.SaveOAuth2(ctx, user); err != nil {
+		if errors.Is(err, ErrIdentityConflict) {
+			problem(http.StatusConflict, "account_conflict", "This email already belongs to another account.")
+			return
+		}
 		accounts.tokenSignInFailed(ctx, err)
 		return
 	}

@@ -192,16 +192,25 @@ func httpsURL(raw string) string {
 	return raw
 }
 
-// SaveOAuth2 inserts a new account or updates a linked one.
+// SaveOAuth2 inserts a new account or updates a linked one. A stale result is ErrIdentityConflict.
 func (storer *Storer) SaveOAuth2(ctx context.Context, user authboss.OAuth2User) error {
 	account, err := asUser(user)
 	if err != nil {
 		return err
 	}
+	// A stale result means another request changed or created the account after NewFromOAuth2 read it.
 	if account.ID == uuid.Nil {
-		return storer.Create(ctx, account)
+		err = storer.Create(ctx, account)
+		if errors.Is(err, authboss.ErrUserFound) {
+			return ErrIdentityConflict
+		}
+		return err
 	}
-	return storer.Save(ctx, account)
+	err = storer.Save(ctx, account)
+	if errors.Is(err, authboss.ErrUserNotFound) {
+		return ErrIdentityConflict
+	}
+	return err
 }
 
 // timestamp stores the zero time as NULL.

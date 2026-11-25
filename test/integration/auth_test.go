@@ -4,12 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
+
+	"meta-frames-server/internal/db/gen"
 )
 
 // browser talks to the API over HTTP with a cookie jar, like a front end with credentials: "include".
@@ -213,4 +219,41 @@ func TestGoogleSignInLeavesAPasswordAccountUntouched(test *testing.T) {
 			hashAfter == hashBefore, updatedBefore, updatedAfter, sessionsBefore, sessionsAfter, linked)
 	}
 	harness.expect(harness.browser().call("POST", "/auth/login", map[string]string{"email": "dorothea@example.com", "password": "Zone-System5"}), http.StatusOK)
+}
+
+// UpdateUser only matches on the identity: a caller whose copy is stale writes nothing.
+func TestUpdateUserNeedsTheStoredIdentity(test *testing.T) {
+	harness := newHarness(test)
+	ctx := context.Background()
+	queries := gen.New(harness.pool)
+	harness.expect(harness.browser().call("POST", "/auth/register", map[string]string{"email": "dorothea@example.com", "password": "Zone-System5"}), http.StatusCreated)
+	harness.expect(harness.browser().call("POST", "/auth/register", map[string]string{"email": "ansel@example.com", "password": "Zone-System5"}), http.StatusCreated)
+	harness.execSQL("UPDATE app_user SET oauth2_provider = 'google', oauth2_uid = 'g-1' WHERE email = 'ansel@example.com'")
+	google := func(uid string) *string { return &uid }
+
+	for _, scenario := range []struct {
+		email    string
+		provider *string
+		uid      *string
+	}{
+		{"ansel@example.com", google("google"), google("g-2")},    // linked row, other identity
+		{"ansel@example.com", nil, nil},                           // linked row, caller thinks it is unlinked
+		{"dorothea@example.com", google("google"), google("g-2")}, // unlinked row, caller brings an identity
+	} {
+		user, err := queries.GetUserByEmail(ctx, scenario.email)
+		if err != nil {
+			test.Fatal(err)
+		}
+		_, err = queries.UpdateUser(ctx, gen.UpdateUserParams{ID: user.ID, Oauth2Provider: scenario.provider, Oauth2Uid: scenario.uid})
+		if !errors.Is(err, pgx.ErrNoRows) {
+			test.Fatalf("%s: UpdateUser = %v, want pgx.ErrNoRows", scenario.email, err)
+		}
+		after, err := queries.GetUserByEmail(ctx, scenario.email)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if !reflect.DeepEqual(after, user) {
+			test.Fatalf("%s: the row changed: %+v to %+v", scenario.email, user, after)
+		}
+	}
 }

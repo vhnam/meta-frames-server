@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - A Google sign-in no longer links to an existing account with the same email. It is refused with `account_conflict` until email verification exists.
+- Two Google sign-ins, or a registration and a Google sign-in, on the same new email at the same time: the second Google request gets `account_conflict`, not an internal error. A save can no longer change an account's Google identity.
 
 ### Changed
 
