@@ -25,7 +25,7 @@ func TestDateConversionsRoundTripAndKeepNil(test *testing.T) {
 	}
 	day := date(2026, time.March, 9)
 	apiDate := ToAPIDate(&day)
-	if apiDate == nil || !apiDate.Time.Equal(day) {
+	if apiDate == nil || !apiDate.Equal(day) {
 		test.Fatalf("ToAPIDate = %v", apiDate)
 	}
 	if back := FromAPIDate(apiDate); back == nil || !back.Equal(day) {

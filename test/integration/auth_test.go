@@ -37,7 +37,7 @@ func (browser *browser) call(method, path string, body any) response {
 	if err != nil {
 		browser.test.Fatal(err)
 	}
-	defer reply.Body.Close()
+	defer func() { _ = reply.Body.Close() }()
 	result := response{Status: reply.StatusCode}
 	_ = json.NewDecoder(reply.Body).Decode(&result.Body)
 	return result
@@ -95,13 +95,13 @@ func (browser *browser) signInWithGoogle() string {
 	if err != nil {
 		browser.test.Fatal(err)
 	}
-	start.Body.Close()
+	_ = start.Body.Close()
 	location, _ := url.Parse(start.Header.Get("Location"))
 	callback, err := browser.client.Get(browser.server.URL + "/auth/oauth2/callback/google?code=good-code&state=" + url.QueryEscape(location.Query().Get("state")))
 	if err != nil {
 		browser.test.Fatal(err)
 	}
-	callback.Body.Close()
+	_ = callback.Body.Close()
 	return callback.Header.Get("Location")
 }
 

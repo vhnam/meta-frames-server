@@ -85,7 +85,7 @@ func TestImportScansStoresFilesAndReportsFailures(test *testing.T) {
 	if len(result.Imported) != 1 || len(result.Skipped) != 1 || len(result.Failed) != 2 {
 		test.Fatalf("result = %+v", result)
 	}
-	if !result.ScansReceivedAt.Time.Equal(time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)) {
+	if !result.ScansReceivedAt.Equal(time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)) {
 		test.Fatalf("ScansReceivedAt = %v", result.ScansReceivedAt)
 	}
 }

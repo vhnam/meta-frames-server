@@ -32,7 +32,7 @@ func (client *session) get(path string) *http.Response {
 	if err != nil {
 		client.test.Fatal(err)
 	}
-	response.Body.Close()
+	_ = response.Body.Close()
 	return response
 }
 

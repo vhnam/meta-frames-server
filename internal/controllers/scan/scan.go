@@ -288,7 +288,7 @@ func (controller *Controller) ImportScans(ctx context.Context, request api.Impor
 type scanFileResponse struct{ file scansvc.ScanFile }
 
 func (response scanFileResponse) VisitGetScanFileResponse(writer http.ResponseWriter) error {
-	defer response.file.Content.Close()
+	defer func() { _ = response.file.Content.Close() }()
 	writer.Header().Set("Content-Type", response.file.ContentType)
 	writer.Header().Set("Content-Length", strconv.FormatInt(response.file.Size, 10))
 	writer.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", response.file.FileName))

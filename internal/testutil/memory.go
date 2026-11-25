@@ -184,7 +184,7 @@ func (queries *Memory) SetLensActive(_ context.Context, arg gen.SetLensActivePar
 }
 
 func (queries *Memory) InsertCameraLens(_ context.Context, arg gen.InsertCameraLensParams) error {
-	queries.Links = append(queries.Links, gen.CameraLens{CameraID: arg.CameraID, LensID: arg.LensID})
+	queries.Links = append(queries.Links, gen.CameraLens(arg))
 	return nil
 }
 
@@ -579,7 +579,7 @@ func (queries *Memory) InsertRollLens(_ context.Context, arg gen.InsertRollLensP
 			return nil
 		}
 	}
-	queries.RollLenses = append(queries.RollLenses, gen.RollLens{RollID: arg.RollID, LensID: arg.LensID})
+	queries.RollLenses = append(queries.RollLenses, gen.RollLens(arg))
 	return nil
 }
 
