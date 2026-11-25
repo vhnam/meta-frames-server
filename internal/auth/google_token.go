@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"google.golang.org/api/idtoken"
@@ -127,6 +126,9 @@ func (accounts *Auth) signInWithGoogleToken(ctx *gin.Context) {
 	case errors.Is(err, ErrIdentityConflict):
 		problem(http.StatusConflict, "account_conflict", "This email already belongs to another account.")
 		return
+	case errors.Is(err, ErrAccountLocked):
+		problem(http.StatusTooManyRequests, "account_locked", "Your account is locked. Try again in 15 minutes.")
+		return
 	case err != nil:
 		accounts.tokenSignInFailed(ctx, err)
 		return
@@ -134,10 +136,6 @@ func (accounts *Auth) signInWithGoogleToken(ctx *gin.Context) {
 	user, err := asUser(found)
 	if err != nil {
 		accounts.tokenSignInFailed(ctx, err)
-		return
-	}
-	if user.LockedUntil.After(time.Now()) {
-		problem(http.StatusTooManyRequests, "account_locked", "Your account is locked. Try again in 15 minutes.")
 		return
 	}
 	if err := accounts.storer.SaveOAuth2(ctx, user); err != nil {

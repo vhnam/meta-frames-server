@@ -35,6 +35,8 @@ var (
 	// ErrIdentityConflict refuses a Google sign-in whose email belongs to another account: a
 	// password account or an account linked to a different Google identity.
 	ErrIdentityConflict = errors.New("auth: the email already belongs to another account")
+	// ErrAccountLocked refuses a sign-in to a locked linked account before any write.
+	ErrAccountLocked = errors.New("auth: the account is locked")
 )
 
 func NewStorer(store db.Store) *Storer { return &Storer{store: store} }
@@ -152,7 +154,11 @@ func (storer *Storer) NewFromOAuth2(ctx context.Context, provider string, detail
 	queries := storer.store.Queries()
 	row, err := queries.GetUserByOAuth2(ctx, gen.GetUserByOAuth2Params{Oauth2Provider: &provider, Oauth2Uid: &uid})
 	if err == nil {
-		return withProfile(fromRow(row), details), nil
+		linked := fromRow(row)
+		if linked.LockedUntil.After(time.Now()) {
+			return nil, ErrAccountLocked
+		}
+		return withProfile(linked, details), nil
 	}
 	if !db.IsNoRows(err) {
 		return nil, err

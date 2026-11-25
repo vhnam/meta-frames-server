@@ -258,9 +258,23 @@ func TestGoogleTokenRefusesALockedAccount(test *testing.T) {
 		memory.Users[id] = user
 	}
 
-	again := tokenClient(test, memory, tokenClaims())
-	again.expect(again.signInWithToken(goodToken), http.StatusTooManyRequests, "account_locked")
-	again.expect(again.me(), http.StatusUnauthorized, "unauthorized")
+	changed := tokenClaims()
+	changed.Name, changed.Picture = "New Name", "https://lh3.googleusercontent.com/a/new"
+	usersBefore := maps.Clone(memory.Users)
+	sessionsBefore := maps.Clone(memory.Sessions)
+
+	for _, verified := range []bool{true, false} {
+		changed.EmailVerified = verified
+		again := tokenClient(test, memory, changed)
+		again.expect(again.signInWithToken(goodToken), http.StatusTooManyRequests, "account_locked")
+		again.expect(again.me(), http.StatusUnauthorized, "unauthorized")
+		if !reflect.DeepEqual(memory.Users, usersBefore) {
+			test.Fatalf("a locked account was written with email_verified=%t", verified)
+		}
+		if !reflect.DeepEqual(memory.Sessions, sessionsBefore) {
+			test.Fatalf("sessions changed after refusal with email_verified=%t", verified)
+		}
+	}
 }
 
 func TestGoogleConfigReturnsTheWebClientAndNoSecret(test *testing.T) {

@@ -1,6 +1,7 @@
 package auth_test
 
 import (
+	"maps"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -172,11 +173,24 @@ func TestGoogleSignInRefusesALockedAccount(test *testing.T) {
 		memory.Users[id] = user
 	}
 
-	again := google.client(test, memory)
-	if landing := again.signInWithGoogle("/rolls"); landing != "http://app.test/login?error=account_locked" {
-		test.Fatalf("a locked account landed on %q", landing)
+	google.Account["name"], google.Account["picture"] = "New Name", "https://lh3.googleusercontent.com/a/new"
+	usersBefore := maps.Clone(memory.Users)
+	sessionsBefore := maps.Clone(memory.Sessions)
+
+	for _, verified := range []bool{true, false} {
+		google.Account["email_verified"] = verified
+		again := google.client(test, memory)
+		if landing := again.signInWithGoogle("/rolls"); landing != "http://app.test/login?error=account_locked" {
+			test.Fatalf("a locked account with email_verified=%t landed on %q", verified, landing)
+		}
+		again.expect(again.me(), http.StatusUnauthorized, "unauthorized")
+		if !reflect.DeepEqual(memory.Users, usersBefore) {
+			test.Fatalf("a locked account was written with email_verified=%t", verified)
+		}
+		if !reflect.DeepEqual(memory.Sessions, sessionsBefore) {
+			test.Fatalf("sessions changed after refusal with email_verified=%t", verified)
+		}
 	}
-	again.expect(again.me(), http.StatusUnauthorized, "unauthorized")
 }
 
 func TestGoogleSignInOnlyRedirectsWithinTheFrontEnd(test *testing.T) {

@@ -44,6 +44,8 @@ func (flow browserFlow) fail(w http.ResponseWriter, req *http.Request, err error
 		code = "email_not_verified"
 	case errors.Is(err, ErrIdentityConflict):
 		code = "account_conflict"
+	case errors.Is(err, ErrAccountLocked):
+		code = "account_locked"
 	}
 	slog.Warn("google sign-in failed", "path", req.URL.Path, "code", code, "err", err)
 	flow.toLogin(w, req, code)

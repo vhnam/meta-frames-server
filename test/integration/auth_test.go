@@ -221,6 +221,34 @@ func TestGoogleSignInLeavesAPasswordAccountUntouched(test *testing.T) {
 	harness.expect(harness.browser().call("POST", "/auth/login", map[string]string{"email": "dorothea@example.com", "password": "Zone-System5"}), http.StatusOK)
 }
 
+func TestGoogleSignInRefusesALockedAccountWithoutWriting(test *testing.T) {
+	harness := newHarness(test)
+	harness.google.Account = map[string]any{"sub": "g-1", "email": "ansel@example.com", "email_verified": true, "name": "Ansel Adams", "picture": "https://example.com/a.png"}
+	if landing := harness.browser().signInWithGoogle(); landing != "http://app.test/rolls" {
+		test.Fatalf("landed on %q", landing)
+	}
+	harness.execSQL("UPDATE app_user SET locked_until = now() + interval '1 hour' WHERE email = 'ansel@example.com'")
+	snapshot := func() (row [5]string) {
+		test.Helper()
+		if err := harness.pool.QueryRow(context.Background(), `SELECT coalesce(name, ''), coalesce(avatar_url, ''), coalesce(last_attempt::text, ''), attempt_count::text, updated_at::text
+			FROM app_user WHERE email = 'ansel@example.com'`).Scan(&row[0], &row[1], &row[2], &row[3], &row[4]); err != nil {
+			test.Fatal(err)
+		}
+		return row
+	}
+	before := snapshot()
+
+	harness.google.Account["name"], harness.google.Account["picture"] = "New Name", "https://example.com/b.png"
+	locked := harness.browser()
+	if landing := locked.signInWithGoogle(); landing != "http://app.test/login?error=account_locked" {
+		test.Fatalf("a locked account landed on %q", landing)
+	}
+	harness.expect(locked.call("GET", "/auth/me", nil), http.StatusUnauthorized)
+	if after := snapshot(); after != before {
+		test.Fatalf("a locked account was written: %v, was %v", after, before)
+	}
+}
+
 // UpdateUser only matches on the identity: a caller whose copy is stale writes nothing.
 func TestUpdateUserNeedsTheStoredIdentity(test *testing.T) {
 	harness := newHarness(test)
