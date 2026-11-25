@@ -57,7 +57,7 @@ scan:
 secrets:
 	gitleaks git --redact --no-banner
 
-# Use the tracked hooks in .githooks (pre-commit runs gitleaks, pre-push runs the Trivy scan).
+# Use the tracked hooks in .githooks (pre-commit runs gitleaks and make lint, pre-push runs the Trivy scan).
 hooks:
 	git config core.hooksPath .githooks
 

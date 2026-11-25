@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Internal: `make lint` reports no issues. Unused test helpers are removed, and ignored `Close` errors are discarded explicitly. Runtime behavior does not change.
+- The pre-commit hook also runs `make lint` and blocks the commit when it fails. It lints the working tree, not only the staged changes.
 
 ## [5.2.0] - 2026-11-25
 
