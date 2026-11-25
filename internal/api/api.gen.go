@@ -100,6 +100,27 @@ func (e AuditEntityType) Valid() bool {
 	}
 }
 
+// Defines values for CurrencyCode.
+const (
+	EUR CurrencyCode = "EUR"
+	USD CurrencyCode = "USD"
+	VND CurrencyCode = "VND"
+)
+
+// Valid indicates whether the value is a known member of the CurrencyCode enum.
+func (e CurrencyCode) Valid() bool {
+	switch e {
+	case EUR:
+		return true
+	case USD:
+		return true
+	case VND:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DevelopedInputTarget.
 const (
 	DevelopedInputTargetDeveloped DevelopedInputTarget = "developed"
@@ -538,10 +559,10 @@ type AuditLog struct {
 	// Actor Email of the signed-in user who made the change
 	Actor *string `json:"actor,omitempty"`
 
-	// After Row after the change, keyed by database column name; absent for a hard delete
+	// After Row after the change, keyed by database column name; absent for a hard delete. Money fields (price, unit_price, vat, discount) are in minor units of the account currency
 	After *map[string]interface{} `json:"after,omitempty"`
 
-	// Before Row before the change, keyed by database column name; absent for create
+	// Before Row before the change, keyed by database column name; absent for create. Money fields (price, unit_price, vat, discount) are in minor units of the account currency
 	Before    *map[string]interface{} `json:"before,omitempty"`
 	CreatedAt time.Time               `json:"createdAt"`
 
@@ -558,7 +579,7 @@ type AuditLog struct {
 type AuthResult struct {
 	Message string `json:"message"`
 
-	// User Example: {"createdAt":"2026-10-07T09:00:00Z","email":"ansel@example.com","id":"5a0c2f6e-8d31-4b7a-9e15-3c7f1d2b4a60","name":"Ansel"}
+	// User Example: {"createdAt":"2026-10-07T09:00:00Z","currencyCode":"VND","currencyLocked":false,"email":"ansel@example.com","id":"5a0c2f6e-8d31-4b7a-9e15-3c7f1d2b4a60","name":"Ansel"}
 	User *User `json:"user,omitempty"`
 }
 
@@ -574,7 +595,7 @@ type BulkRollsInput struct {
 	// Format 135, 120, ...
 	Format int `json:"format"`
 
-	// Price Unit price per roll in VND
+	// Price Unit price per roll in minor units of the account currency
 	Price    *int `json:"price,omitempty"`
 	Quantity int  `json:"quantity"`
 }
@@ -611,6 +632,18 @@ type CameraInput struct {
 // CameraLensesInput Example: {"lensIds":["a3f2d8c1-6e4b-4b7a-9d15-3c8e0f7a2b03","c5e91b77-2d3a-4f08-a6b4-8d1e7c3f9a04"]}
 type CameraLensesInput struct {
 	LensIds []openapi_types.UUID `json:"lensIds"`
+}
+
+// CurrencyCode Case-sensitive ISO 4217 code of the account currency.
+type CurrencyCode string
+
+// CurrencyInput Example: {"currencyCode":"USD","expectedCurrencyCode":"VND"}
+type CurrencyInput struct {
+	// CurrencyCode Case-sensitive ISO 4217 code of the account currency.
+	CurrencyCode CurrencyCode `json:"currencyCode"`
+
+	// ExpectedCurrencyCode The code the client believes the account has now
+	ExpectedCurrencyCode CurrencyCode `json:"expectedCurrencyCode"`
 }
 
 // DateInput Example: {"date":"2026-10-02"}
@@ -873,8 +906,10 @@ type LabInput struct {
 
 // LabOrder Example: {"code":"0510006","createdAt":"2026-10-05T03:10:00Z","discount":0,"dueDate":"2026-10-20","id":"7b1f0c52-3d94-4e16-9a70-2c5e8d1f4a10","items":[],"labId":"3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09","labName":"Saigon Film Lab","orderedAt":"2026-10-05T03:03:00Z","subtotal":560000,"total":604800,"updatedAt":"2026-10-05T03:10:00Z","vat":44800}
 type LabOrder struct {
-	Code      string              `json:"code"`
-	CreatedAt time.Time           `json:"createdAt"`
+	Code      string    `json:"code"`
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Discount Amount in minor units of the account currency
 	Discount  int                 `json:"discount"`
 	DueDate   *openapi_types.Date `json:"dueDate,omitempty"`
 	Id        openapi_types.UUID  `json:"id"`
@@ -883,12 +918,16 @@ type LabOrder struct {
 	LabName   string              `json:"labName"`
 	Notes     *string             `json:"notes,omitempty"`
 	OrderedAt time.Time           `json:"orderedAt"`
-	Subtotal  int                 `json:"subtotal"`
 
-	// Total Subtotal plus VAT minus discount
+	// Subtotal Amount in minor units of the account currency
+	Subtotal int `json:"subtotal"`
+
+	// Total Subtotal plus VAT minus discount. Amount in minor units of the account currency
 	Total     int       `json:"total"`
 	UpdatedAt time.Time `json:"updatedAt"`
-	Vat       int       `json:"vat"`
+
+	// Vat Amount in minor units of the account currency
+	Vat int `json:"vat"`
 }
 
 // LabOrderInput Example: {"code":"0510006","discount":0,"dueDate":"2026-10-20","items":[{"id":"8c2a1d63-4ea5-4f27-ab81-3d6f9e2a5b21","options":"Development + Scan, High-Resolution (JPEG only)","product":"35mm Colour film","quantity":3,"unitPrice":145000}],"labId":"3eaf7b5c-1a49-4d86-c2f5-8b4dac6e9c09","orderedAt":"2026-10-05T10:03:00+07:00","vat":44800}
@@ -896,7 +935,7 @@ type LabOrderInput struct {
 	// Code The lab's order number; unique per lab (`409 order_code_taken`)
 	Code string `json:"code"`
 
-	// Discount An amount, not a rate. Defaults to 0; cannot exceed the subtotal plus VAT
+	// Discount An amount in minor units of the account currency, not a rate. Defaults to 0; cannot exceed the subtotal plus VAT
 	Discount *int `json:"discount,omitempty"`
 
 	// DueDate When the order must be paid
@@ -910,7 +949,7 @@ type LabOrderInput struct {
 	Notes     *string            `json:"notes,omitempty"`
 	OrderedAt time.Time          `json:"orderedAt"`
 
-	// Vat An amount, not a rate. Defaults to 0
+	// Vat An amount in minor units of the account currency, not a rate. Defaults to 0
 	Vat *int `json:"vat,omitempty"`
 }
 
@@ -919,14 +958,16 @@ type LabOrderItem struct {
 	Id   openapi_types.UUID `json:"id"`
 	Jobs []LabOrderJob      `json:"jobs"`
 
-	// LineTotal Quantity times unit price
+	// LineTotal Quantity times unit price. Amount in minor units of the account currency
 	LineTotal int     `json:"lineTotal"`
 	Options   *string `json:"options,omitempty"`
 	Product   string  `json:"product"`
 	Quantity  int     `json:"quantity"`
 
-	// UnitCost What a job on this line costs, with the order's VAT and discount shared out by price
-	UnitCost  int `json:"unitCost"`
+	// UnitCost What a job on this line costs, with the order's VAT and discount shared out by price. Amount in minor units of the account currency
+	UnitCost int `json:"unitCost"`
+
+	// UnitPrice Amount in minor units of the account currency
 	UnitPrice int `json:"unitPrice"`
 }
 
@@ -936,10 +977,12 @@ type LabOrderItemInput struct {
 	Id openapi_types.UUID `json:"id"`
 
 	// Options The services the lab lists under the product
-	Options   *string `json:"options,omitempty"`
-	Product   string  `json:"product"`
-	Quantity  int     `json:"quantity"`
-	UnitPrice int     `json:"unitPrice"`
+	Options  *string `json:"options,omitempty"`
+	Product  string  `json:"product"`
+	Quantity int     `json:"quantity"`
+
+	// UnitPrice Minor units of the account currency
+	UnitPrice int `json:"unitPrice"`
 }
 
 // LabOrderJob A processing job and the roll it works on
@@ -1010,12 +1053,15 @@ type LoginInput struct {
 
 // MonthSpending defines model for MonthSpending.
 type MonthSpending struct {
+	// FilmCost Amount in minor units of the account currency
 	FilmCost int `json:"filmCost"`
 
 	// Incomplete Some prices are missing and counted as zero
-	Incomplete     bool `json:"incomplete"`
-	Month          int  `json:"month"`
-	ProcessingCost int  `json:"processingCost"`
+	Incomplete bool `json:"incomplete"`
+	Month      int  `json:"month"`
+
+	// ProcessingCost Amount in minor units of the account currency
+	ProcessingCost int `json:"processingCost"`
 }
 
 // NegativesAtLabItem Example: {"daysSinceSent":12,"labName":"Saigon Film Lab","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","rollId":"1c8d5f3a-9e27-4b64-a0d3-6f2b8e4c7a07","sentAt":"2026-09-20","stockName":"Kodak Portra 400","type":"develop_scan"}
@@ -1058,7 +1104,7 @@ type Processing struct {
 	// Example: {"code":"0510006","id":"7b1f0c52-3d94-4e16-9a70-2c5e8d1f4a10","items":[{"id":"8c2a1d63-4ea5-4f27-ab81-3d6f9e2a5b21","product":"35mm Colour film"}]}
 	Order *ProcessingOrder `json:"order,omitempty"`
 
-	// Price From its order lines added up, with the order's VAT and discount shared out, when the job is on an order; otherwise the job's own price
+	// Price From its order lines added up, with the order's VAT and discount shared out, when the job is on an order; otherwise the job's own price. Amount in minor units of the account currency
 	Price           *int                `json:"price,omitempty"`
 	Process         Process             `json:"process"`
 	RollId          openapi_types.UUID  `json:"rollId"`
@@ -1081,7 +1127,7 @@ type ProcessingInput struct {
 	// OrderItemIds The order lines this job is billed on, such as one for developing and one for scanning. They must be on one order (`422 order_items_on_two_orders`) from the job's lab (`422 order_lab_mismatch`), and each must have room (`409 order_item_full`). Replaces the current set; absent or empty takes the job off its order.
 	OrderItemIds *[]openapi_types.UUID `json:"orderItemIds,omitempty"`
 
-	// Price The job's own price. Not allowed with orderItemIds, where the order lines set it (`422 price_from_order`).
+	// Price The job's own price in minor units of the account currency. Not allowed with orderItemIds, where the order lines set it (`422 price_from_order`).
 	Price *int `json:"price,omitempty"`
 
 	// Process Defaults to the film stock's process for a new job. On an existing job it replaces the process; absent keeps the current one.
@@ -1167,9 +1213,11 @@ type RollInput struct {
 	FilmStockId openapi_types.UUID  `json:"filmStockId"`
 	FinishedAt  *openapi_types.Date `json:"finishedAt,omitempty"`
 	Format      int                 `json:"format"`
-	Price       *int                `json:"price,omitempty"`
-	ShotIso     *int                `json:"shotIso,omitempty"`
-	StartedAt   *openapi_types.Date `json:"startedAt,omitempty"`
+
+	// Price Minor units of the account currency
+	Price     *int                `json:"price,omitempty"`
+	ShotIso   *int                `json:"shotIso,omitempty"`
+	StartedAt *openapi_types.Date `json:"startedAt,omitempty"`
 }
 
 // RollNotesInput Example: {"baseDescription":"Hanoi street trip","description":"Hanoi street trip, overcast, roll jammed at 30"}
@@ -1232,8 +1280,10 @@ type RollSummary struct {
 	OpenJobTypes []ProcessingType `json:"openJobTypes"`
 
 	// Plan What the owner plans for the roll. Every field is optional; a missing field means not decided yet.
-	Plan  RollPlan `json:"plan"`
-	Price *int     `json:"price,omitempty"`
+	Plan RollPlan `json:"plan"`
+
+	// Price Amount in minor units of the account currency
+	Price *int `json:"price,omitempty"`
 
 	// Scanned A job has scans received.
 	Scanned bool `json:"scanned"`
@@ -1262,10 +1312,16 @@ type RollSummaryStageDetail string
 // RollTotals Example: {"incomplete":false,"processingPrice":90000,"rollPrice":150000,"total":240000}
 type RollTotals struct {
 	// Incomplete A price is missing and counted as zero
-	Incomplete      bool `json:"incomplete"`
-	ProcessingPrice int  `json:"processingPrice"`
-	RollPrice       int  `json:"rollPrice"`
-	Total           int  `json:"total"`
+	Incomplete bool `json:"incomplete"`
+
+	// ProcessingPrice Amount in minor units of the account currency
+	ProcessingPrice int `json:"processingPrice"`
+
+	// RollPrice Amount in minor units of the account currency
+	RollPrice int `json:"rollPrice"`
+
+	// Total Amount in minor units of the account currency
+	Total int `json:"total"`
 }
 
 // Scan Example: {"fileName":"000007.jpg","fileUrl":"/scans/4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10/file","frameId":"50c19d7e-3c6b-4fa8-e4b7-ad6fce8a1e11","frameNumber":7,"id":"4fb08c6d-2b5a-4e97-d3a6-9c5ebd7f0d10","processingId":"2d9e6a4b-0f38-4c75-b1e4-7a3c9f5d8b08","scanner":"noritsu","scannerId":"d177cb3c-a850-4232-a4ca-75189b7b279b","scannerName":"Noritsu HS-1800","sizeBytes":2481920}
@@ -1461,11 +1517,14 @@ type SetProcessingOrderItemsInput struct {
 
 // SpendBucket Example: {"filmCost":750000,"incomplete":false,"processingCost":450000}
 type SpendBucket struct {
+	// FilmCost Amount in minor units of the account currency
 	FilmCost int `json:"filmCost"`
 
 	// Incomplete Some prices are missing and counted as zero
-	Incomplete     bool `json:"incomplete"`
-	ProcessingCost int  `json:"processingCost"`
+	Incomplete bool `json:"incomplete"`
+
+	// ProcessingCost Amount in minor units of the account currency
+	ProcessingCost int `json:"processingCost"`
 }
 
 // StepActor Who does a step. self is the owner at home.
@@ -1474,25 +1533,34 @@ type StepActor string
 // StockType defines model for StockType.
 type StockType string
 
-// User Example: {"createdAt":"2026-10-07T09:00:00Z","email":"ansel@example.com","id":"5a0c2f6e-8d31-4b7a-9e15-3c7f1d2b4a60","name":"Ansel"}
+// User Example: {"createdAt":"2026-10-07T09:00:00Z","currencyCode":"VND","currencyLocked":false,"email":"ansel@example.com","id":"5a0c2f6e-8d31-4b7a-9e15-3c7f1d2b4a60","name":"Ansel"}
 type User struct {
 	// AvatarUrl Profile picture of the linked Google account (https). Absent without one.
-	AvatarUrl *string             `json:"avatarUrl,omitempty"`
-	CreatedAt time.Time           `json:"createdAt"`
-	Email     openapi_types.Email `json:"email"`
-	Id        openapi_types.UUID  `json:"id"`
-	Name      *string             `json:"name,omitempty"`
+	AvatarUrl *string   `json:"avatarUrl,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+
+	// CurrencyCode Case-sensitive ISO 4217 code of the account currency.
+	CurrencyCode CurrencyCode `json:"currencyCode"`
+
+	// CurrencyLocked True once the account records money. A locked account cannot change its currency. Treat a cached value as advisory.
+	CurrencyLocked bool                `json:"currencyLocked"`
+	Email          openapi_types.Email `json:"email"`
+	Id             openapi_types.UUID  `json:"id"`
+	Name           *string             `json:"name,omitempty"`
 }
 
 // YearSpending defines model for YearSpending.
 type YearSpending struct {
+	// FilmCost Amount in minor units of the account currency
 	FilmCost int `json:"filmCost"`
 
 	// Incomplete Some prices are missing and counted as zero
-	Incomplete     bool            `json:"incomplete"`
-	Months         []MonthSpending `json:"months"`
-	ProcessingCost int             `json:"processingCost"`
-	Year           int             `json:"year"`
+	Incomplete bool            `json:"incomplete"`
+	Months     []MonthSpending `json:"months"`
+
+	// ProcessingCost Amount in minor units of the account currency
+	ProcessingCost int `json:"processingCost"`
+	Year           int `json:"year"`
 }
 
 // YearTimeline Example: {"months":[0,1,3,2,0,4,6,5,2,1,0,0],"year":2026}
@@ -1679,6 +1747,9 @@ type GetGearStatsParams struct {
 	Year *int `form:"year,omitempty" json:"year,omitempty"`
 }
 
+// SetCurrencyJSONRequestBody defines body for SetCurrency for application/json ContentType.
+type SetCurrencyJSONRequestBody = CurrencyInput
+
 // CreateCameraJSONRequestBody defines body for CreateCamera for application/json ContentType.
 type CreateCameraJSONRequestBody = CameraInput
 
@@ -1783,6 +1854,9 @@ type ServerInterface interface {
 	// GetCurrentUser The user of the current session
 	// (GET /auth/me)
 	GetCurrentUser(c *gin.Context)
+	// SetCurrency Set the account currency
+	// (PUT /auth/me/currency)
+	SetCurrency(c *gin.Context)
 	// ListCameras List cameras with their loaded roll (UC-09)
 	// (GET /cameras)
 	ListCameras(c *gin.Context, params ListCamerasParams)
@@ -2118,6 +2192,19 @@ func (siw *ServerInterfaceWrapper) GetCurrentUser(c *gin.Context) {
 	}
 
 	siw.Handler.GetCurrentUser(c)
+}
+
+// SetCurrency operation middleware
+func (siw *ServerInterfaceWrapper) SetCurrency(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SetCurrency(c)
 }
 
 // ListCameras operation middleware
@@ -4188,6 +4275,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 
 	router.GET(options.BaseURL+"/health", wrapper.GetHealth)
 	router.GET(options.BaseURL+"/auth/me", wrapper.GetCurrentUser)
+	router.PUT(options.BaseURL+"/auth/me/currency", wrapper.SetCurrency)
 	router.GET(options.BaseURL+"/cameras", wrapper.ListCameras)
 	router.POST(options.BaseURL+"/cameras", wrapper.CreateCamera)
 	router.DELETE(options.BaseURL+"/cameras/:id", wrapper.DeleteCamera)
@@ -4426,6 +4514,70 @@ func (response GetCurrentUser401JSONResponse) VisitGetCurrentUserResponse(w http
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetCurrencyRequestObject struct {
+	Body *SetCurrencyJSONRequestBody
+}
+
+type SetCurrencyResponseObject interface {
+	VisitSetCurrencyResponse(w http.ResponseWriter) error
+}
+
+type SetCurrency200JSONResponse User
+
+func (response SetCurrency200JSONResponse) VisitSetCurrencyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetCurrency400JSONResponse Problem
+
+func (response SetCurrency400JSONResponse) VisitSetCurrencyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetCurrency401JSONResponse Problem
+
+func (response SetCurrency401JSONResponse) VisitSetCurrencyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetCurrency409JSONResponse Problem
+
+func (response SetCurrency409JSONResponse) VisitSetCurrencyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -9565,6 +9717,9 @@ type StrictServerInterface interface {
 	// GetCurrentUser The user of the current session
 	// (GET /auth/me)
 	GetCurrentUser(ctx context.Context, request GetCurrentUserRequestObject) (GetCurrentUserResponseObject, error)
+	// SetCurrency Set the account currency
+	// (PUT /auth/me/currency)
+	SetCurrency(ctx context.Context, request SetCurrencyRequestObject) (SetCurrencyResponseObject, error)
 	// ListCameras List cameras with their loaded roll (UC-09)
 	// (GET /cameras)
 	ListCameras(ctx context.Context, request ListCamerasRequestObject) (ListCamerasResponseObject, error)
@@ -9922,6 +10077,37 @@ func (sh *strictHandler) GetCurrentUser(ctx *gin.Context) {
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(GetCurrentUserResponseObject); ok {
 		if err := validResponse.VisitGetCurrentUserResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetCurrency operation middleware
+func (sh *strictHandler) SetCurrency(ctx *gin.Context) {
+	var request SetCurrencyRequestObject
+
+	var body SetCurrencyJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.SetCurrency(ctx, request.(SetCurrencyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetCurrency")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(SetCurrencyResponseObject); ok {
+		if err := validResponse.VisitSetCurrencyResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {

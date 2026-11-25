@@ -69,6 +69,7 @@ type Querier interface {
 	GetScanner(ctx context.Context, arg GetScannerParams) (Scanner, error)
 	GetSessionUser(ctx context.Context, tokenHash []byte) (AppUser, error)
 	GetUserByEmail(ctx context.Context, email string) (AppUser, error)
+	GetUserByID(ctx context.Context, id uuid.UUID) (AppUser, error)
 	GetUserByOAuth2(ctx context.Context, arg GetUserByOAuth2Params) (AppUser, error)
 	GetUserByRecoverSelector(ctx context.Context, recoverSelector *string) (AppUser, error)
 	InsertCamera(ctx context.Context, arg InsertCameraParams) (Camera, error)
@@ -122,6 +123,9 @@ type Querier interface {
 	ListScanners(ctx context.Context, ownerID uuid.UUID) ([]Scanner, error)
 	ListSiblingStocks(ctx context.Context, arg ListSiblingStocksParams) ([]FilmStock, error)
 	LoadRoll(ctx context.Context, arg LoadRollParams) (Roll, error)
+	// A transaction-scoped lock on one (owner, key), so requests that share a key take turns.
+	LockIdempotencyKey(ctx context.Context, arg LockIdempotencyKeyParams) error
+	LockUserForCurrency(ctx context.Context, id uuid.UUID) (AppUser, error)
 	// A job in a handoff waits for the handoff's return; an old job with none, for its own.
 	NegativesAtLab(ctx context.Context, ownerID uuid.UUID) ([]NegativesAtLabRow, error)
 	ProcessingHasScans(ctx context.Context, arg ProcessingHasScansParams) (bool, error)
@@ -150,6 +154,7 @@ type Querier interface {
 	SetRollScanRequest(ctx context.Context, arg SetRollScanRequestParams) error
 	SetRollStatus(ctx context.Context, arg SetRollStatusParams) error
 	SetScansReceived(ctx context.Context, arg SetScansReceivedParams) (Processing, error)
+	SetUserCurrencyLocked(ctx context.Context, id uuid.UUID) error
 	SoftDeleteBuiltInLenses(ctx context.Context, arg SoftDeleteBuiltInLensesParams) error
 	SoftDeleteCamera(ctx context.Context, arg SoftDeleteCameraParams) (int64, error)
 	SoftDeleteFilmStock(ctx context.Context, arg SoftDeleteFilmStockParams) (int64, error)
@@ -180,6 +185,7 @@ type Querier interface {
 	UpdateRoll(ctx context.Context, arg UpdateRollParams) (Roll, error)
 	UpdateScanner(ctx context.Context, arg UpdateScannerParams) (Scanner, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (AppUser, error)
+	UpdateUserCurrency(ctx context.Context, arg UpdateUserCurrencyParams) (AppUser, error)
 	// The roll is checked to belong to the account first; the composite foreign key refuses a frame
 	// whose owner differs from its roll's.
 	UpsertFrame(ctx context.Context, arg UpsertFrameParams) (Frame, error)

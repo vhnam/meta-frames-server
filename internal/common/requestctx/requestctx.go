@@ -4,6 +4,7 @@ package requestctx
 
 import (
 	"context"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -14,6 +15,25 @@ type Meta struct {
 	Actor     string
 	// OwnerID is the signed-in account; every record a service reads or writes belongs to it.
 	OwnerID uuid.UUID
+	// ExpectedCurrency holds the raw Expected-Currency header values, unparsed, joined by a newline
+	// (a header value cannot hold one). ExpectedCurrencySent tells "no header" from an empty value.
+	// Both are plain values so that Meta stays comparable. Read them with ExpectedCurrencyValues.
+	ExpectedCurrency     string
+	ExpectedCurrencySent bool
+}
+
+// WithExpectedCurrency returns meta carrying the Expected-Currency header values of a request.
+func (meta Meta) WithExpectedCurrency(values []string) Meta {
+	meta.ExpectedCurrency, meta.ExpectedCurrencySent = strings.Join(values, "\n"), len(values) > 0
+	return meta
+}
+
+// ExpectedCurrencyValues returns the header values, one per header line, or nil without the header.
+func (meta Meta) ExpectedCurrencyValues() []string {
+	if !meta.ExpectedCurrencySent {
+		return nil
+	}
+	return strings.Split(meta.ExpectedCurrency, "\n")
 }
 
 type key struct{}

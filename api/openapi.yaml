@@ -102,6 +102,8 @@ paths:
                       email: ansel@example.com
                       name: Ansel
                       createdAt: "2026-10-07T09:00:00Z"
+                      currencyCode: VND
+                      currencyLocked: false
         "400": { $ref: "#/components/responses/AuthBadRequest" }
         "409":
           description: The email already has an account
@@ -149,6 +151,8 @@ paths:
                       email: ansel@example.com
                       name: Ansel
                       createdAt: "2026-10-07T09:00:00Z"
+                      currencyCode: VND
+                      currencyLocked: false
         "400": { $ref: "#/components/responses/BadRequest" }
         "401":
           description: Unknown email or wrong password (the two are not told apart)
@@ -408,6 +412,8 @@ paths:
                     email: ansel@example.com
                     name: Ansel
                     createdAt: "2026-10-07T09:00:00Z"
+                    currencyCode: VND
+                    currencyLocked: false
         "401":
           description: No valid session
           content:
@@ -419,6 +425,41 @@ paths:
                   value:
                     code: unauthorized
                     message: not logged in
+
+  /auth/me/currency:
+    put:
+      tags: [Auth]
+      operationId: setCurrency
+      summary: Set the account currency
+      description: >-
+        Allowed while the account is unlocked. Saving the current code is a no-op. The change sets the unit for
+        future entries; it never converts amounts already stored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CurrencyInput" }
+      responses:
+        "200":
+          description: The account after the save
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400":
+          description: Malformed JSON, a missing or extra field, or a code that is not VND, USD or EUR
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401":
+          description: No valid session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "409":
+          description: "`currency_locked`: the account records money. `currency_mismatch`: `expectedCurrencyCode` is not the stored code."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
 
   /cameras:
     get:
@@ -1927,6 +1968,10 @@ paths:
       tags: [Lab orders]
       operationId: putLabOrder
       summary: Create the order at this id, or replace it and its lines
+      description: >-
+        Send `Expected-Currency` (VND, USD or EUR) on every create or update of an order, including an order whose
+        amounts are all zero. A missing header means VND.
+        A value that differs from the account currency returns `409 currency_mismatch` before any write.
       requestBody:
         required: true
         content:
@@ -2191,6 +2236,13 @@ paths:
       tags: [Rolls]
       operationId: addRolls
       summary: Add rolls in bulk (UC-15). Send Idempotency-Key so retries do not duplicate.
+      description: >-
+        Send `Expected-Currency` (VND, USD or EUR) when the body records a non-null price. The check does not run for
+        a body without a price. A missing header means VND.
+        A value that differs from the account currency returns `409 currency_mismatch` before any write.
+        A completed replay with the same `Idempotency-Key` skips the currency check. If the key stored the original summaries, the replay
+        returns them unchanged. If the key stored roll IDs (a key from before this release, or a handoff key), the replay rebuilds the
+        summaries from the current rows.
       parameters:
         - { name: Idempotency-Key, in: header, schema: { type: string, maxLength: 200 } }
       requestBody:
@@ -2423,6 +2475,10 @@ paths:
       tags: [Rolls]
       operationId: putRoll
       summary: Edit a roll (UC-16). Send If-Match with the version you loaded so a newer change is not overwritten.
+      description: >-
+        Send `Expected-Currency` (VND, USD or EUR) when the body records a non-null price. The check does not run for
+        a body without a price. A missing header means VND.
+        A value that differs from the account currency returns `409 currency_mismatch` before any write.
       parameters:
         - $ref: "#/components/parameters/IfMatchRollVersion"
       requestBody:
@@ -3050,6 +3106,10 @@ paths:
       tags: [Rolls]
       operationId: putProcessing
       summary: Send a roll for processing, or edit a job (UC-24, UC-28)
+      description: >-
+        Send `Expected-Currency` (VND, USD or EUR) when the body records a non-null price. The check does not run for
+        a body without a price. A missing header means VND.
+        A value that differs from the account currency returns `409 currency_mismatch` before any write.
       requestBody:
         required: true
         content:
@@ -4216,13 +4276,36 @@ components:
         code: not_found
         message: camera not found
 
+    CurrencyCode:
+      type: string
+      enum: [VND, USD, EUR]
+      description: Case-sensitive ISO 4217 code of the account currency.
+
+    CurrencyInput:
+      type: object
+      additionalProperties: false
+      required: [currencyCode, expectedCurrencyCode]
+      properties:
+        currencyCode: { $ref: "#/components/schemas/CurrencyCode" }
+        expectedCurrencyCode:
+          allOf:
+            - $ref: "#/components/schemas/CurrencyCode"
+          description: The code the client believes the account has now
+      example:
+        currencyCode: USD
+        expectedCurrencyCode: VND
+
     User:
       type: object
-      required: [id, email, createdAt]
+      required: [id, email, createdAt, currencyCode, currencyLocked]
       properties:
         id: { type: string, format: uuid }
         email: { type: string, format: email }
         name: { type: string }
+        currencyCode: { $ref: "#/components/schemas/CurrencyCode" }
+        currencyLocked:
+          type: boolean
+          description: True once the account records money. A locked account cannot change its currency. Treat a cached value as advisory.
         avatarUrl:
           type: string
           format: uri
@@ -4233,6 +4316,8 @@ components:
         email: ansel@example.com
         name: Ansel
         createdAt: "2026-10-07T09:00:00Z"
+        currencyCode: VND
+        currencyLocked: false
 
     AuthResult:
       type: object
@@ -4816,7 +4901,7 @@ components:
         product: { type: string, minLength: 1 }
         options: { type: string, description: The services the lab lists under the product }
         quantity: { type: integer, minimum: 1 }
-        unitPrice: { type: integer, minimum: 0 }
+        unitPrice: { type: integer, minimum: 0, maximum: 2147483647, description: "Minor units of the account currency" }
       example:
         id: 8c2a1d63-4ea5-4f27-ab81-3d6f9e2a5b21
         product: 35mm Colour film
@@ -4832,8 +4917,8 @@ components:
         code: { type: string, minLength: 1, description: The lab's order number; unique per lab (`409 order_code_taken`) }
         orderedAt: { type: string, format: date-time }
         dueDate: { type: string, format: date, description: When the order must be paid }
-        vat: { type: integer, minimum: 0, description: "An amount, not a rate. Defaults to 0" }
-        discount: { type: integer, minimum: 0, description: "An amount, not a rate. Defaults to 0; cannot exceed the subtotal plus VAT" }
+        vat: { type: integer, minimum: 0, maximum: 2147483647, description: "An amount in minor units of the account currency, not a rate. Defaults to 0" }
+        discount: { type: integer, minimum: 0, maximum: 2147483647, description: "An amount in minor units of the account currency, not a rate. Defaults to 0; cannot exceed the subtotal plus VAT" }
         notes: { type: string }
         items:
           type: array
@@ -4889,9 +4974,9 @@ components:
         product: { type: string }
         options: { type: string }
         quantity: { type: integer }
-        unitPrice: { type: integer }
-        lineTotal: { type: integer, description: Quantity times unit price }
-        unitCost: { type: integer, description: "What a job on this line costs, with the order's VAT and discount shared out by price" }
+        unitPrice: { type: integer, description: "Amount in minor units of the account currency" }
+        lineTotal: { type: integer, description: "Quantity times unit price. Amount in minor units of the account currency" }
+        unitCost: { type: integer, description: "What a job on this line costs, with the order's VAT and discount shared out by price. Amount in minor units of the account currency" }
         jobs: { type: array, items: { $ref: "#/components/schemas/LabOrderJob" } }
       example:
         id: 8c2a1d63-4ea5-4f27-ab81-3d6f9e2a5b21
@@ -4913,11 +4998,11 @@ components:
         code: { type: string }
         orderedAt: { type: string, format: date-time }
         dueDate: { type: string, format: date }
-        vat: { type: integer }
-        discount: { type: integer }
+        vat: { type: integer, description: "Amount in minor units of the account currency" }
+        discount: { type: integer, description: "Amount in minor units of the account currency" }
         notes: { type: string }
-        subtotal: { type: integer }
-        total: { type: integer, description: Subtotal plus VAT minus discount }
+        subtotal: { type: integer, description: "Amount in minor units of the account currency" }
+        total: { type: integer, description: "Subtotal plus VAT minus discount. Amount in minor units of the account currency" }
         items: { type: array, items: { $ref: "#/components/schemas/LabOrderItem" } }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -4944,7 +5029,7 @@ components:
         format: { type: integer, minimum: 1, description: "135, 120, ..." }
         exposures: { type: integer, minimum: 1, description: Defaults to 36 for 135 }
         quantity: { type: integer, minimum: 1, maximum: 200 }
-        price: { type: integer, minimum: 0, description: Unit price per roll in VND }
+        price: { type: integer, minimum: 0, maximum: 2147483647, description: Unit price per roll in minor units of the account currency }
         expiry: { $ref: "#/components/schemas/ExpiryMonth" }
       example:
         filmStockId: e1b7a4d9-0c58-4a32-b6f1-5d9c2e8a7b05
@@ -4963,7 +5048,7 @@ components:
         filmStockId: { type: string, format: uuid }
         format: { type: integer, minimum: 1 }
         exposures: { type: integer, minimum: 1 }
-        price: { type: integer, minimum: 0 }
+        price: { type: integer, minimum: 0, maximum: 2147483647, description: Minor units of the account currency }
         expiry: { $ref: "#/components/schemas/ExpiryMonth" }
         shotIso: { type: integer, minimum: 1 }
         startedAt: { type: string, format: date }
@@ -5011,7 +5096,7 @@ components:
         status: { $ref: "#/components/schemas/RollStatus" }
         shotIso: { type: integer }
         expiry: { $ref: "#/components/schemas/ExpiryMonth" }
-        price: { type: integer }
+        price: { type: integer, description: "Amount in minor units of the account currency" }
         description: { type: string }
         startedAt: { type: string, format: date }
         finishedAt: { type: string, format: date }
@@ -5094,9 +5179,9 @@ components:
       type: object
       required: [rollPrice, processingPrice, total, incomplete]
       properties:
-        rollPrice: { type: integer }
-        processingPrice: { type: integer }
-        total: { type: integer }
+        rollPrice: { type: integer, description: "Amount in minor units of the account currency" }
+        processingPrice: { type: integer, description: "Amount in minor units of the account currency" }
+        total: { type: integer, description: "Amount in minor units of the account currency" }
         incomplete: { type: boolean, description: A price is missing and counted as zero }
       example:
         rollPrice: 150000
@@ -5391,7 +5476,8 @@ components:
         price:
           type: integer
           minimum: 0
-          description: The job's own price. Not allowed with orderItemIds, where the order lines set it (`422 price_from_order`).
+          maximum: 2147483647
+          description: The job's own price in minor units of the account currency. Not allowed with orderItemIds, where the order lines set it (`422 price_from_order`).
         orderItemIds:
           type: array
           items: { type: string, format: uuid }
@@ -5479,7 +5565,7 @@ components:
           description: The day the film was developed; develop and develop_scan jobs only
         price:
           type: integer
-          description: From its order lines added up, with the order's VAT and discount shared out, when the job is on an order; otherwise the job's own price
+          description: From its order lines added up, with the order's VAT and discount shared out, when the job is on an order; otherwise the job's own price. Amount in minor units of the account currency
         order: { $ref: "#/components/schemas/ProcessingOrder" }
         notes: { type: string }
         scanOrders: { type: array, items: { $ref: "#/components/schemas/ScanOrder" } }
@@ -5746,8 +5832,8 @@ components:
       type: object
       required: [filmCost, processingCost, incomplete]
       properties:
-        filmCost: { type: integer }
-        processingCost: { type: integer }
+        filmCost: { type: integer, description: "Amount in minor units of the account currency" }
+        processingCost: { type: integer, description: "Amount in minor units of the account currency" }
         incomplete: { type: boolean, description: Some prices are missing and counted as zero }
       example:
         filmCost: 750000
@@ -5800,8 +5886,8 @@ components:
         entityType: { $ref: "#/components/schemas/AuditEntityType" }
         entityId: { type: string, format: uuid, description: For camera_lens and roll_lens this is the camera or roll id }
         action: { $ref: "#/components/schemas/AuditAction" }
-        before: { type: object, nullable: true, additionalProperties: true, description: "Row before the change, keyed by database column name; absent for create" }
-        after: { type: object, nullable: true, additionalProperties: true, description: "Row after the change, keyed by database column name; absent for a hard delete" }
+        before: { type: object, nullable: true, additionalProperties: true, description: "Row before the change, keyed by database column name; absent for create. Money fields (price, unit_price, vat, discount) are in minor units of the account currency" }
+        after: { type: object, nullable: true, additionalProperties: true, description: "Row after the change, keyed by database column name; absent for a hard delete. Money fields (price, unit_price, vat, discount) are in minor units of the account currency" }
         actor: { type: string, description: Email of the signed-in user who made the change }
         requestId: { type: string, description: X-Request-ID of the request that made the change }
         createdAt: { type: string, format: date-time }

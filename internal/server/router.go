@@ -2,8 +2,13 @@
 package server
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"regexp"
+	"slices"
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -49,11 +54,11 @@ func NewHandler(appControllers api.StrictServerInterface, accounts *auth.Auth, c
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     corsOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Content-Type", "Idempotency-Key", "If-Match", "If-None-Match"},
+		AllowHeaders:     []string{"Content-Type", "Idempotency-Key", "If-Match", "If-None-Match", "Expected-Currency"},
 		AllowCredentials: true,
 		MaxAge:           5 * time.Minute,
 	}))
-	router.Use(accounts.LoadUser(), sessionCheck, requestContext(), requestValidation(swagger))
+	router.Use(accounts.LoadUser(), sessionCheck, requestContext(), singleJSONValue(moneyRoutes...), requestValidation(swagger))
 	accounts.Mount(router)
 
 	strictHandler := api.NewStrictHandlerWithOptions(appControllers, nil, api.StrictGinServerOptions{
@@ -81,7 +86,7 @@ func securityHeaders() gin.HandlerFunc {
 // limited to) and which request this is, so the audit trail can attribute every change.
 func requestContext() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		meta := requestctx.Meta{RequestID: requestid.Get(ctx)}
+		meta := requestctx.Meta{RequestID: requestid.Get(ctx)}.WithExpectedCurrency(ctx.Request.Header.Values("Expected-Currency"))
 		if user, ok := auth.CurrentUser(ctx.Request.Context()); ok {
 			meta.Actor, meta.OwnerID = user.Email, user.ID
 		}
@@ -89,6 +94,50 @@ func requestContext() gin.HandlerFunc {
 		ctx.Next()
 	}
 }
+
+// jsonRoute is a method and a Gin route string, such as PUT /rolls/:id.
+type jsonRoute struct{ method, path string }
+
+// moneyRoutes are the routes that record money or the currency. A doubtful body must never write there.
+var moneyRoutes = []jsonRoute{
+	{http.MethodPut, "/auth/me/currency"},
+	{http.MethodPost, "/rolls/bulk"},
+	{http.MethodPut, "/rolls/:id"},
+	{http.MethodPut, "/rolls/:id/processing/:jobId"},
+	{http.MethodPut, "/lab-orders/:id"},
+}
+
+// singleJSONValue refuses a body for the listed routes that is not exactly one JSON value. The
+// validator and the binding each decode one value and ignore what follows, so `{...}{}` would
+// pass them. Other routes are left alone.
+func singleJSONValue(routes ...jsonRoute) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		if !slices.Contains(routes, jsonRoute{ctx.Request.Method, ctx.FullPath()}) {
+			ctx.Next()
+			return
+		}
+		raw, err := io.ReadAll(http.MaxBytesReader(ctx.Writer, ctx.Request.Body, 1<<20))
+		if err == nil {
+			decoder := json.NewDecoder(bytes.NewReader(raw))
+			var first, second json.RawMessage
+			if err = decoder.Decode(&first); err == nil {
+				err = decoder.Decode(&second)
+				if errors.Is(err, io.EOF) {
+					err = nil
+				} else if err == nil {
+					err = errors.New("data after the JSON value")
+				}
+			}
+		}
+		if err != nil {
+			WriteProblem(ctx, http.StatusBadRequest, "bad_request", "invalid request")
+			return
+		}
+		ctx.Request.Body = io.NopCloser(bytes.NewReader(raw))
+		ctx.Next()
+	}
+}
+
 func requestValidation(swagger *openapi3.T) gin.HandlerFunc {
 	validate := ginmiddleware.OapiRequestValidatorWithOptions(swagger, &ginmiddleware.Options{
 		SilenceServersWarning: true,

@@ -705,6 +705,21 @@ func (q *Queries) LoadRoll(ctx context.Context, arg LoadRollParams) (Roll, error
 	return i, err
 }
 
+const lockIdempotencyKey = `-- name: LockIdempotencyKey :exec
+SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text || ':' || $2::text, 0))
+`
+
+type LockIdempotencyKeyParams struct {
+	OwnerID uuid.UUID
+	Key     string
+}
+
+// A transaction-scoped lock on one (owner, key), so requests that share a key take turns.
+func (q *Queries) LockIdempotencyKey(ctx context.Context, arg LockIdempotencyKeyParams) error {
+	_, err := q.db.Exec(ctx, lockIdempotencyKey, arg.OwnerID, arg.Key)
+	return err
+}
+
 const rollHasOpenJob = `-- name: RollHasOpenJob :one
 SELECT EXISTS (
   SELECT 1 FROM processing

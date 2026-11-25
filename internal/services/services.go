@@ -1,4 +1,4 @@
-// Package services wires the business-rule packages together. Each area (camera, lens,
+// Package services wires the business-rule packages together. Each area (account, camera, lens,
 // filmstock, lab, laborder, scanner, roll, processing, scan, stats) lives in its own subpackage and works with
 // plain inputs and views; it knows nothing about HTTP.
 package services
@@ -6,6 +6,7 @@ package services
 import (
 	"meta-frames-server/internal/common/clock"
 	"meta-frames-server/internal/db"
+	"meta-frames-server/internal/services/account"
 	"meta-frames-server/internal/services/audit"
 	"meta-frames-server/internal/services/camera"
 	"meta-frames-server/internal/services/filmstock"
@@ -21,6 +22,7 @@ import (
 )
 
 type Services struct {
+	Accounts   *account.Service
 	Audit      *audit.Service
 	Cameras    *camera.Service
 	Lenses     *lens.Service
@@ -36,6 +38,7 @@ type Services struct {
 
 func New(store db.Store, files storage.Store, appClock clock.Clock) *Services {
 	return &Services{
+		Accounts:   account.New(store),
 		Audit:      audit.New(store),
 		Cameras:    camera.New(store),
 		Lenses:     lens.New(store),

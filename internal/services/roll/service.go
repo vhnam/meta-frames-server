@@ -1,6 +1,7 @@
 package roll
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"time"
@@ -166,14 +167,37 @@ func (service *Service) AddBulk(ctx context.Context, input BulkInput) ([]Summary
 
 	var created []Summary
 	err = service.store.InTransaction(ctx, func(queries gen.Querier) error {
-		if input.IdempotencyKey != "" {
+		keyed := input.IdempotencyKey != ""
+		if keyed {
+			// Requests that share a key take turns. A finished key replays with no currency check and
+			// no account lock: the first request decided both.
+			if err := lockIdempotencyKey(ctx, queries, input.IdempotencyKey); err != nil {
+				return err
+			}
+			stored, err := queries.GetIdempotencyKey(ctx, gen.GetIdempotencyKeyParams{Key: input.IdempotencyKey, OwnerID: requestctx.Owner(ctx)})
+			if err == nil {
+				created, err = replayStored(ctx, queries, stored)
+				return err
+			}
+			if !db.IsNoRows(err) {
+				return err
+			}
+		}
+		// The account lock comes before the claim and before any roll write. A mismatch or a bad
+		// header leaves no key row behind.
+		if input.Price != nil {
+			if err := shared.GuardMoneyWrite(ctx, queries); err != nil {
+				return err
+			}
+		}
+		if keyed {
 			claimed, err := queries.ClaimIdempotencyKey(ctx, gen.ClaimIdempotencyKeyParams{Key: input.IdempotencyKey, OwnerID: requestctx.Owner(ctx)})
 			if err != nil {
 				return err
 			}
 			if claimed == 0 {
-				created, err = replayBulkRolls(ctx, queries, input.IdempotencyKey)
-				return err
+				// A row appeared outside the lock; leave it to its writer. This rolls back the guard too.
+				return errRequestInProgress()
 			}
 		}
 		if _, err := queries.GetFilmStock(ctx, gen.GetFilmStockParams{ID: input.FilmStockID, OwnerID: requestctx.Owner(ctx)}); err != nil {
@@ -198,10 +222,10 @@ func (service *Service) AddBulk(ctx context.Context, input BulkInput) ([]Summary
 		if err != nil {
 			return err
 		}
-		if input.IdempotencyKey == "" {
+		if !keyed {
 			return nil
 		}
-		stored, err := json.Marshal(rollIDs)
+		stored, err := json.Marshal(storedBulk{Summaries: created})
 		if err != nil {
 			return err
 		}
@@ -225,14 +249,43 @@ func summariesByID(ctx context.Context, queries gen.Querier, rollIDs []uuid.UUID
 	return summaries, nil
 }
 
-// replayBulkRolls returns the rolls created by an earlier request with the same key.
+// storedBulk is what AddBulk stores for its key: the original summaries, so a replay returns the
+// first response whatever happened to the rolls since.
+type storedBulk struct {
+	Summaries []Summary `json:"summaries"`
+}
+
+func errRequestInProgress() error {
+	return apperror.Conflict("request_in_progress", "a request with this Idempotency-Key is still running")
+}
+
+// lockIdempotencyKey makes requests with the same (owner, key) take turns until their transaction ends.
+func lockIdempotencyKey(ctx context.Context, queries gen.Querier, key string) error {
+	return queries.LockIdempotencyKey(ctx, gen.LockIdempotencyKeyParams{OwnerID: requestctx.Owner(ctx), Key: key})
+}
+
+// replayBulkRolls returns the rolls of an earlier request with the same key.
 func replayBulkRolls(ctx context.Context, queries gen.Querier, key string) ([]Summary, error) {
 	stored, err := queries.GetIdempotencyKey(ctx, gen.GetIdempotencyKeyParams{Key: key, OwnerID: requestctx.Owner(ctx)})
 	if err != nil {
 		return nil, err
 	}
+	return replayStored(ctx, queries, stored)
+}
+
+// replayStored reads both stored shapes. A {"summaries": [...]} object returns the stored list
+// unchanged. A JSON array of ids (a handoff key, or a bulk key from before this release) rebuilds
+// the summaries from the current rows.
+func replayStored(ctx context.Context, queries gen.Querier, stored gen.IdempotencyKey) ([]Summary, error) {
 	if stored.Response == nil {
-		return nil, apperror.Conflict("request_in_progress", "a request with this Idempotency-Key is still running")
+		return nil, errRequestInProgress()
+	}
+	if raw := bytes.TrimSpace(stored.Response); len(raw) > 0 && raw[0] == '{' {
+		var body storedBulk
+		if err := json.Unmarshal(raw, &body); err != nil {
+			return nil, err
+		}
+		return body.Summaries, nil
 	}
 	var rollIDs []uuid.UUID
 	if err := json.Unmarshal([]byte(stored.Response), &rollIDs); err != nil {
@@ -252,6 +305,12 @@ func (service *Service) Update(ctx context.Context, rollID uuid.UUID, input Inpu
 
 	var detail Detail
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
+		// A priced edit takes the account lock before the roll lock, like every money write.
+		if input.Price != nil {
+			if err := shared.GuardMoneyWrite(ctx, queries); err != nil {
+				return err
+			}
+		}
 		roll, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: rollID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return shared.NotFoundOr(err, "roll")

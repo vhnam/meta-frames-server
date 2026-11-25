@@ -53,6 +53,9 @@ func (service *Service) HandOver(ctx context.Context, input HandOverInput) ([]Su
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
 		owner := requestctx.Owner(ctx)
 		if input.IdempotencyKey != "" {
+			if err := lockIdempotencyKey(ctx, queries, input.IdempotencyKey); err != nil {
+				return err
+			}
 			claimed, err := queries.ClaimIdempotencyKey(ctx, gen.ClaimIdempotencyKeyParams{Key: input.IdempotencyKey, OwnerID: owner})
 			if err != nil {
 				return err

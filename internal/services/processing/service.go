@@ -267,6 +267,12 @@ func (service *Service) Save(ctx context.Context, rollID, jobID uuid.UUID, input
 		created bool
 	)
 	err := service.store.InTransaction(ctx, func(queries gen.Querier) error {
+		// A job with its own price takes the account lock before any roll or job lock, like every money write.
+		if input.Price != nil {
+			if err := shared.GuardMoneyWrite(ctx, queries); err != nil {
+				return err
+			}
+		}
 		roll, err := queries.GetRollForUpdate(ctx, gen.GetRollForUpdateParams{ID: rollID, OwnerID: requestctx.Owner(ctx)})
 		if err != nil {
 			return shared.NotFoundOr(err, "roll")
