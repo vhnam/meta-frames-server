@@ -11,7 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Accounts have a currency (`VND`, `USD` or `EUR`, default `VND`) and a currency lock. A migration locks every account that already holds money data: a roll or job price (zero and deleted records count), a lab order, or audit history that shows one, such as a cleared price or a deleted order line. Claiming records from before accounts existed locks the new owner the same way. No amount changes. `GET /auth/me` and every sign-in result return `currencyCode` and `currencyLocked`. `PUT /auth/me/currency` changes the currency of an unlocked account: it takes `currencyCode` and `expectedCurrencyCode`, and returns `409 currency_locked` or `409 currency_mismatch`. Amount fields accept at most 2147483647. `POST /rolls/bulk` and `PUT /rolls/{id}` check the `Expected-Currency` header (no header means `VND`) when the body has a price: a different code returns `409 currency_mismatch`, an invalid header returns `400`, and the first priced write locks the currency. `POST /rolls/bulk` stores its first response under the `Idempotency-Key`, and a retry returns it without checking the header. `PUT /rolls/{id}/processing/{jobId}` checks the header when the body has its own price, and `PUT /lab-orders/{id}` checks it on every create and update. The currency, bulk roll, roll, job and lab order endpoints return `400` for data after the JSON body.
+- Account currency: `VND`, `USD` or `EUR`, default `VND`.
+- Account currency lock. A migration (`00021`) locks every account that already holds money data: a roll or job price (zero and deleted records count), a lab order, or audit history that shows one, such as a cleared price or a deleted order line. Claiming records from before accounts existed locks the new owner the same way. No amount changes.
+- `GET /auth/me` and every sign-in result return `currencyCode` and `currencyLocked`.
+- `PUT /auth/me/currency` changes the currency of an unlocked account. It takes `currencyCode` and `expectedCurrencyCode`, and returns `409 currency_locked` or `409 currency_mismatch`.
+- `Expected-Currency` header check on money writes. No header means `VND`. A different code returns `409 currency_mismatch`. An invalid header returns `400`.
+  - `POST /rolls/bulk` and `PUT /rolls/{id}` check it when the body has a price. The first priced write locks the currency.
+  - `PUT /rolls/{id}/processing/{jobId}` checks it when the body has its own price.
+  - `PUT /lab-orders/{id}` checks it on every create and update.
+- `POST /rolls/bulk` stores its first response under the `Idempotency-Key`. A retry returns it without checking the header.
+
+### Changed
+
+- Amount fields accept at most 2147483647.
+- The currency, bulk roll, roll, job and lab order endpoints return `400` for data after the JSON body.
 
 ## [5.1.0] - 2026-11-24
 
