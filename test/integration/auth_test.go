@@ -8,6 +8,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -86,6 +87,46 @@ func TestAccountLifecycle(test *testing.T) {
 	if err := harness.pool.QueryRow(context.Background(), "SELECT count(*) FROM audit_log WHERE entity_type = 'app_user'").Scan(&audited); err != nil || audited != 0 {
 		test.Fatalf("app_user changes must not be audited: count=%d err=%v", audited, err)
 	}
+}
+
+func TestRegisterRejectsBadInputAndDuplicates(test *testing.T) {
+	harness := newHarness(test)
+	browser := harness.browser()
+	const email, password = "ansel@example.com", "Zone-System5"
+
+	rejected := []struct {
+		name     string
+		account  map[string]string
+		code     string
+		mentions string
+	}{
+		// The OpenAPI schema refuses a short password before the auth rules run.
+		{"password too short", map[string]string{"email": email, "password": "Zn-5a"}, "bad_request", "password"},
+		{"password without a digit", map[string]string{"email": email, "password": "Zone-System"}, "validation_failed", "password"},
+		{"password without an upper-case letter", map[string]string{"email": email, "password": "zone-system5"}, "validation_failed", "password"},
+		{"password without a symbol", map[string]string{"email": email, "password": "ZoneSystem5"}, "validation_failed", "password"},
+		{"invalid email", map[string]string{"email": "not-an-email", "password": password}, "validation_failed", "email"},
+	}
+	for _, rejection := range rejected {
+		result := harness.expect(browser.call("POST", "/auth/register", rejection.account), http.StatusBadRequest)
+		message, _ := result.Body["message"].(string)
+		if result.Body["code"] != rejection.code || !strings.Contains(message, rejection.mentions) {
+			test.Fatalf("%s: body = %v, want %s naming %q", rejection.name, result.Body, rejection.code, rejection.mentions)
+		}
+	}
+
+	// None of the rejected attempts left an account behind: the same email still registers.
+	harness.expect(browser.call("POST", "/auth/register", map[string]string{"email": email, "password": password}), http.StatusCreated)
+
+	// A second account with the same email, in any letter case, is refused and does not touch the first.
+	other := harness.browser()
+	taken := harness.expect(other.call("POST", "/auth/register", map[string]string{"email": "ANSEL@Example.com", "password": "Other-Pass7"}), http.StatusConflict)
+	if message, _ := taken.Body["message"].(string); taken.Body["code"] != "email_taken" || message == "" {
+		test.Fatalf("duplicate body = %v, want email_taken with a message", taken.Body)
+	}
+	harness.expect(other.call("GET", "/auth/me", nil), http.StatusUnauthorized)
+	harness.expect(other.call("POST", "/auth/login", map[string]string{"email": email, "password": "Other-Pass7"}), http.StatusUnauthorized)
+	harness.expect(other.call("POST", "/auth/login", map[string]string{"email": email, "password": password}), http.StatusOK)
 }
 
 // signInWithGoogle walks the browser through Google sign-in and returns where it lands.
