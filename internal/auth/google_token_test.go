@@ -99,6 +99,26 @@ func TestGoogleTokenAcceptsTheWebClientAsAudience(test *testing.T) {
 	client.expect(client.signInWithToken(goodToken), http.StatusOK, "")
 }
 
+func TestGoogleTokenAcceptsEachMobileClient(test *testing.T) {
+	mobile := []string{"android-client", "ios-client"}
+	for _, audience := range mobile {
+		test.Run(audience, func(test *testing.T) {
+			claims := tokenClaims()
+			claims.Audience = audience
+			client := newClientWith(test, testutil.NewMemory(), auth.Config{
+				AppURL: "http://app.test",
+				Mailer: &testutil.Mailbox{},
+				Google: auth.GoogleConfig{
+					MobileClientIDs: mobile,
+					VerifyIDToken:   func(context.Context, string) (auth.GoogleIDClaims, error) { return claims, nil },
+				},
+			})
+			client.expect(client.signInWithToken(goodToken), http.StatusOK, "")
+			client.expect(client.me(), http.StatusOK, "")
+		})
+	}
+}
+
 func TestGoogleTokenRefusals(test *testing.T) {
 	otherClient := tokenClaims()
 	otherClient.Audience = "someone-elses-app"
