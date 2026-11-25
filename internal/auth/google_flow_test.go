@@ -4,6 +4,9 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"meta-frames-server/internal/auth"
 	"meta-frames-server/internal/testutil"
@@ -128,6 +131,21 @@ func TestGoogleSignInFailuresReturnToTheLoginPage(test *testing.T) {
 	if len(memory.Users) != 0 {
 		test.Fatal("failed sign-ins must not create accounts")
 	}
+}
+
+func TestGoogleSignInRefusesALockedAccount(test *testing.T) {
+	google, memory := newFakeGoogle(test), testutil.NewMemory()
+	google.client(test, memory).signInWithGoogle("/")
+	for id, user := range memory.Users {
+		user.LockedUntil = pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true}
+		memory.Users[id] = user
+	}
+
+	again := google.client(test, memory)
+	if landing := again.signInWithGoogle("/rolls"); landing != "http://app.test/login?error=account_locked" {
+		test.Fatalf("a locked account landed on %q", landing)
+	}
+	again.expect(again.me(), http.StatusUnauthorized, "unauthorized")
 }
 
 func TestGoogleSignInOnlyRedirectsWithinTheFrontEnd(test *testing.T) {
