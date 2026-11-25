@@ -32,9 +32,9 @@ var (
 	// ErrEmailNotVerified refuses a Google sign-in whose email Google has not verified: it could
 	// claim someone else's account or address.
 	ErrEmailNotVerified = errors.New("auth: the provider has not verified this email")
-	// ErrIdentityConflict refuses a Google sign-in whose email belongs to an account already
-	// linked to a different Google identity.
-	ErrIdentityConflict = errors.New("auth: the email's account is linked to another identity")
+	// ErrIdentityConflict refuses a Google sign-in whose email belongs to another account: a
+	// password account or an account linked to a different Google identity.
+	ErrIdentityConflict = errors.New("auth: the email already belongs to another account")
 )
 
 func NewStorer(store db.Store) *Storer { return &Storer{store: store} }
@@ -142,8 +142,8 @@ func (storer *Storer) LoadByRecoverSelector(ctx context.Context, selector string
 }
 
 // NewFromOAuth2 finds or prepares the account for a Google sign-in: the account already linked to
-// the identity, else the account with the same (verified) email, which gets linked, else a new
-// account. SaveOAuth2 writes it.
+// the identity, else a new account. An email that already belongs to another account is refused
+// with ErrIdentityConflict until email verification exists (AUTH-15). SaveOAuth2 writes it.
 func (storer *Storer) NewFromOAuth2(ctx context.Context, provider string, details map[string]string) (authboss.OAuth2User, error) {
 	uid, email := details[detailUID], normalizeEmail(details[detailEmail])
 	if uid == "" || email == "" {
@@ -161,19 +161,14 @@ func (storer *Storer) NewFromOAuth2(ctx context.Context, provider string, detail
 		return nil, ErrEmailNotVerified
 	}
 
-	row, err = queries.GetUserByEmail(ctx, email)
+	_, err = queries.GetUserByEmail(ctx, email)
 	if db.IsNoRows(err) {
 		return withProfile(&User{Email: email, OAuth2Provider: provider, OAuth2UID: uid}, details), nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	existing := fromRow(row)
-	if existing.OAuth2UID != "" {
-		return nil, ErrIdentityConflict
-	}
-	existing.OAuth2Provider, existing.OAuth2UID = provider, uid
-	return withProfile(existing, details), nil
+	return nil, ErrIdentityConflict
 }
 
 // withProfile fills in the provider's display name when the account has none, and takes the

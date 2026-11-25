@@ -200,13 +200,21 @@ func TestSignInAndRecoveryLeaveTheCurrencyAlone(test *testing.T) {
 	harness.expect(browser.call("POST", "/auth/recover/end", map[string]string{"token": harness.mail.RecoverToken(), "password": "Fresh-Neg4tive"}), http.StatusOK)
 	check("recovery")
 
-	// Link Google, then update the existing linked account's profile.
+	// A first Google sign-in is refused. A Google account linked before MF-22 still signs in and updates its profile.
 	harness.google.Account = map[string]any{"sub": "g-1", "email": "ansel@example.com", "email_verified": true, "name": "Ansel Adams", "picture": "https://example.com/a.png"}
 	googleBrowser := harness.browser()
-	if landing := googleBrowser.signInWithGoogle(); landing != "http://app.test/rolls" {
+	if landing := googleBrowser.signInWithGoogle(); landing != "http://app.test/login?error=account_conflict" {
 		test.Fatalf("Google link landed on %q", landing)
 	}
-	check("google link")
+	check("google refusal")
+
+	if _, err := harness.pool.Exec(context.Background(), "UPDATE app_user SET oauth2_provider = 'google', oauth2_uid = 'g-1' WHERE email = 'ansel@example.com'"); err != nil {
+		test.Fatal(err)
+	}
+	if landing := harness.browser().signInWithGoogle(); landing != "http://app.test/rolls" {
+		test.Fatalf("Google sign-in landed on %q", landing)
+	}
+	check("google sign-in")
 
 	harness.google.Account["picture"] = "https://example.com/b.png"
 	if landing := googleBrowser.signInWithGoogle(); landing != "http://app.test/rolls" {

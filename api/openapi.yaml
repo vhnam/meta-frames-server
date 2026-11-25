@@ -311,8 +311,8 @@ paths:
       description: |
         Google sends the browser here. On success the session cookie is set and the browser goes to
         `{APP_URL}{redir}`. On failure it goes to `{APP_URL}/login?error=<code>`, where code is `google_denied`
-        (the user cancelled), `email_not_verified`, `account_conflict` (the email's account is linked to another
-        Google account), `account_locked` or `google_failed`.
+        (the user cancelled), `email_not_verified`, `account_conflict` (the email already belongs to
+        another account), `account_locked` or `google_failed`.
       parameters:
         - { name: code, in: query, schema: { type: string } }
         - { name: state, in: query, schema: { type: string } }
@@ -383,7 +383,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Problem" }
         "409":
-          description: "`account_conflict`: the email's account is linked to another Google account"
+          description: "`account_conflict`: the email already belongs to another account"
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Problem" }

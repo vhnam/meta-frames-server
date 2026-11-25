@@ -146,7 +146,7 @@ func (browser *browser) signInWithGoogle() string {
 	return callback.Header.Get("Location")
 }
 
-func TestGoogleSignInCreatesThenLinksAccounts(test *testing.T) {
+func TestGoogleSignInCreatesAndRefusesAccounts(test *testing.T) {
 	harness := newHarness(test)
 	browser := harness.browser()
 	if landing := browser.signInWithGoogle(); landing != "http://app.test/rolls" {
@@ -163,12 +163,54 @@ func TestGoogleSignInCreatesThenLinksAccounts(test *testing.T) {
 		test.Fatalf("a Google-only account has no password: hash=%v err=%v", passwordHash, err)
 	}
 
-	// A password account with the same verified email is linked rather than duplicated.
+	// A password account with the same verified email is refused, not linked.
 	harness.google.Account = map[string]any{"sub": "g-2", "email": "dorothea@example.com", "email_verified": true, "name": "Dorothea"}
-	registered := harness.expect(harness.browser().call("POST", "/auth/register", map[string]string{"email": "dorothea@example.com", "password": "Zone-System5"}), http.StatusCreated)
-	linked := harness.browser()
-	linked.signInWithGoogle()
-	if me := harness.expect(linked.call("GET", "/auth/me", nil), http.StatusOK); me.Body["id"] != asObject(registered.Body["user"])["id"] {
-		test.Fatalf("me = %v, want the registered account", me.Body)
+	harness.expect(harness.browser().call("POST", "/auth/register", map[string]string{"email": "dorothea@example.com", "password": "Zone-System5"}), http.StatusCreated)
+	var hashBefore *string
+	if err := harness.pool.QueryRow(context.Background(), "SELECT password_hash FROM app_user WHERE email = 'dorothea@example.com'").Scan(&hashBefore); err != nil || hashBefore == nil {
+		test.Fatalf("the password account needs a hash: hash=%v err=%v", hashBefore, err)
 	}
+	refused := harness.browser()
+	if landing := refused.signInWithGoogle(); landing != "http://app.test/login?error=account_conflict" {
+		test.Fatalf("a Google sign-in for a password account landed on %q", landing)
+	}
+	harness.expect(refused.call("GET", "/auth/me", nil), http.StatusUnauthorized)
+	var linked *string
+	var hash *string
+	if err := harness.pool.QueryRow(context.Background(), "SELECT oauth2_uid, password_hash FROM app_user WHERE email = 'dorothea@example.com'").Scan(&linked, &hash); err != nil || linked != nil || hash == nil || *hash != *hashBefore {
+		test.Fatalf("the password account must stay unlinked: uid=%v hash=%v err=%v", linked, hash, err)
+	}
+}
+
+func TestGoogleSignInLeavesAPasswordAccountUntouched(test *testing.T) {
+	harness := newHarness(test)
+	owner := harness.browser()
+	registered := harness.expect(owner.call("POST", "/auth/register", map[string]string{"email": "dorothea@example.com", "password": "Zone-System5"}), http.StatusCreated)
+	userID := asObject(registered.Body["user"])["id"]
+
+	snapshot := func() (hash, updatedAt string, sessions int, linked *string) {
+		test.Helper()
+		if err := harness.pool.QueryRow(context.Background(), `SELECT password_hash, updated_at::text, oauth2_uid,
+			(SELECT count(*) FROM user_session WHERE user_id = app_user.id) FROM app_user WHERE email = 'dorothea@example.com'`).Scan(&hash, &updatedAt, &linked, &sessions); err != nil {
+			test.Fatal(err)
+		}
+		return hash, updatedAt, sessions, linked
+	}
+	hashBefore, updatedBefore, sessionsBefore, _ := snapshot()
+
+	harness.google.Account = map[string]any{"sub": "g-9", "email": "Dorothea@Example.COM", "email_verified": true, "name": "Not Dorothea"}
+	attacker := harness.browser()
+	if landing := attacker.signInWithGoogle(); landing != "http://app.test/login?error=account_conflict" {
+		test.Fatalf("landed on %q", landing)
+	}
+	harness.expect(attacker.call("GET", "/auth/me", nil), http.StatusUnauthorized)
+	if me := harness.expect(owner.call("GET", "/auth/me", nil), http.StatusOK); me.Body["id"] != userID {
+		test.Fatalf("me = %v, want %v", me.Body, userID)
+	}
+	hashAfter, updatedAfter, sessionsAfter, linked := snapshot()
+	if hashAfter != hashBefore || updatedAfter != updatedBefore || sessionsAfter != sessionsBefore || linked != nil {
+		test.Fatalf("the account changed: hash same=%v updated %q to %q, sessions %d to %d, uid=%v",
+			hashAfter == hashBefore, updatedBefore, updatedAfter, sessionsBefore, sessionsAfter, linked)
+	}
+	harness.expect(harness.browser().call("POST", "/auth/login", map[string]string{"email": "dorothea@example.com", "password": "Zone-System5"}), http.StatusOK)
 }

@@ -3,12 +3,14 @@ package auth_test
 import (
 	"net/http"
 	"net/url"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"meta-frames-server/internal/auth"
+	"meta-frames-server/internal/db/gen"
 	"meta-frames-server/internal/testutil"
 )
 
@@ -86,22 +88,51 @@ func TestGoogleSignInCreatesAnAccount(test *testing.T) {
 	again.expect(again.call("POST", "/auth/login", credentials(email, password)), http.StatusUnauthorized, "invalid_credentials")
 }
 
-func TestGoogleSignInLinksTheAccountWithTheSameVerifiedEmail(test *testing.T) {
+// onlyUser returns the single account in memory.
+func onlyUser(test *testing.T, memory *testutil.Memory) gen.AppUser {
+	test.Helper()
+	if len(memory.Users) != 1 {
+		test.Fatalf("users = %d, want 1", len(memory.Users))
+	}
+	for _, user := range memory.Users {
+		return user
+	}
+	return gen.AppUser{}
+}
+
+func TestGoogleSignInRefusesTheEmailOfAPasswordAccount(test *testing.T) {
 	google, memory := newFakeGoogle(test), testutil.NewMemory()
 	registered := newClient(test, memory, &testutil.Mailbox{})
-	user := registered.expect(registered.call("POST", "/auth/register", credentials(email, password)), http.StatusCreated, "").body["user"].(map[string]any)
+	registered.expect(registered.call("POST", "/auth/register", credentials(email, password)), http.StatusCreated, "")
+	before := onlyUser(test, memory)
 
 	client := google.client(test, memory)
-	client.signInWithGoogle("/")
-	if me := client.expect(client.me(), http.StatusOK, ""); me.body["id"] != user["id"] {
-		test.Fatalf("me = %v, want the registered account %v", me.body, user)
+	if landing := client.signInWithGoogle("/"); landing != "http://app.test/login?error=account_conflict" {
+		test.Fatalf("a Google sign-in for a password account landed on %q", landing)
 	}
-	client.expect(client.call("POST", "/auth/login", credentials(email, password)), http.StatusOK, "") // the password still works
+	client.expect(client.me(), http.StatusUnauthorized, "unauthorized")
+	if after := onlyUser(test, memory); !reflect.DeepEqual(after, before) {
+		test.Fatalf("a refused sign-in changed the account:\nbefore %+v\nafter  %+v", before, after)
+	}
+}
 
-	google.Account = map[string]any{"sub": "g-2", "email": email, "email_verified": true}
-	other := google.client(test, memory)
-	if landing := other.signInWithGoogle("/"); landing != "http://app.test/login?error=account_conflict" {
-		test.Fatalf("a second Google identity for a linked email landed on %q", landing)
+func TestGoogleSignInRefusesALockedPasswordAccountWithoutAWrite(test *testing.T) {
+	google, memory := newFakeGoogle(test), testutil.NewMemory()
+	registered := newClient(test, memory, &testutil.Mailbox{})
+	registered.expect(registered.call("POST", "/auth/register", credentials(email, password)), http.StatusCreated, "")
+	for id, user := range memory.Users {
+		user.LockedUntil = pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true}
+		memory.Users[id] = user
+	}
+	before := onlyUser(test, memory)
+
+	client := google.client(test, memory)
+	if landing := client.signInWithGoogle("/"); landing != "http://app.test/login?error=account_conflict" {
+		test.Fatalf("a locked password account landed on %q", landing)
+	}
+	client.expect(client.me(), http.StatusUnauthorized, "unauthorized")
+	if after := onlyUser(test, memory); !reflect.DeepEqual(after, before) {
+		test.Fatalf("a refused sign-in changed the locked account:\nbefore %+v\nafter  %+v", before, after)
 	}
 }
 

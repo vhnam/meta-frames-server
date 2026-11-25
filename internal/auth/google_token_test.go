@@ -3,7 +3,9 @@ package auth_test
 import (
 	"context"
 	"errors"
+	"maps"
 	"net/http"
+	"reflect"
 	"testing"
 	"time"
 
@@ -71,17 +73,105 @@ func TestGoogleTokenCreatesAnAccountAndStartsASession(test *testing.T) {
 	}
 }
 
-func TestGoogleTokenLinksTheAccountWithTheSameVerifiedEmail(test *testing.T) {
+func TestGoogleTokenRefusesTheEmailOfAPasswordAccount(test *testing.T) {
 	memory := testutil.NewMemory()
 	registered := newClient(test, memory, &testutil.Mailbox{})
-	account := registered.expect(registered.call("POST", "/auth/register", credentials(email, password)), http.StatusCreated, "").body["user"].(map[string]any)
+	registered.expect(registered.call("POST", "/auth/register", credentials(email, password)), http.StatusCreated, "")
+	before := onlyUser(test, memory)
 
 	client := tokenClient(test, memory, tokenClaims())
-	if me := client.expect(client.signInWithToken(goodToken), http.StatusOK, ""); me.body["user"].(map[string]any)["id"] != account["id"] {
-		test.Fatalf("signed in as %v, want %v", me.body, account)
+	client.expect(client.signInWithToken(goodToken), http.StatusConflict, "account_conflict")
+	client.expect(client.me(), http.StatusUnauthorized, "unauthorized")
+	if after := onlyUser(test, memory); !reflect.DeepEqual(after, before) {
+		test.Fatalf("a refused sign-in changed the account:\nbefore %+v\nafter  %+v", before, after)
 	}
-	if len(memory.Users) != 1 {
-		test.Fatalf("users = %d, want 1", len(memory.Users))
+}
+
+func TestGoogleTokenRefusesALockedPasswordAccountWithoutAWrite(test *testing.T) {
+	memory := testutil.NewMemory()
+	registered := newClient(test, memory, &testutil.Mailbox{})
+	registered.expect(registered.call("POST", "/auth/register", credentials(email, password)), http.StatusCreated, "")
+	for id, user := range memory.Users {
+		user.LockedUntil = pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true}
+		memory.Users[id] = user
+	}
+	before := onlyUser(test, memory)
+
+	client := tokenClient(test, memory, tokenClaims())
+	client.expect(client.signInWithToken(goodToken), http.StatusConflict, "account_conflict")
+	client.expect(client.me(), http.StatusUnauthorized, "unauthorized")
+	if after := onlyUser(test, memory); !reflect.DeepEqual(after, before) {
+		test.Fatalf("a refused sign-in changed the locked account:\nbefore %+v\nafter  %+v", before, after)
+	}
+}
+
+func TestGoogleTokenReturningIdentityKeepsItsAccountWhenItsEmailMatchesAnother(test *testing.T) {
+	memory := testutil.NewMemory()
+	first := tokenClient(test, memory, tokenClaims())
+	googleUser := first.expect(first.signInWithToken(goodToken), http.StatusOK, "").body["user"].(map[string]any)
+
+	registered := newClient(test, memory, &testutil.Mailbox{})
+	const otherEmail = "dorothea@example.com"
+	registered.expect(registered.call("POST", "/auth/register", credentials(otherEmail, password)), http.StatusCreated, "")
+	accountsBefore := maps.Clone(memory.Users)
+
+	moved := tokenClaims()
+	moved.Email = "Dorothea@Example.com"
+	client := tokenClient(test, memory, moved)
+	signedIn := client.expect(client.signInWithToken(goodToken), http.StatusOK, "").body["user"].(map[string]any)
+	if signedIn["id"] != googleUser["id"] {
+		test.Fatalf("signed in as %v, want the Google account %v", signedIn, googleUser)
+	}
+	for id, user := range memory.Users {
+		switch user.Email {
+		case email:
+			if user.Oauth2Uid == nil {
+				test.Fatal("the Google account lost its identity")
+			}
+		case otherEmail:
+			if !reflect.DeepEqual(user, accountsBefore[id]) {
+				test.Fatal("the password account changed")
+			}
+		default:
+			test.Fatalf("unexpected account %q", user.Email)
+		}
+	}
+	if len(memory.Users) != 2 {
+		test.Fatalf("users = %d, want 2", len(memory.Users))
+	}
+}
+
+func TestGoogleTokenReturningIdentityDoesNotRequireAVerifiedEmailClaim(test *testing.T) {
+	memory := testutil.NewMemory()
+	claims := tokenClaims()
+	first := tokenClient(test, memory, claims)
+	first.expect(first.signInWithToken(goodToken), http.StatusOK, "")
+	before := onlyUser(test, memory)
+
+	claims.EmailVerified = false
+	returning := tokenClient(test, memory, claims)
+	returning.expect(returning.signInWithToken(goodToken), http.StatusOK, "")
+	me := returning.expect(returning.me(), http.StatusOK, "")
+	if me.body["id"] != before.ID.String() {
+		test.Fatalf("session account = %v, want %s", me.body["id"], before.ID)
+	}
+}
+
+func TestGoogleTokenChecksEmailVerificationBeforeAccountConflict(test *testing.T) {
+	memory := testutil.NewMemory()
+	claims := tokenClaims()
+	claims.EmailVerified = false
+	client := tokenClient(test, memory, claims)
+	client.expect(client.call("POST", "/auth/register", credentials(email, password)), http.StatusCreated, "")
+	before := onlyUser(test, memory)
+	sessionsBefore := maps.Clone(memory.Sessions)
+
+	client.expect(client.signInWithToken(goodToken), http.StatusForbidden, "email_not_verified")
+	if after := onlyUser(test, memory); !reflect.DeepEqual(after, before) {
+		test.Fatal("the account changed after refusal")
+	}
+	if !reflect.DeepEqual(memory.Sessions, sessionsBefore) {
+		test.Fatal("the sessions changed after refusal")
 	}
 }
 

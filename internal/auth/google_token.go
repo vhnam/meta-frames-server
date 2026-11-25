@@ -125,7 +125,7 @@ func (accounts *Auth) signInWithGoogleToken(ctx *gin.Context) {
 		problem(http.StatusForbidden, "email_not_verified", "Your Google email address is not verified.")
 		return
 	case errors.Is(err, ErrIdentityConflict):
-		problem(http.StatusConflict, "account_conflict", "This email's account is linked to another Google account.")
+		problem(http.StatusConflict, "account_conflict", "This email already belongs to another account.")
 		return
 	case err != nil:
 		accounts.tokenSignInFailed(ctx, err)

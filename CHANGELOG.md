@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- A Google sign-in no longer links to an existing account with the same email. It is refused with `account_conflict` until email verification exists.
+
 ### Changed
 
 - Internal: `make lint` reports no issues. Unused test helpers are removed, and ignored `Close` errors are discarded explicitly. Runtime behavior does not change.
