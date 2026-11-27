@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"math"
@@ -20,6 +21,7 @@ import (
 // Storer keeps authboss accounts in the app_user table.
 type Storer struct {
 	store db.Store
+	mode  EmailVerificationMode // set by New; send and enforce issue a challenge on registration
 }
 
 var (
@@ -64,28 +66,47 @@ func (storer *Storer) Load(ctx context.Context, pid string) (authboss.User, erro
 	return fromRow(row), nil
 }
 
-// Save writes back the fields authboss changes: password, name, recovery and lockout state.
+// Save writes back the fields authboss changes. Credentials (password and recovery fields) go out
+// only after a credential setter ran; login bookkeeping writes name, lockout state and avatar.
 func (storer *Storer) Save(ctx context.Context, user authboss.User) error {
 	account, err := asUser(user)
 	if err != nil {
 		return err
 	}
-	_, err = storer.store.Queries().UpdateUser(ctx, gen.UpdateUserParams{
-		ID:                 account.ID,
-		Name:               emptyToNil(account.Name),
-		PasswordHash:       emptyToNil(account.PasswordHash),
-		RecoverSelector:    emptyToNil(account.RecoverSelector),
-		RecoverVerifier:    emptyToNil(account.RecoverVerifier),
-		RecoverTokenExpiry: timestamp(account.RecoverExpiry),
-		AttemptCount:       int32(min(account.AttemptCount, math.MaxInt32)),
-		LastAttempt:        timestamp(account.LastAttempt),
-		LockedUntil:        timestamp(account.LockedUntil),
-		Oauth2Provider:     emptyToNil(account.OAuth2Provider),
-		Oauth2Uid:          emptyToNil(account.OAuth2UID),
-		AvatarUrl:          emptyToNil(account.AvatarURL),
-	})
+	if account.passwordChanged || account.recoveryChanged {
+		_, err = storer.store.Queries().UpdateUser(ctx, gen.UpdateUserParams{
+			ID:                 account.ID,
+			SetPassword:        account.passwordChanged,
+			SetRecovery:        account.recoveryChanged,
+			Name:               emptyToNil(account.Name),
+			PasswordHash:       emptyToNil(account.PasswordHash),
+			RecoverSelector:    emptyToNil(account.RecoverSelector),
+			RecoverVerifier:    emptyToNil(account.RecoverVerifier),
+			RecoverTokenExpiry: timestamp(account.RecoverExpiry),
+			AttemptCount:       int32(min(account.AttemptCount, math.MaxInt32)),
+			LastAttempt:        timestamp(account.LastAttempt),
+			LockedUntil:        timestamp(account.LockedUntil),
+			Oauth2Provider:     emptyToNil(account.OAuth2Provider),
+			Oauth2Uid:          emptyToNil(account.OAuth2UID),
+			AvatarUrl:          emptyToNil(account.AvatarURL),
+		})
+	} else {
+		_, err = storer.store.Queries().UpdateUserState(ctx, gen.UpdateUserStateParams{
+			ID:             account.ID,
+			Name:           emptyToNil(account.Name),
+			AttemptCount:   int32(min(account.AttemptCount, math.MaxInt32)),
+			LastAttempt:    timestamp(account.LastAttempt),
+			LockedUntil:    timestamp(account.LockedUntil),
+			AvatarUrl:      emptyToNil(account.AvatarURL),
+			Oauth2Provider: emptyToNil(account.OAuth2Provider),
+			Oauth2Uid:      emptyToNil(account.OAuth2UID),
+		})
+	}
 	if db.IsNoRows(err) {
 		return authboss.ErrUserNotFound
+	}
+	if err == nil {
+		account.passwordChanged, account.recoveryChanged = false, false
 	}
 	return err
 }
@@ -100,6 +121,7 @@ func (storer *Storer) Create(ctx context.Context, user authboss.User) error {
 		return err
 	}
 	var row gen.AppUser
+	var token string
 	err = storer.store.InTransaction(ctx, func(queries gen.Querier) error {
 		row, err = queries.InsertUser(ctx, gen.InsertUserParams{
 			ID:             uuid.New(),
@@ -110,25 +132,58 @@ func (storer *Storer) Create(ctx context.Context, user authboss.User) error {
 			Oauth2Uid:      emptyToNil(account.OAuth2UID),
 			AvatarUrl:      emptyToNil(account.AvatarURL),
 		})
+		if db.IsUniqueViolation(err) { // only the insert means the email is taken
+			return authboss.ErrUserFound
+		}
 		if err != nil {
 			return err
 		}
-		// Records from before accounts existed go to the first account (later ones find none).
-		if err = queries.ClaimUnownedData(ctx, row.ID); err != nil {
+		issue := account.OAuth2UID == "" && (storer.mode == EmailVerificationSend || storer.mode == EmailVerificationEnforce)
+		if account.OAuth2UID != "" {
+			if err = queries.MarkEmailVerifiedByGoogle(ctx, row.ID); err != nil {
+				return err
+			}
+		}
+		if issue {
+			// A password account claims old data only after it proves the address.
+			if token, err = issueVerification(ctx, queries, row.Email); err != nil {
+				return err
+			}
+		} else if err = queries.ClaimUnownedData(ctx, row.ID); err != nil {
+			// Records from before accounts existed go to the first account (later ones find none).
 			return err
 		}
 		// The claim can lock the currency, so return the row as it is after the claim.
 		row, err = queries.GetUserByID(ctx, row.ID)
 		return err
 	})
-	if db.IsUniqueViolation(err) {
-		return authboss.ErrUserFound
-	}
 	if err != nil {
 		return err
 	}
 	*account = *fromRow(row)
+	account.verificationToken = token
 	return nil
+}
+
+// issueVerification stores the digests of a new token for the email and returns the raw token. No
+// row from the query (cooldown, window, lock) is an error: a new account must get its challenge.
+func issueVerification(ctx context.Context, queries gen.Querier, email string) (string, error) {
+	selector, verifier, token, err := authboss.NewSha512TokenGenerator().GenerateToken()
+	if err != nil {
+		return "", err
+	}
+	selectorBytes, err := base64.StdEncoding.DecodeString(selector)
+	if err != nil {
+		return "", err
+	}
+	verifierBytes, err := base64.StdEncoding.DecodeString(verifier)
+	if err != nil {
+		return "", err
+	}
+	if _, err = queries.IssueEmailVerification(ctx, gen.IssueEmailVerificationParams{Email: email, Selector: selectorBytes, Verifier: verifierBytes}); err != nil {
+		return "", fmt.Errorf("auth: issuing the email verification: %w", err)
+	}
+	return token, nil
 }
 
 // LoadByRecoverSelector finds the user a password-reset token was issued to.

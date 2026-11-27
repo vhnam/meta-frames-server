@@ -8,10 +8,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"meta-frames-server/internal/api"
 	"meta-frames-server/internal/auth"
@@ -21,6 +23,41 @@ import (
 
 func googleDetails(uid, email string) map[string]string {
 	return map[string]string{"uid": uid, "email": email, "email_verified": "true", "name": "Ansel"}
+}
+
+func TestLoadPreservesEmailVerificationState(test *testing.T) {
+	verifiedAt := time.Date(2026, 11, 26, 1, 2, 3, 0, time.UTC)
+	for _, scenario := range []struct {
+		name       string
+		verifiedAt time.Time
+		exempt     bool
+	}{
+		{name: "unverified"},
+		{name: "verified", verifiedAt: verifiedAt},
+		{name: "legacy exempt", exempt: true},
+	} {
+		test.Run(scenario.name, func(test *testing.T) {
+			const email = "ansel@example.com"
+			memory := testutil.NewMemory()
+			id := uuid.New()
+			memory.Users[id] = gen.AppUser{
+				ID:                      id,
+				Email:                   email,
+				EmailVerifiedAt:         pgtype.Timestamptz{Time: scenario.verifiedAt, Valid: !scenario.verifiedAt.IsZero()},
+				EmailVerificationExempt: scenario.exempt,
+			}
+			storer := auth.NewStorer(testutil.Store{Querier: memory})
+			loaded, err := storer.Load(test.Context(), email)
+			if err != nil {
+				test.Fatal(err)
+			}
+			account := loaded.(*auth.User)
+			if !account.EmailVerifiedAt.Equal(scenario.verifiedAt) || account.EmailVerificationExempt != scenario.exempt {
+				test.Errorf("verification state = (%v, %t), want (%v, %t)",
+					account.EmailVerifiedAt, account.EmailVerificationExempt, scenario.verifiedAt, scenario.exempt)
+			}
+		})
+	}
 }
 
 func TestSaveOAuth2RefusesAStaleCreate(test *testing.T) {
@@ -128,4 +165,117 @@ func sameIdentity(left, right gen.AppUser) bool {
 		return first == nil && second == nil || first != nil && second != nil && *first == *second
 	}
 	return same(left.Oauth2Provider, right.Oauth2Provider) && same(left.Oauth2Uid, right.Oauth2Uid)
+}
+
+func TestSaveWithoutCredentialSettersKeepsCredentialsAndChallenge(test *testing.T) {
+	memory := testutil.NewMemory()
+	id, oldHash, newHash, selector := uuid.New(), "old-hash", "new-hash", "recover-selector"
+	memory.Users[id] = gen.AppUser{ID: id, Email: "ansel@example.com", PasswordHash: &oldHash}
+	storer := auth.NewStorer(testutil.Store{Querier: memory})
+	loaded, err := storer.Load(test.Context(), "ansel@example.com") // a login holds this stale value
+	if err != nil {
+		test.Fatal(err)
+	}
+
+	// A reset commits meanwhile: new hash, fresh challenge, a recovery selector.
+	user := memory.Users[id]
+	user.PasswordHash, user.RecoverSelector = &newHash, &selector
+	user.EmailVerificationSelector = []byte("challenge")
+	memory.Users[id] = user
+
+	account := loaded.(*auth.User)
+	account.AttemptCount = 1 // lock-style write
+	if err := storer.Save(test.Context(), account); err != nil {
+		test.Fatal(err)
+	}
+	saved := memory.Users[id]
+	if *saved.PasswordHash != newHash || saved.RecoverSelector == nil || *saved.RecoverSelector != selector || string(saved.EmailVerificationSelector) != "challenge" {
+		test.Fatalf("a lock-style save changed credentials or the challenge: %+v", saved)
+	}
+	if saved.AttemptCount != 1 {
+		test.Fatalf("attempt count = %d, want 1", saved.AttemptCount)
+	}
+}
+
+func TestSaveAfterAPasswordSetterWritesTheHashAndClearsTheChallenge(test *testing.T) {
+	memory := testutil.NewMemory()
+	id, oldHash := uuid.New(), "old-hash"
+	memory.Users[id] = gen.AppUser{ID: id, Email: "ansel@example.com", PasswordHash: &oldHash, EmailVerificationSelector: []byte("challenge")}
+	storer := auth.NewStorer(testutil.Store{Querier: memory})
+	loaded, err := storer.Load(test.Context(), "ansel@example.com")
+	if err != nil {
+		test.Fatal(err)
+	}
+	account := loaded.(*auth.User)
+	account.PutPassword("new-hash")
+	if err := storer.Save(test.Context(), account); err != nil {
+		test.Fatal(err)
+	}
+	if saved := memory.Users[id]; *saved.PasswordHash != "new-hash" || saved.EmailVerificationSelector != nil {
+		test.Fatalf("recovery-style save: %+v", saved)
+	}
+	account.AttemptCount = 2 // the flag is spent: a later save is login bookkeeping again
+	memory.Users[id] = func() gen.AppUser { user := memory.Users[id]; user.PasswordHash = &oldHash; return user }()
+	if err := storer.Save(test.Context(), account); err != nil {
+		test.Fatal(err)
+	}
+	if *memory.Users[id].PasswordHash != oldHash {
+		test.Fatal("a save after a save must not write credentials again")
+	}
+}
+
+func TestRecoveryStartWritesOnlyTheRecoveryFields(test *testing.T) {
+	memory := testutil.NewMemory()
+	id, oldHash, newHash := uuid.New(), "old-hash", "new-hash"
+	memory.Users[id] = gen.AppUser{ID: id, Email: "ansel@example.com", PasswordHash: &oldHash}
+	storer := auth.NewStorer(testutil.Store{Querier: memory})
+	loaded, err := storer.Load(test.Context(), "ansel@example.com") // recovery start holds this stale value
+	if err != nil {
+		test.Fatal(err)
+	}
+	user := memory.Users[id] // a reset commits meanwhile
+	user.PasswordHash, user.EmailVerificationSelector = &newHash, []byte("challenge")
+	memory.Users[id] = user
+
+	account := loaded.(*auth.User)
+	expiry := time.Now().Add(time.Hour).UTC()
+	account.PutRecoverSelector("selector")
+	account.PutRecoverVerifier("verifier")
+	account.PutRecoverExpiry(expiry)
+	if err := storer.Save(test.Context(), account); err != nil {
+		test.Fatal(err)
+	}
+	saved := memory.Users[id]
+	if saved.RecoverSelector == nil || *saved.RecoverSelector != "selector" || saved.RecoverVerifier == nil || *saved.RecoverVerifier != "verifier" || !saved.RecoverTokenExpiry.Valid {
+		test.Fatalf("the recovery fields were not written: %+v", saved)
+	}
+	if *saved.PasswordHash != newHash || string(saved.EmailVerificationSelector) != "challenge" {
+		test.Fatalf("recovery start restored the old hash or cleared the challenge: %+v", saved)
+	}
+}
+
+func TestRecoveryEndWritesTheHashAndClearsRecoveryAndChallenge(test *testing.T) {
+	memory := testutil.NewMemory()
+	id, oldHash, selector, verifier := uuid.New(), "old-hash", "selector", "verifier"
+	memory.Users[id] = gen.AppUser{
+		ID: id, Email: "ansel@example.com", PasswordHash: &oldHash, RecoverSelector: &selector, RecoverVerifier: &verifier,
+		RecoverTokenExpiry: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true}, EmailVerificationSelector: []byte("challenge"),
+	}
+	storer := auth.NewStorer(testutil.Store{Querier: memory})
+	loaded, err := storer.Load(test.Context(), "ansel@example.com")
+	if err != nil {
+		test.Fatal(err)
+	}
+	account := loaded.(*auth.User)
+	account.PutPassword("new-hash")
+	account.PutRecoverSelector("")
+	account.PutRecoverVerifier("")
+	account.PutRecoverExpiry(time.Time{})
+	if err := storer.Save(test.Context(), account); err != nil {
+		test.Fatal(err)
+	}
+	saved := memory.Users[id]
+	if *saved.PasswordHash != "new-hash" || saved.RecoverSelector != nil || saved.RecoverVerifier != nil || saved.RecoverTokenExpiry.Valid || saved.EmailVerificationSelector != nil {
+		test.Fatalf("recovery end: %+v", saved)
+	}
 }

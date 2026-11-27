@@ -7,7 +7,7 @@ import (
 )
 
 func TestLoadUsesDefaults(test *testing.T) {
-	for _, name := range []string{"PORT", "DATABASE_URL", "CORS_ORIGINS", "STORAGE_DIR", "ENV", "SESSION_SAMESITE", "APP_URL", "SMTP_ADDR", "DB_MAX_CONNS", "API_URL", "MAIL_FROM", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"} {
+	for _, name := range []string{"PORT", "DATABASE_URL", "CORS_ORIGINS", "STORAGE_DIR", "ENV", "SESSION_SAMESITE", "APP_URL", "SMTP_ADDR", "DB_MAX_CONNS", "API_URL", "MAIL_FROM", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "EMAIL_VERIFICATION", "TRUSTED_PROXY_HOPS"} {
 		test.Setenv(name, "")
 	}
 	loaded, err := Load()
@@ -19,6 +19,9 @@ func TestLoadUsesDefaults(test *testing.T) {
 		test.Fatalf("defaults = %+v", loaded)
 	}
 	if loaded.DatabaseURL == "" || !reflect.DeepEqual(loaded.CORSOrigins, []string{"http://localhost:5173"}) {
+		test.Fatalf("defaults = %+v", loaded)
+	}
+	if loaded.EmailVerification != "off" || loaded.TrustedProxyHops != 0 {
 		test.Fatalf("defaults = %+v", loaded)
 	}
 	if loaded.SessionSameSite != "" || loaded.AppURL != "http://localhost:5173" || loaded.SMTPAddr != "" {
@@ -35,6 +38,8 @@ func TestLoadReadsTheEnvironment(test *testing.T) {
 	test.Setenv("SESSION_SAMESITE", "none")
 	test.Setenv("APP_URL", "https://app.example")
 	test.Setenv("SMTP_ADDR", "smtp.example:587")
+	test.Setenv("SMTP_USERNAME", "user")
+	test.Setenv("SMTP_PASSWORD", "password")
 	loaded, err := Load()
 	if err != nil {
 		test.Fatal(err)
@@ -62,6 +67,9 @@ func TestLoadRejectsInvalidValues(test *testing.T) {
 		"MAIL_FROM":        "nobody",
 		"SMTP_ADDR":        "smtp.example",
 		"GOOGLE_CLIENT_ID": "id-only",
+
+		"EMAIL_VERIFICATION": "maybe",
+		"TRUSTED_PROXY_HOPS": "-1",
 	}
 	for name, value := range cases {
 		test.Run(name, func(test *testing.T) {
@@ -113,4 +121,99 @@ func TestLoadCollectsMobileClientIDs(test *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLoadRejectsNonNumericProxyHops(test *testing.T) {
+	test.Setenv("TRUSTED_PROXY_HOPS", "two")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "TRUSTED_PROXY_HOPS") {
+		test.Fatalf("Load() error = %v, want it to name TRUSTED_PROXY_HOPS", err)
+	}
+}
+
+func TestLoadChecksMailSettingsForEmailVerification(test *testing.T) {
+	const password = "smtp-password-value"
+	production := func(test *testing.T, mode string) {
+		test.Setenv("ENV", "production")
+		test.Setenv("EMAIL_VERIFICATION", mode)
+		test.Setenv("SMTP_ADDR", "smtp.example:587")
+		test.Setenv("SMTP_USERNAME", "user")
+		test.Setenv("SMTP_PASSWORD", password)
+		test.Setenv("MAIL_FROM", "hello@example.com")
+		test.Setenv("API_URL", "https://api.example.com")
+	}
+	for _, mode := range []string{"send", "enforce"} {
+		test.Run(mode+" complete", func(test *testing.T) {
+			production(test, mode)
+			if _, err := Load(); err != nil {
+				test.Fatal(err)
+			}
+		})
+		for _, name := range []string{"SMTP_ADDR", "SMTP_USERNAME", "SMTP_PASSWORD", "MAIL_FROM"} {
+			test.Run(mode+" missing "+name, func(test *testing.T) {
+				production(test, mode)
+				test.Setenv(name, "")
+				_, err := Load()
+				if err == nil || !strings.Contains(err.Error(), name) {
+					test.Fatalf("Load() error = %v, want it to name %s", err, name)
+				}
+				if strings.Contains(err.Error(), password) {
+					test.Fatalf("error leaks SMTP_PASSWORD: %v", err)
+				}
+			})
+		}
+	}
+	rejected := map[string][2]string{
+		"default sender with uppercase domain": {"MAIL_FROM", "no-reply@LOCALHOST"},
+		"absolute localhost API_URL":           {"API_URL", "https://localhost."},
+		"display name":                         {"MAIL_FROM", "Meta-Frame <hello@example.com>"},
+		"wrapped default":                      {"MAIL_FROM", "Meta-Frame <no-reply@localhost>"},
+		"http API_URL":                         {"API_URL", "http://api.example.com"},
+		"localhost API_URL":                    {"API_URL", "https://localhost:8080"},
+		"subdomain localhost":                  {"API_URL", "https://api.localhost"},
+		"loopback IP API_URL":                  {"API_URL", "https://127.0.0.1"},
+		"loopback IPv6 API_URL":                {"API_URL", "https://[::1]:8443"},
+	}
+	for name, setting := range rejected {
+		test.Run("production rejects "+name, func(test *testing.T) {
+			production(test, "send")
+			test.Setenv(setting[0], setting[1])
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), setting[0]) {
+				test.Fatalf("Load() error = %v, want it to name %s", err, setting[0])
+			}
+		})
+		test.Run("off accepts "+name, func(test *testing.T) {
+			production(test, "off")
+			test.Setenv(setting[0], setting[1])
+			if _, err := Load(); err != nil {
+				test.Fatal(err)
+			}
+		})
+	}
+	for _, name := range []string{"SMTP_USERNAME", "SMTP_PASSWORD"} {
+		test.Run("production off with SMTP_ADDR and no "+name, func(test *testing.T) {
+			production(test, "off")
+			test.Setenv(name, "")
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), name) {
+				test.Fatalf("Load() error = %v, want it to name %s", err, name)
+			}
+		})
+	}
+	test.Run("off needs no mail settings", func(test *testing.T) {
+		test.Setenv("ENV", "production")
+		test.Setenv("EMAIL_VERIFICATION", "off")
+		test.Setenv("SMTP_ADDR", "")
+		if _, err := Load(); err != nil {
+			test.Fatal(err)
+		}
+	})
+	test.Run("development may use the log mailer", func(test *testing.T) {
+		test.Setenv("ENV", "")
+		test.Setenv("EMAIL_VERIFICATION", "send")
+		test.Setenv("SMTP_ADDR", "")
+		test.Setenv("API_URL", "")
+		test.Setenv("MAIL_FROM", "Meta-Frame <hello@example.com>")
+		if _, err := Load(); err != nil {
+			test.Fatal(err)
+		}
+	})
 }

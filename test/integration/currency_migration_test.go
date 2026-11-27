@@ -261,6 +261,7 @@ func TestMigrationLocksAccountsWithMoneyEvidence(test *testing.T) {
 		test.Errorf("lab-order audit entry without a snapshot: got %+v, want VND unlocked", got)
 	}
 
+	harness.migrateTo(22, false)
 	// The API reports the same amounts as version 20 did.
 	order := harness.expect(harness.call("GET", "/lab-orders/"+orderID, nil), http.StatusOK)
 	byLine := map[string]map[string]any{}

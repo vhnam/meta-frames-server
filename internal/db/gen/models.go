@@ -13,23 +13,32 @@ import (
 )
 
 type AppUser struct {
-	ID                 uuid.UUID
-	Email              string
-	Name               *string
-	PasswordHash       *string
-	RecoverSelector    *string
-	RecoverVerifier    *string
-	RecoverTokenExpiry pgtype.Timestamptz
-	CreatedAt          pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
-	AttemptCount       int32
-	LastAttempt        pgtype.Timestamptz
-	LockedUntil        pgtype.Timestamptz
-	Oauth2Provider     *string
-	Oauth2Uid          *string
-	AvatarUrl          *string
-	CurrencyCode       string
-	CurrencyLocked     bool
+	ID                               uuid.UUID
+	Email                            string
+	Name                             *string
+	PasswordHash                     *string
+	RecoverSelector                  *string
+	RecoverVerifier                  *string
+	RecoverTokenExpiry               pgtype.Timestamptz
+	CreatedAt                        pgtype.Timestamptz
+	UpdatedAt                        pgtype.Timestamptz
+	AttemptCount                     int32
+	LastAttempt                      pgtype.Timestamptz
+	LockedUntil                      pgtype.Timestamptz
+	Oauth2Provider                   *string
+	Oauth2Uid                        *string
+	AvatarUrl                        *string
+	CurrencyCode                     string
+	CurrencyLocked                   bool
+	EmailVerifiedAt                  pgtype.Timestamptz
+	EmailVerificationSource          *string
+	EmailVerificationExempt          bool
+	EmailVerificationSelector        []byte
+	EmailVerificationVerifier        []byte
+	EmailVerificationExpiresAt       pgtype.Timestamptz
+	EmailVerificationLastIssuedAt    pgtype.Timestamptz
+	EmailVerificationWindowStartedAt pgtype.Timestamptz
+	EmailVerificationIssuedCount     int32
 }
 
 type AuditLog struct {
@@ -43,6 +52,13 @@ type AuditLog struct {
 	RequestID  *string
 	CreatedAt  pgtype.Timestamptz
 	OwnerID    uuid.UUID
+}
+
+type AuthRateLimit struct {
+	Bucket          string
+	Key             []byte
+	WindowStartedAt pgtype.Timestamptz
+	Hits            int32
 }
 
 type Camera struct {

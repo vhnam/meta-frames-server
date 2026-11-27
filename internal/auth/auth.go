@@ -54,7 +54,21 @@ var routes = []string{"/register", "/login", "/logout", "/recover", "/recover/en
 // browser navigates to them.
 var googleRoutes = []string{"/oauth2/" + googleProvider, "/oauth2/callback/" + googleProvider}
 
+// EmailVerificationMode is the EMAIL_VERIFICATION setting. Code tests for Send and Enforce only, so
+// the zero value behaves as off.
+type EmailVerificationMode string
+
+const (
+	EmailVerificationOff     EmailVerificationMode = "off"
+	EmailVerificationSend    EmailVerificationMode = "send"
+	EmailVerificationEnforce EmailVerificationMode = "enforce"
+)
+
 type Config struct {
+	// EmailVerification is off, send or enforce.
+	EmailVerification EmailVerificationMode
+	// TrustedProxyHops is how many proxies append to X-Forwarded-For; 0 uses RemoteAddr.
+	TrustedProxyHops int
 	// SecureCookie sends the session cookie over HTTPS only.
 	SecureCookie bool
 	// SameSite is the session cookie's SameSite mode; zero means Lax.
@@ -77,6 +91,8 @@ type Auth struct {
 	storer   *Storer
 	sessions *sessionStore
 	google   bool
+	// trustedProxyHops is Config.TrustedProxyHops: it picks the source address the limiters count.
+	trustedProxyHops int
 
 	googleWebClientID string
 	googleAudiences   []string
@@ -94,11 +110,14 @@ func New(store db.Store, config Config) (*Auth, error) {
 	}
 
 	storer := NewStorer(store)
+	storer.mode = config.EmailVerification
 	accounts := &Auth{
 		authboss: authboss.New(),
 		storer:   storer,
 		sessions: &sessionStore{store: store, storer: storer, secure: config.SecureCookie, sameSite: sameSite},
 		google:   config.Google.enabled(),
+
+		trustedProxyHops: config.TrustedProxyHops,
 
 		googleWebClientID: config.Google.ClientID,
 		googleAudiences:   config.Google.audiences(),
@@ -139,7 +158,10 @@ func New(store db.Store, config Config) (*Auth, error) {
 	if err := accounts.authboss.Init(modules...); err != nil {
 		return nil, err
 	}
+	accounts.authboss.Events.Before(authboss.EventAuth, accounts.refuseUnverified)
+	accounts.authboss.Events.Before(authboss.EventAuth, accounts.recordPasswordHash)
 	accounts.authboss.Events.After(authboss.EventRecoverEnd, accounts.afterPasswordReset)
+	accounts.authboss.Events.After(authboss.EventRegister, accounts.sendVerification)
 	return accounts, nil
 }
 
@@ -184,12 +206,24 @@ func (accounts *Auth) Mount(router gin.IRoutes) {
 	}
 	router.GET(mountPath+googleConfigRoute, accounts.googleConfig)
 	router.POST(mountPath+googleTokenRoute, accounts.signInWithGoogleToken)
+	router.POST(mountPath+verifyEmailRoute, accounts.verifyEmail)
+	router.POST(mountPath+resendEmailRoute, accounts.resendVerification)
+	router.GET(mountPath+verifyEmailRoute, accounts.verifyPage)
+	router.HEAD(mountPath+verifyEmailRoute, accounts.verifyPage)
 }
+
+// sessionlessPaths are the public routes that never load the caller's session, for any method.
+var sessionlessPaths = map[string]bool{mountPath + verifyEmailRoute: true, mountPath + resendEmailRoute: true}
 
 // LoadUser puts the signed-in user, if any, into the request context for CurrentUser.
 // A missing, unknown or expired session leaves the request anonymous.
 func (accounts *Auth) LoadUser() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
+		// Public verification routes read and write no session, so a cookie causes no database call.
+		if sessionlessPaths[ctx.Request.URL.Path] {
+			ctx.Next()
+			return
+		}
 		user, _, err := accounts.sessions.lookup(ctx.Request)
 		if err != nil {
 			slog.Error("loading the session user failed", "path", ctx.Request.URL.Path, "err", err)

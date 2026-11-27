@@ -223,6 +223,21 @@ func (e ProcessingType) Valid() bool {
 	}
 }
 
+// Defines values for RegisterVerificationRequiredVerificationRequired.
+const (
+	True RegisterVerificationRequiredVerificationRequired = true
+)
+
+// Valid indicates whether the value is a known member of the RegisterVerificationRequiredVerificationRequired enum.
+func (e RegisterVerificationRequiredVerificationRequired) Valid() bool {
+	switch e {
+	case True:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RollPlanTarget.
 const (
 	RollPlanTargetDeveloped RollPlanTarget = "developed"
@@ -1178,6 +1193,15 @@ type RegisterInput struct {
 	Password string              `json:"password"`
 }
 
+// RegisterVerificationRequired Example: {"message":"Account created. Check your email to verify the address.","verificationRequired":true}
+type RegisterVerificationRequired struct {
+	Message              string                                           `json:"message"`
+	VerificationRequired RegisterVerificationRequiredVerificationRequired `json:"verificationRequired"`
+}
+
+// RegisterVerificationRequiredVerificationRequired defines model for RegisterVerificationRequired.VerificationRequired.
+type RegisterVerificationRequiredVerificationRequired bool
+
 // ResetPasswordInput Example: {"password":"Fresh-Neg4tive","token":"reset-token-from-email"}
 type ResetPasswordInput struct {
 	Password string `json:"password"`
@@ -1527,6 +1551,11 @@ type SpendBucket struct {
 	ProcessingCost int `json:"processingCost"`
 }
 
+// StatusMessage defines model for StatusMessage.
+type StatusMessage struct {
+	Message string `json:"message"`
+}
+
 // StepActor Who does a step. self is the owner at home.
 type StepActor string
 
@@ -1547,6 +1576,19 @@ type User struct {
 	Email          openapi_types.Email `json:"email"`
 	Id             openapi_types.UUID  `json:"id"`
 	Name           *string             `json:"name,omitempty"`
+}
+
+// VerificationInput defines model for VerificationInput.
+type VerificationInput struct {
+	Password *string `json:"password,omitempty"`
+	Token    string  `json:"token"`
+}
+
+// VerificationResendInput Example: {"email":"ansel@example.com"}
+type VerificationResendInput struct {
+	// Email The raw value is at most 1024 characters. The server trims surrounding whitespace. The trimmed value must be
+	// a bare email address (no display name) of at most 254 characters.
+	Email string `json:"email"`
 }
 
 // YearSpending defines model for YearSpending.

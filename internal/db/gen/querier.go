@@ -24,9 +24,16 @@ type Querier interface {
 	ClearProcessingPrice(ctx context.Context, arg ClearProcessingPriceParams) error
 	ClearRollScanRequest(ctx context.Context, arg ClearRollScanRequestParams) error
 	CloseLabHandoff(ctx context.Context, arg CloseLabHandoffParams) error
+	// Records proof of the address and consumes the challenge in one statement. It needs the checked account
+	// id, selector, verifier, password hash and email to still match, an unexpired challenge and no active lock.
+	// No row means the token no longer works. It uses clock_timestamp(): PostgreSQL re-checks the WHERE after it
+	// gets the row lock, and now() would still hold the time from before the wait.
+	ConsumeEmailVerification(ctx context.Context, arg ConsumeEmailVerificationParams) (AppUser, error)
 	CountCameraRolls(ctx context.Context, arg CountCameraRollsParams) (int64, error)
 	CountLabOrderItemJobs(ctx context.Context, arg CountLabOrderItemJobsParams) (int32, error)
 	DeleteCameraLensesExcept(ctx context.Context, arg DeleteCameraLensesExceptParams) error
+	// Every window is 15 minutes, so a start more than 24 hours 15 minutes ago (elapsed time, not calendar days) means the window ended over 1 day ago.
+	DeleteExpiredRateLimits(ctx context.Context) error
 	DeleteExpiredSessions(ctx context.Context) error
 	DeleteJobOrderItemsExcept(ctx context.Context, arg DeleteJobOrderItemsExceptParams) error
 	DeleteLabOrderItem(ctx context.Context, arg DeleteLabOrderItemParams) (int64, error)
@@ -69,9 +76,11 @@ type Querier interface {
 	GetScanner(ctx context.Context, arg GetScannerParams) (Scanner, error)
 	GetSessionUser(ctx context.Context, tokenHash []byte) (AppUser, error)
 	GetUserByEmail(ctx context.Context, email string) (AppUser, error)
+	GetUserByEmailVerificationSelector(ctx context.Context, emailVerificationSelector []byte) (AppUser, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (AppUser, error)
 	GetUserByOAuth2(ctx context.Context, arg GetUserByOAuth2Params) (AppUser, error)
 	GetUserByRecoverSelector(ctx context.Context, recoverSelector *string) (AppUser, error)
+	HitRateLimit(ctx context.Context, arg HitRateLimitParams) (HitRateLimitRow, error)
 	InsertCamera(ctx context.Context, arg InsertCameraParams) (Camera, error)
 	// The camera and lenses are checked to belong to the account before these run.
 	InsertCameraLens(ctx context.Context, arg InsertCameraLensParams) error
@@ -87,8 +96,13 @@ type Querier interface {
 	InsertScan(ctx context.Context, arg InsertScanParams) (Scan, error)
 	InsertScanner(ctx context.Context, arg InsertScannerParams) (Scanner, error)
 	InsertSession(ctx context.Context, arg InsertSessionParams) error
+	// Starts a session only while the password hash is still the one the login checked.
+	InsertSessionForPassword(ctx context.Context, arg InsertSessionForPasswordParams) (int64, error)
 	InsertUser(ctx context.Context, arg InsertUserParams) (AppUser, error)
 	InventoryRows(ctx context.Context, arg InventoryRowsParams) ([]InventoryRowsRow, error)
+	// Issues a verification challenge: one statement, so the row lock serializes concurrent issues. No row
+	// means no issue (verified, locked, inside the 60-second cooldown, or 5 issues in the 24-hour window).
+	IssueEmailVerification(ctx context.Context, arg IssueEmailVerificationParams) (string, error)
 	LabHasProcessing(ctx context.Context, arg LabHasProcessingParams) (bool, error)
 	LabOrderHasJobs(ctx context.Context, arg LabOrderHasJobsParams) (bool, error)
 	// The lens is checked to belong to the account first.
@@ -126,6 +140,7 @@ type Querier interface {
 	// A transaction-scoped lock on one (owner, key), so requests that share a key take turns.
 	LockIdempotencyKey(ctx context.Context, arg LockIdempotencyKeyParams) error
 	LockUserForCurrency(ctx context.Context, id uuid.UUID) (AppUser, error)
+	MarkEmailVerifiedByGoogle(ctx context.Context, id uuid.UUID) error
 	// A job in a handoff waits for the handoff's return; an old job with none, for its own.
 	NegativesAtLab(ctx context.Context, ownerID uuid.UUID) ([]NegativesAtLabRow, error)
 	ProcessingHasScans(ctx context.Context, arg ProcessingHasScansParams) (bool, error)
@@ -184,8 +199,12 @@ type Querier interface {
 	UpdateProcessing(ctx context.Context, arg UpdateProcessingParams) (Processing, error)
 	UpdateRoll(ctx context.Context, arg UpdateRollParams) (Roll, error)
 	UpdateScanner(ctx context.Context, arg UpdateScannerParams) (Scanner, error)
+	// Writes the password only when set_password, and the recovery fields only when set_recovery, so a
+	// stale user value cannot restore either. A right-side column reads the old row.
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (AppUser, error)
 	UpdateUserCurrency(ctx context.Context, arg UpdateUserCurrencyParams) (AppUser, error)
+	// Login bookkeeping: writes no credential field, so a stale user value cannot restore an old password.
+	UpdateUserState(ctx context.Context, arg UpdateUserStateParams) (AppUser, error)
 	// The roll is checked to belong to the account first; the composite foreign key refuses a frame
 	// whose owner differs from its roll's.
 	UpsertFrame(ctx context.Context, arg UpsertFrameParams) (Frame, error)

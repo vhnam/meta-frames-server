@@ -2,6 +2,7 @@
 package testutil
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -46,7 +47,8 @@ type Memory struct {
 	Idempotency map[string]gen.IdempotencyKey
 	Spend       gen.RollSpendRow
 	Users       map[uuid.UUID]gen.AppUser
-	Sessions    map[string]gen.UserSession // by token hash
+	Sessions    map[string]gen.UserSession   // by token hash
+	RateLimits  map[string]gen.AuthRateLimit // by bucket and key
 
 	HasOpenJob       bool
 	HasReceivedScans bool
@@ -1268,6 +1270,8 @@ func (queries *Memory) InsertUser(ctx context.Context, arg gen.InsertUserParams)
 		return gen.AppUser{}, &pgconn.PgError{Code: "23505"}
 	}
 	now := pgtype.Timestamptz{Time: time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC), Valid: true}
+	// The email verification fields keep their zero values: no proof, no challenge, not exempt, count 0.
+	// Those are the database defaults of migration 00022.
 	user := gen.AppUser{
 		ID: arg.ID, Email: arg.Email, Name: arg.Name, PasswordHash: arg.PasswordHash,
 		Oauth2Provider: arg.Oauth2Provider, Oauth2Uid: arg.Oauth2Uid, AvatarUrl: arg.AvatarUrl, CreatedAt: now, UpdatedAt: now,
@@ -1285,10 +1289,28 @@ func (queries *Memory) UpdateUser(_ context.Context, arg gen.UpdateUserParams) (
 	if !equalOptional(user.Oauth2Provider, arg.Oauth2Provider) || !equalOptional(user.Oauth2Uid, arg.Oauth2Uid) {
 		return gen.AppUser{}, pgx.ErrNoRows
 	}
-	user.Name, user.PasswordHash = arg.Name, arg.PasswordHash
-	user.RecoverSelector, user.RecoverVerifier, user.RecoverTokenExpiry = arg.RecoverSelector, arg.RecoverVerifier, arg.RecoverTokenExpiry
+	if arg.SetPassword {
+		if !equalOptional(user.PasswordHash, arg.PasswordHash) { // a password change ends the open challenge
+			user.EmailVerificationSelector, user.EmailVerificationVerifier, user.EmailVerificationExpiresAt = nil, nil, pgtype.Timestamptz{}
+		}
+		user.PasswordHash = arg.PasswordHash
+	}
+	if arg.SetRecovery {
+		user.RecoverSelector, user.RecoverVerifier, user.RecoverTokenExpiry = arg.RecoverSelector, arg.RecoverVerifier, arg.RecoverTokenExpiry
+	}
+	user.Name = arg.Name
 	user.AttemptCount, user.LastAttempt, user.LockedUntil = arg.AttemptCount, arg.LastAttempt, arg.LockedUntil
 	user.AvatarUrl = arg.AvatarUrl
+	queries.Users[arg.ID] = user
+	return user, nil
+}
+
+func (queries *Memory) UpdateUserState(_ context.Context, arg gen.UpdateUserStateParams) (gen.AppUser, error) {
+	user, found := queries.Users[arg.ID]
+	if !found || !equalOptional(user.Oauth2Provider, arg.Oauth2Provider) || !equalOptional(user.Oauth2Uid, arg.Oauth2Uid) {
+		return gen.AppUser{}, pgx.ErrNoRows
+	}
+	user.Name, user.AttemptCount, user.LastAttempt, user.LockedUntil, user.AvatarUrl = arg.Name, arg.AttemptCount, arg.LastAttempt, arg.LockedUntil, arg.AvatarUrl
 	queries.Users[arg.ID] = user
 	return user, nil
 }
@@ -1301,6 +1323,78 @@ func equalOptional(stored, given *string) bool {
 	return *stored == *given
 }
 
+// IssueEmailVerification applies the same rules as the SQL: no row (pgx.ErrNoRows) when the account
+// is verified, locked, inside the 60-second cooldown, or has 5 issues in the 24-hour window.
+func (queries *Memory) IssueEmailVerification(_ context.Context, arg gen.IssueEmailVerificationParams) (string, error) {
+	now := time.Now()
+	for id, user := range queries.Users {
+		if user.Email != arg.Email {
+			continue
+		}
+		windowOpen := !user.EmailVerificationWindowStartedAt.Valid || !user.EmailVerificationWindowStartedAt.Time.After(now.Add(-24*time.Hour))
+		if user.EmailVerifiedAt.Valid ||
+			(user.LockedUntil.Valid && user.LockedUntil.Time.After(now)) ||
+			(user.EmailVerificationLastIssuedAt.Valid && user.EmailVerificationLastIssuedAt.Time.After(now.Add(-60*time.Second))) ||
+			(!windowOpen && user.EmailVerificationIssuedCount >= 5) {
+			return "", pgx.ErrNoRows
+		}
+		user.EmailVerificationSelector, user.EmailVerificationVerifier = arg.Selector, arg.Verifier
+		user.EmailVerificationExpiresAt = pgtype.Timestamptz{Time: now.Add(24 * time.Hour), Valid: true}
+		user.EmailVerificationLastIssuedAt = pgtype.Timestamptz{Time: now, Valid: true}
+		if windowOpen {
+			user.EmailVerificationWindowStartedAt = pgtype.Timestamptz{Time: now, Valid: true}
+			user.EmailVerificationIssuedCount = 1
+		} else {
+			user.EmailVerificationIssuedCount++
+		}
+		queries.Users[id] = user
+		return user.Email, nil
+	}
+	return "", pgx.ErrNoRows
+}
+
+// MarkEmailVerifiedByGoogle records Google proof once; a row that already has proof stays as it is.
+func (queries *Memory) MarkEmailVerifiedByGoogle(_ context.Context, id uuid.UUID) error {
+	if user, found := queries.Users[id]; found && !user.EmailVerifiedAt.Valid {
+		source := "google"
+		user.EmailVerifiedAt = pgtype.Timestamptz{Time: time.Now(), Valid: true}
+		user.EmailVerificationSource, user.EmailVerificationExempt = &source, false
+		queries.Users[id] = user
+	}
+	return nil
+}
+
+// GetUserByEmailVerificationSelector finds the account that holds the challenge, or pgx.ErrNoRows.
+func (queries *Memory) GetUserByEmailVerificationSelector(_ context.Context, selector []byte) (gen.AppUser, error) {
+	if len(selector) > 0 {
+		for _, user := range queries.Users {
+			if bytes.Equal(user.EmailVerificationSelector, selector) {
+				return user, nil
+			}
+		}
+	}
+	return gen.AppUser{}, pgx.ErrNoRows
+}
+
+// ConsumeEmailVerification applies the same conditions as the SQL and returns pgx.ErrNoRows when any fails.
+func (queries *Memory) ConsumeEmailVerification(_ context.Context, arg gen.ConsumeEmailVerificationParams) (gen.AppUser, error) {
+	now := time.Now()
+	user, found := queries.Users[arg.ID]
+	if !found || len(user.EmailVerificationSelector) == 0 ||
+		!bytes.Equal(user.EmailVerificationSelector, arg.Selector) || !bytes.Equal(user.EmailVerificationVerifier, arg.Verifier) ||
+		!user.EmailVerificationExpiresAt.Valid || !user.EmailVerificationExpiresAt.Time.After(now) ||
+		(user.LockedUntil.Valid && user.LockedUntil.Time.After(now)) ||
+		!equalOptional(user.PasswordHash, arg.PasswordHash) || user.Email != arg.Email || user.EmailVerifiedAt.Valid {
+		return gen.AppUser{}, pgx.ErrNoRows
+	}
+	source := "link"
+	user.EmailVerifiedAt = pgtype.Timestamptz{Time: now, Valid: true}
+	user.EmailVerificationSource, user.EmailVerificationExempt = &source, false
+	user.EmailVerificationSelector, user.EmailVerificationVerifier, user.EmailVerificationExpiresAt = nil, nil, pgtype.Timestamptz{}
+	queries.Users[arg.ID] = user
+	return user, nil
+}
+
 // ClaimUnownedData has nothing to hand over: the fake keeps no owners.
 func (queries *Memory) ClaimUnownedData(context.Context, uuid.UUID) error { return nil }
 
@@ -1309,6 +1403,16 @@ func (queries *Memory) ClaimUnownedData(context.Context, uuid.UUID) error { retu
 func (queries *Memory) InsertSession(_ context.Context, arg gen.InsertSessionParams) error {
 	queries.Sessions[string(arg.TokenHash)] = gen.UserSession{TokenHash: arg.TokenHash, UserID: arg.UserID, ExpiresAt: arg.ExpiresAt}
 	return nil
+}
+
+// InsertSessionForPassword inserts only while the user still has the given password hash.
+func (queries *Memory) InsertSessionForPassword(_ context.Context, arg gen.InsertSessionForPasswordParams) (int64, error) {
+	user, found := queries.Users[arg.UserID]
+	if !found || !equalOptional(user.PasswordHash, arg.PasswordHash) || user.PasswordHash == nil {
+		return 0, nil
+	}
+	queries.Sessions[string(arg.TokenHash)] = gen.UserSession{TokenHash: arg.TokenHash, UserID: arg.UserID, ExpiresAt: arg.ExpiresAt}
+	return 1, nil
 }
 
 func (queries *Memory) GetSessionUser(_ context.Context, tokenHash []byte) (gen.AppUser, error) {
@@ -1341,6 +1445,31 @@ func (queries *Memory) DeleteExpiredSessions(context.Context) error {
 	for key, session := range queries.Sessions {
 		if !session.ExpiresAt.Time.After(time.Now()) {
 			delete(queries.Sessions, key)
+		}
+	}
+	return nil
+}
+
+func (queries *Memory) HitRateLimit(_ context.Context, arg gen.HitRateLimitParams) (gen.HitRateLimitRow, error) {
+	if queries.RateLimits == nil {
+		queries.RateLimits = map[string]gen.AuthRateLimit{}
+	}
+	window := time.Duration(arg.WindowSeconds * float64(time.Second))
+	now := time.Now()
+	id := arg.Bucket + "\x00" + string(arg.Key)
+	row, found := queries.RateLimits[id]
+	if !found || !row.WindowStartedAt.Time.After(now.Add(-window)) {
+		row = gen.AuthRateLimit{Bucket: arg.Bucket, Key: arg.Key, WindowStartedAt: pgtype.Timestamptz{Time: now, Valid: true}}
+	}
+	row.Hits++
+	queries.RateLimits[id] = row
+	return gen.HitRateLimitRow{Hits: row.Hits, SecondsLeft: row.WindowStartedAt.Time.Add(window).Sub(now).Seconds()}, nil
+}
+
+func (queries *Memory) DeleteExpiredRateLimits(context.Context) error {
+	for id, row := range queries.RateLimits {
+		if row.WindowStartedAt.Time.Before(time.Now().Add(-24*time.Hour - 15*time.Minute)) {
+			delete(queries.RateLimits, id)
 		}
 	}
 	return nil

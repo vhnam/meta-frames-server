@@ -33,7 +33,14 @@ type Config struct {
 	GoogleClientSecret string
 	// Android and iOS OAuth client ids allowed to sign in with an ID token; empty ones are left out.
 	GoogleMobileClientIDs []string
+
+	// EmailVerification is off (default), send or enforce.
+	EmailVerification string
+	// TrustedProxyHops is how many proxies append to X-Forwarded-For; 0 uses RemoteAddr.
+	TrustedProxyHops int
 }
+
+const defaultMailFrom = "no-reply@localhost"
 
 // Load reads the settings from the environment. It reports every invalid value at once.
 func Load() (Config, error) {
@@ -48,13 +55,15 @@ func Load() (Config, error) {
 		SessionSameSite: strings.ToLower(os.Getenv("SESSION_SAMESITE")),
 		AppURL:          valueOrDefault("APP_URL", "http://localhost:5173"),
 		APIURL:          valueOrDefault("API_URL", "http://localhost:8080"),
-		MailFrom:        valueOrDefault("MAIL_FROM", "no-reply@localhost"),
+		MailFrom:        valueOrDefault("MAIL_FROM", defaultMailFrom),
 		SMTPAddr:        os.Getenv("SMTP_ADDR"),
 		SMTPUsername:    os.Getenv("SMTP_USERNAME"),
 		SMTPPassword:    os.Getenv("SMTP_PASSWORD"),
 
 		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
 		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+
+		EmailVerification: valueOrDefault("EMAIL_VERIFICATION", "off"),
 	}
 	for _, name := range []string{"GOOGLE_ANDROID_CLIENT_ID", "GOOGLE_IOS_CLIENT_ID"} {
 		if clientID := strings.TrimSpace(os.Getenv(name)); clientID != "" {
@@ -64,6 +73,10 @@ func Load() (Config, error) {
 
 	maxConns, err := nonNegativeInt32("DB_MAX_CONNS")
 	config.DBMaxConns = maxConns
+	problems = append(problems, err)
+
+	hops, err := nonNegativeInt32("TRUSTED_PROXY_HOPS")
+	config.TrustedProxyHops = int(hops)
 	problems = append(problems, err)
 
 	if port, err := strconv.Atoi(config.Port); err != nil || port < 1 || port > 65535 {
@@ -90,6 +103,33 @@ func Load() (Config, error) {
 			problems = append(problems, fmt.Errorf("SMTP_ADDR must be host:port, got %q", config.SMTPAddr))
 		}
 	}
+	switch config.EmailVerification {
+	case "off":
+		if config.Production && config.SMTPAddr != "" {
+			for name, value := range map[string]string{"SMTP_USERNAME": config.SMTPUsername, "SMTP_PASSWORD": config.SMTPPassword} {
+				if value == "" {
+					problems = append(problems, fmt.Errorf("%s must be set when SMTP_ADDR is set in production", name))
+				}
+			}
+		}
+	case "send", "enforce":
+		if config.Production {
+			for name, value := range map[string]string{"SMTP_ADDR": config.SMTPAddr, "SMTP_USERNAME": config.SMTPUsername, "SMTP_PASSWORD": config.SMTPPassword} {
+				if value == "" {
+					problems = append(problems, fmt.Errorf("%s must be set when EMAIL_VERIFICATION is %s in production", name, config.EmailVerification))
+				}
+			}
+			from := strings.TrimSpace(config.MailFrom)
+			if parsed, err := mail.ParseAddress(from); err != nil || parsed.Address != from || strings.EqualFold(parsed.Address, defaultMailFrom) {
+				problems = append(problems, fmt.Errorf("MAIL_FROM must be a bare address other than %s when EMAIL_VERIFICATION is %s in production", defaultMailFrom, config.EmailVerification))
+			}
+			if parsed, err := url.Parse(config.APIURL); err == nil && !publicHTTPS(parsed) {
+				problems = append(problems, fmt.Errorf("API_URL must be an https URL with a public host when EMAIL_VERIFICATION is %s in production, got %q", config.EmailVerification, redact(config.APIURL)))
+			}
+		}
+	default:
+		problems = append(problems, fmt.Errorf("EMAIL_VERIFICATION must be off, send or enforce, got %q", config.EmailVerification))
+	}
 	if (config.GoogleClientID == "") != (config.GoogleClientSecret == "") {
 		problems = append(problems, errors.New("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set together"))
 	}
@@ -111,6 +151,15 @@ func nonNegativeInt32(name string) (int32, error) {
 		return 0, fmt.Errorf("%s must be a non-negative integer, got %q", name, raw)
 	}
 	return int32(value), nil
+}
+
+func publicHTTPS(parsed *url.URL) bool {
+	host := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+	if parsed.Scheme != "https" || host == "" || host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return false
+	}
+	address := net.ParseIP(host)
+	return address == nil || !address.IsLoopback()
 }
 
 func checkURL(name, raw string, schemes ...string) error {

@@ -2,6 +2,7 @@ package auth_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/cookiejar"
@@ -9,10 +10,15 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"meta-frames-server/internal/auth"
 	"meta-frames-server/internal/common/clock"
 	"meta-frames-server/internal/controllers"
+	"meta-frames-server/internal/db/gen"
 	"meta-frames-server/internal/server"
 	"meta-frames-server/internal/services"
 	"meta-frames-server/internal/testutil"
@@ -41,7 +47,11 @@ func newClient(test *testing.T, memory *testutil.Memory, mailbox *testutil.Mailb
 
 func newClientWith(test *testing.T, memory *testutil.Memory, config auth.Config) *session {
 	test.Helper()
-	store := testutil.Store{Querier: memory}
+	return newClientOn(test, testutil.Store{Querier: memory}, config)
+}
+
+func newClientOn(test *testing.T, store testutil.Store, config auth.Config) *session {
+	test.Helper()
 	accounts, err := auth.New(store, config)
 	if err != nil {
 		test.Fatal(err)
@@ -147,10 +157,12 @@ func TestLoginAndLogout(test *testing.T) {
 }
 
 func TestPasswordRecoveryAndReset(test *testing.T) {
-	mailbox := &testutil.Mailbox{}
-	client := newClient(test, testutil.NewMemory(), mailbox)
+	mailbox, memory := &testutil.Mailbox{}, testutil.NewMemory()
+	client := newClient(test, memory, mailbox)
 	client.expect(client.call("POST", "/auth/register", credentials(email, password)), http.StatusCreated, "")
 	client.expect(client.call("POST", "/auth/logout", nil), http.StatusOK, "")
+	openChallenge(memory)
+	proofBefore := soleUser(memory)
 
 	unknown := client.expect(client.call("POST", "/auth/recover", map[string]string{"email": "nobody@example.com"}), http.StatusOK, "")
 	if len(mailbox.Sent()) != 0 {
@@ -176,8 +188,88 @@ func TestPasswordRecoveryAndReset(test *testing.T) {
 	client.expect(client.call("POST", "/auth/recover/end", map[string]string{"token": token, "password": newPassword}), http.StatusUnprocessableEntity, "invalid_token")
 	client.expect(client.me(), http.StatusUnauthorized, "unauthorized")
 
+	after := soleUser(memory)
+	if after.EmailVerificationSelector != nil || after.EmailVerificationVerifier != nil || after.EmailVerificationExpiresAt.Valid {
+		test.Fatal("a reset must clear the open verification challenge")
+	}
+	if after.EmailVerifiedAt != proofBefore.EmailVerifiedAt || after.EmailVerificationExempt != proofBefore.EmailVerificationExempt {
+		test.Fatal("a reset must not change the proof or the exemption")
+	}
+
 	client.expect(client.call("POST", "/auth/login", credentials(email, password)), http.StatusUnauthorized, "invalid_credentials")
 	client.expect(client.call("POST", "/auth/login", credentials(email, newPassword)), http.StatusOK, "")
+}
+
+// openChallenge gives the only account an open verification challenge.
+func openChallenge(memory *testutil.Memory) {
+	for id, user := range memory.Users {
+		user.EmailVerificationSelector, user.EmailVerificationVerifier = []byte("selector"), []byte("verifier")
+		user.EmailVerificationExpiresAt = pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true}
+		memory.Users[id] = user
+	}
+}
+
+func soleUser(memory *testutil.Memory) gen.AppUser {
+	for _, user := range memory.Users {
+		return user
+	}
+	return gen.AppUser{}
+}
+
+func TestLockWritesAndLoginsKeepTheVerificationChallenge(test *testing.T) {
+	memory := testutil.NewMemory()
+	client := newClient(test, memory, &testutil.Mailbox{})
+	client.expect(client.call("POST", "/auth/register", credentials(email, password)), http.StatusCreated, "")
+	openChallenge(memory)
+
+	client.expect(client.call("POST", "/auth/login", credentials(email, "Wrong-Pass1")), http.StatusUnauthorized, "invalid_credentials")
+	if soleUser(memory).AttemptCount == 0 || soleUser(memory).EmailVerificationSelector == nil {
+		test.Fatalf("a failed login must count the attempt and keep the challenge: %+v", soleUser(memory))
+	}
+	client.expect(client.call("POST", "/auth/login", credentials(email, password)), http.StatusOK, "")
+	if user := soleUser(memory); user.AttemptCount != 0 || user.EmailVerificationSelector == nil || user.EmailVerificationVerifier == nil || !user.EmailVerificationExpiresAt.Valid {
+		test.Fatalf("a login must reset the counters and keep the challenge: %+v", user)
+	}
+}
+
+// changeHashAtSessionLock simulates a reset that commits after the lockout saves and before the session lock is acquired.
+type changeHashAtSessionLock struct{ *testutil.Memory }
+
+func (querier changeHashAtSessionLock) LockUserForCurrency(ctx context.Context, id uuid.UUID) (gen.AppUser, error) {
+	replaced := "replaced-hash"
+	user := querier.Users[id]
+	user.PasswordHash = &replaced
+	querier.Users[id] = user
+	return querier.Memory.LockUserForCurrency(ctx, id)
+}
+
+func TestLoginStartsNoSessionWhenThePasswordChangesDuringIt(test *testing.T) {
+	for name, withSession := range map[string]bool{"anonymous": false, "existing session": true} {
+		test.Run(name, func(test *testing.T) {
+			memory := testutil.NewMemory()
+			registering := newClient(test, memory, &testutil.Mailbox{})
+			registering.expect(registering.call("POST", "/auth/register", credentials(email, password)), http.StatusCreated, "")
+			original := registering.cookie()
+			if original == nil || len(memory.Sessions) != 1 {
+				test.Fatal("registration must start one session")
+			}
+
+			racing := newClientOn(test, testutil.Store{Querier: changeHashAtSessionLock{memory}}, auth.Config{AppURL: "http://app.test/", MailFrom: "no-reply@app.test", Mailer: &testutil.Mailbox{}})
+			wantSessions := 1
+			if withSession {
+				racing = racing.withCookie(original)
+				wantSessions = 0
+			}
+			racing.expect(racing.call("POST", "/auth/login", credentials(email, password)), http.StatusOK, "")
+			if cookie := racing.cookie(); cookie != nil && (!withSession || cookie.Value != original.Value) {
+				test.Fatal("login issued a new session cookie")
+			}
+			if got := len(memory.Sessions); got != wantSessions {
+				test.Fatalf("sessions = %d, want %d", got, wantSessions)
+			}
+			racing.expect(racing.me(), http.StatusUnauthorized, "unauthorized")
+		})
+	}
 }
 
 func TestSessionsThatNoLongerMatchAUserAreAnonymous(test *testing.T) {

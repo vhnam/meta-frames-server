@@ -210,3 +210,13 @@ func TestCrossOriginWritesFromOtherOriginsAreRefused(test *testing.T) {
 		test.Fatalf("a write from an unlisted origin must be a 403, got %d", recorder.Code)
 	}
 }
+
+func TestVerifyEmailPostPassesCORSFromTheAPIOrigin(test *testing.T) {
+	request := httptest.NewRequest("POST", "/auth/verify-email", strings.NewReader("{}"))
+	request.Header.Set("Origin", "http://"+request.Host)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := serve(newHandler(test), request)
+	if recorder.Code == http.StatusForbidden {
+		test.Fatalf("status = %d, want the same-origin POST to pass CORS", recorder.Code)
+	}
+}
