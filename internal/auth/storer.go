@@ -32,9 +32,11 @@ var (
 	// ErrEmailNotVerified refuses a Google sign-in whose email Google has not verified: it could
 	// claim someone else's account or address.
 	ErrEmailNotVerified = errors.New("auth: the provider has not verified this email")
-	// ErrIdentityConflict refuses a Google sign-in whose email belongs to an account already
-	// linked to a different Google identity.
-	ErrIdentityConflict = errors.New("auth: the email's account is linked to another identity")
+	// ErrIdentityConflict refuses a Google sign-in whose email belongs to another account: a
+	// password account or an account linked to a different Google identity.
+	ErrIdentityConflict = errors.New("auth: the email already belongs to another account")
+	// ErrAccountLocked refuses a sign-in to a locked linked account before any write.
+	ErrAccountLocked = errors.New("auth: the account is locked")
 )
 
 func NewStorer(store db.Store) *Storer { return &Storer{store: store} }
@@ -142,8 +144,8 @@ func (storer *Storer) LoadByRecoverSelector(ctx context.Context, selector string
 }
 
 // NewFromOAuth2 finds or prepares the account for a Google sign-in: the account already linked to
-// the identity, else the account with the same (verified) email, which gets linked, else a new
-// account. SaveOAuth2 writes it.
+// the identity, else a new account. An email that already belongs to another account is refused
+// with ErrIdentityConflict until email verification exists (AUTH-15). SaveOAuth2 writes it.
 func (storer *Storer) NewFromOAuth2(ctx context.Context, provider string, details map[string]string) (authboss.OAuth2User, error) {
 	uid, email := details[detailUID], normalizeEmail(details[detailEmail])
 	if uid == "" || email == "" {
@@ -152,7 +154,11 @@ func (storer *Storer) NewFromOAuth2(ctx context.Context, provider string, detail
 	queries := storer.store.Queries()
 	row, err := queries.GetUserByOAuth2(ctx, gen.GetUserByOAuth2Params{Oauth2Provider: &provider, Oauth2Uid: &uid})
 	if err == nil {
-		return withProfile(fromRow(row), details), nil
+		linked := fromRow(row)
+		if linked.LockedUntil.After(time.Now()) {
+			return nil, ErrAccountLocked
+		}
+		return withProfile(linked, details), nil
 	}
 	if !db.IsNoRows(err) {
 		return nil, err
@@ -161,19 +167,14 @@ func (storer *Storer) NewFromOAuth2(ctx context.Context, provider string, detail
 		return nil, ErrEmailNotVerified
 	}
 
-	row, err = queries.GetUserByEmail(ctx, email)
+	_, err = queries.GetUserByEmail(ctx, email)
 	if db.IsNoRows(err) {
 		return withProfile(&User{Email: email, OAuth2Provider: provider, OAuth2UID: uid}, details), nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	existing := fromRow(row)
-	if existing.OAuth2UID != "" {
-		return nil, ErrIdentityConflict
-	}
-	existing.OAuth2Provider, existing.OAuth2UID = provider, uid
-	return withProfile(existing, details), nil
+	return nil, ErrIdentityConflict
 }
 
 // withProfile fills in the provider's display name when the account has none, and takes the
@@ -197,16 +198,25 @@ func httpsURL(raw string) string {
 	return raw
 }
 
-// SaveOAuth2 inserts a new account or updates a linked one.
+// SaveOAuth2 inserts a new account or updates a linked one. A stale result is ErrIdentityConflict.
 func (storer *Storer) SaveOAuth2(ctx context.Context, user authboss.OAuth2User) error {
 	account, err := asUser(user)
 	if err != nil {
 		return err
 	}
+	// A stale result means another request changed or created the account after NewFromOAuth2 read it.
 	if account.ID == uuid.Nil {
-		return storer.Create(ctx, account)
+		err = storer.Create(ctx, account)
+		if errors.Is(err, authboss.ErrUserFound) {
+			return ErrIdentityConflict
+		}
+		return err
 	}
-	return storer.Save(ctx, account)
+	err = storer.Save(ctx, account)
+	if errors.Is(err, authboss.ErrUserNotFound) {
+		return ErrIdentityConflict
+	}
+	return err
 }
 
 // timestamp stores the zero time as NULL.

@@ -184,7 +184,7 @@ func (queries *Memory) SetLensActive(_ context.Context, arg gen.SetLensActivePar
 }
 
 func (queries *Memory) InsertCameraLens(_ context.Context, arg gen.InsertCameraLensParams) error {
-	queries.Links = append(queries.Links, gen.CameraLens{CameraID: arg.CameraID, LensID: arg.LensID})
+	queries.Links = append(queries.Links, gen.CameraLens(arg))
 	return nil
 }
 
@@ -579,7 +579,7 @@ func (queries *Memory) InsertRollLens(_ context.Context, arg gen.InsertRollLensP
 			return nil
 		}
 	}
-	queries.RollLenses = append(queries.RollLenses, gen.RollLens{RollID: arg.RollID, LensID: arg.LensID})
+	queries.RollLenses = append(queries.RollLenses, gen.RollLens(arg))
 	return nil
 }
 
@@ -1281,12 +1281,24 @@ func (queries *Memory) UpdateUser(_ context.Context, arg gen.UpdateUserParams) (
 	if !found {
 		return gen.AppUser{}, pgx.ErrNoRows
 	}
+	// The SQL never writes the identity: it only matches on it (IS NOT DISTINCT FROM).
+	if !equalOptional(user.Oauth2Provider, arg.Oauth2Provider) || !equalOptional(user.Oauth2Uid, arg.Oauth2Uid) {
+		return gen.AppUser{}, pgx.ErrNoRows
+	}
 	user.Name, user.PasswordHash = arg.Name, arg.PasswordHash
 	user.RecoverSelector, user.RecoverVerifier, user.RecoverTokenExpiry = arg.RecoverSelector, arg.RecoverVerifier, arg.RecoverTokenExpiry
 	user.AttemptCount, user.LastAttempt, user.LockedUntil = arg.AttemptCount, arg.LastAttempt, arg.LockedUntil
-	user.Oauth2Provider, user.Oauth2Uid, user.AvatarUrl = arg.Oauth2Provider, arg.Oauth2Uid, arg.AvatarUrl
+	user.AvatarUrl = arg.AvatarUrl
 	queries.Users[arg.ID] = user
 	return user, nil
+}
+
+// equalOptional compares nullable values the way SQL IS NOT DISTINCT FROM does: nil equals nil.
+func equalOptional(stored, given *string) bool {
+	if stored == nil || given == nil {
+		return stored == given
+	}
+	return *stored == *given
 }
 
 // ClaimUnownedData has nothing to hand over: the fake keeps no owners.

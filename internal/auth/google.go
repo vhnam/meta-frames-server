@@ -89,7 +89,7 @@ func googleUserDetails(userInfoURL string) func(context.Context, oauth2.Config, 
 		if err != nil {
 			return nil, err
 		}
-		defer response.Body.Close()
+		defer func() { _ = response.Body.Close() }()
 		if response.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("auth: google userinfo answered %s", response.Status)
 		}

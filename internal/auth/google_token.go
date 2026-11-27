@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"google.golang.org/api/idtoken"
@@ -125,7 +124,10 @@ func (accounts *Auth) signInWithGoogleToken(ctx *gin.Context) {
 		problem(http.StatusForbidden, "email_not_verified", "Your Google email address is not verified.")
 		return
 	case errors.Is(err, ErrIdentityConflict):
-		problem(http.StatusConflict, "account_conflict", "This email's account is linked to another Google account.")
+		problem(http.StatusConflict, "account_conflict", "This email already belongs to another account.")
+		return
+	case errors.Is(err, ErrAccountLocked):
+		problem(http.StatusTooManyRequests, "account_locked", "Your account is locked. Try again in 15 minutes.")
 		return
 	case err != nil:
 		accounts.tokenSignInFailed(ctx, err)
@@ -136,11 +138,11 @@ func (accounts *Auth) signInWithGoogleToken(ctx *gin.Context) {
 		accounts.tokenSignInFailed(ctx, err)
 		return
 	}
-	if user.LockedUntil.After(time.Now()) {
-		problem(http.StatusTooManyRequests, "account_locked", "Your account is locked. Try again in 15 minutes.")
-		return
-	}
 	if err := accounts.storer.SaveOAuth2(ctx, user); err != nil {
+		if errors.Is(err, ErrIdentityConflict) {
+			problem(http.StatusConflict, "account_conflict", "This email already belongs to another account.")
+			return
+		}
 		accounts.tokenSignInFailed(ctx, err)
 		return
 	}

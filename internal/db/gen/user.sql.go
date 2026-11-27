@@ -305,9 +305,8 @@ func (q *Queries) SetUserCurrencyLocked(ctx context.Context, id uuid.UUID) error
 const updateUser = `-- name: UpdateUser :one
 UPDATE app_user
 SET name = $2, password_hash = $3, recover_selector = $4, recover_verifier = $5, recover_token_expiry = $6,
-    attempt_count = $7, last_attempt = $8, locked_until = $9, oauth2_provider = $10, oauth2_uid = $11,
-    avatar_url = $12
-WHERE id = $1
+    attempt_count = $7, last_attempt = $8, locked_until = $9, avatar_url = $10
+WHERE id = $1 AND oauth2_provider IS NOT DISTINCT FROM $11 AND oauth2_uid IS NOT DISTINCT FROM $12
 RETURNING id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked
 `
 
@@ -321,9 +320,9 @@ type UpdateUserParams struct {
 	AttemptCount       int32
 	LastAttempt        pgtype.Timestamptz
 	LockedUntil        pgtype.Timestamptz
+	AvatarUrl          *string
 	Oauth2Provider     *string
 	Oauth2Uid          *string
-	AvatarUrl          *string
 }
 
 func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (AppUser, error) {
@@ -337,9 +336,9 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (AppUser
 		arg.AttemptCount,
 		arg.LastAttempt,
 		arg.LockedUntil,
+		arg.AvatarUrl,
 		arg.Oauth2Provider,
 		arg.Oauth2Uid,
-		arg.AvatarUrl,
 	)
 	var i AppUser
 	err := row.Scan(

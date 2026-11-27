@@ -31,6 +31,4 @@ func newMemoryFiles() *memoryFiles { return testutil.NewMemoryFiles() }
 
 func fixedClock() clock.Fixed { return clock.Fixed{Date: day(2026, time.October, 2)} }
 
-func int32Ref(value int32) *int32 { return &value }
-
 func stringRef(value string) *string { return &value }

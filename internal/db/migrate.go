@@ -11,7 +11,7 @@ import (
 // Migrate applies the embedded goose migrations.
 func Migrate(connCfg *pgx.ConnConfig) error {
 	db := stdlib.OpenDB(*connCfg)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	goose.SetBaseFS(migrations.FS)
 	if err := goose.SetDialect("postgres"); err != nil {

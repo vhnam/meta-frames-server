@@ -27,7 +27,7 @@ func TestPutThenOpenReturnsTheSameBytes(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	defer content.Close()
+	defer func() { _ = content.Close() }()
 	data, _ := io.ReadAll(content)
 	if string(data) != "hello film" || openedSize != size {
 		test.Fatalf("data=%q size=%d", data, openedSize)

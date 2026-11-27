@@ -169,7 +169,7 @@ func (accounts *Auth) afterPasswordReset(_ http.ResponseWriter, request *http.Re
 // Mount routes the authboss endpoints under /auth.
 func (accounts *Auth) Mount(router gin.IRoutes) {
 	ab := accounts.authboss
-	handler := gin.WrapH(http.StripPrefix(mountPath, ab.LoadClientStateMiddleware(ab.Config.Core.Router)))
+	handler := gin.WrapH(http.StripPrefix(mountPath, ab.LoadClientStateMiddleware(ab.Core.Router)))
 	for _, route := range routes {
 		router.POST(mountPath+route, handler)
 	}

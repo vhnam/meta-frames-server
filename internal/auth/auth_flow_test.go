@@ -71,7 +71,7 @@ func (client *session) call(method, path string, body any) reply {
 	if err != nil {
 		client.test.Fatal(err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	result := reply{status: response.StatusCode}
 	_ = json.NewDecoder(response.Body).Decode(&result.body)
 	return result
