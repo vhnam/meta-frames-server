@@ -88,11 +88,23 @@ paths:
                   name: Ansel
       responses:
         "201":
-          description: Registered and logged in
+          description: |
+            Registered and logged in. With `EMAIL_VERIFICATION=enforce` the account must prove its address first:
+            the answer is `RegisterVerificationRequired` and sets no session cookie.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/AuthResult" }
+              schema:
+                oneOf:
+                  - allOf:
+                      - $ref: "#/components/schemas/AuthResult"
+                      - not: { required: [verificationRequired] }
+                  - $ref: "#/components/schemas/RegisterVerificationRequired"
               examples:
+                verificationRequired:
+                  summary: Account created, address not yet verified (enforce)
+                  value:
+                    message: Account created. Check your email to verify the address.
+                    verificationRequired: true
                 registered:
                   summary: New account, now logged in
                   value:
@@ -165,6 +177,17 @@ paths:
                   value:
                     code: invalid_credentials
                     message: Invalid Credentials
+        "403":
+          description: The password is right but the email address is not verified (`EMAIL_VERIFICATION=enforce`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Problem" }
+              examples:
+                emailVerificationRequired:
+                  summary: Address not verified
+                  value:
+                    code: email_verification_required
+                    message: Verify your email address to sign in.
         "429":
           description: Too many wrong passwords; the account is locked for 15 minutes
           content:
@@ -4435,6 +4458,17 @@ components:
         user: { $ref: "#/components/schemas/User" }
       example:
         message: Logged in
+
+    RegisterVerificationRequired:
+      type: object
+      additionalProperties: false
+      required: [message, verificationRequired]
+      properties:
+        message: { type: string }
+        verificationRequired: { type: boolean, enum: [true] }
+      example:
+        message: Account created. Check your email to verify the address.
+        verificationRequired: true
 
     RegisterInput:
       type: object

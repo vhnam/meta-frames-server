@@ -38,8 +38,10 @@ var errInvalidToken = errors.New("auth: the verification token no longer works")
 
 // sendVerification mails the verification link to a new password account. The raw token lives only
 // in the user value that Create filled in. A send error never fails the registration: the account
-// can ask for a new link later. It returns handled = false, so registration answers as before.
-func (accounts *Auth) sendVerification(_ http.ResponseWriter, request *http.Request, _ bool) (bool, error) {
+// can ask for a new link later. In enforce mode a new account gets no session: it answers 201 with
+// verificationRequired and returns handled = true. In any other mode it returns handled = false, so
+// registration answers as before.
+func (accounts *Auth) sendVerification(w http.ResponseWriter, request *http.Request, _ bool) (bool, error) {
 	user, ok := request.Context().Value(authboss.CTXKeyUser).(*User)
 	if !ok || user.verificationToken == "" {
 		return false, nil
@@ -50,7 +52,24 @@ func (accounts *Auth) sendVerification(_ http.ResponseWriter, request *http.Requ
 		// No recipient, token or link: the error text can echo them.
 		slog.Error("sending the verification email failed")
 	}
-	return false, nil
+	if !user.blocked(accounts.storer.mode) {
+		return false, nil
+	}
+	return true, writeJSON(w, http.StatusCreated, api.RegisterVerificationRequired{
+		Message:              "Account created. Check your email to verify the address.",
+		VerificationRequired: true,
+	})
+}
+
+// refuseUnverified answers 403 to a right password on an account that the gate blocks. It runs after
+// the lock module's handler, so a locked account answers 429 first, and before the session starts, so
+// no cookie is set. The lock's success handler does not run, so the attempt count stays.
+func (accounts *Auth) refuseUnverified(w http.ResponseWriter, request *http.Request, _ bool) (bool, error) {
+	user, ok := request.Context().Value(authboss.CTXKeyUser).(*User)
+	if !ok || !user.blocked(accounts.storer.mode) {
+		return false, nil
+	}
+	return true, writeJSON(w, http.StatusForbidden, api.Problem{Code: "email_verification_required", Message: "Verify your email address to sign in."})
 }
 
 // recordPasswordHash hands the password hash that the login just checked to the session store, which

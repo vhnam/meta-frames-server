@@ -818,3 +818,134 @@ func TestResendCountsTheAddressLengthInCharacters(test *testing.T) {
 		test.Fatalf("a %d-character address gave %d %s, want 202", len([]rune(address)), reply.status, reply.body)
 	}
 }
+
+func TestEnforceRegistrationStartsNoSession(test *testing.T) {
+	for name, mailer := range map[string]authboss.Mailer{"mail works": &testutil.Mailbox{}, "mail fails": failingMailer{}} {
+		test.Run(name, func(test *testing.T) {
+			memory := testutil.NewMemory()
+			client := verifyClient(test, memory, auth.EmailVerificationEnforce, mailer)
+			registered := client.expect(client.call("POST", "/auth/register", credentials(email, password)), http.StatusCreated, "")
+			if registered.body["verificationRequired"] != true {
+				test.Fatalf("register body = %v, want verificationRequired", registered.body)
+			}
+			if _, leaked := registered.body["user"]; leaked {
+				test.Fatal("register must not return the user before proof")
+			}
+			if client.cookie() != nil {
+				test.Fatal("register started a session")
+			}
+			if len(memory.Sessions) != 0 {
+				test.Fatal("register inserted a session row before proof")
+			}
+			client.expect(client.me(), http.StatusUnauthorized, "unauthorized")
+			if row := onlyUser(test, memory); len(row.EmailVerificationSelector) != 64 {
+				test.Fatalf("challenge = %+v", row)
+			}
+			if mailbox, ok := mailer.(*testutil.Mailbox); ok && len(mailbox.Sent()) != 1 {
+				test.Fatalf("sent %d emails, want 1", len(mailbox.Sent()))
+			}
+		})
+	}
+}
+
+func TestEnforceLoginRefusesAnUnverifiedAccountWithoutCountingAnAttempt(test *testing.T) {
+	memory := testutil.NewMemory()
+	client := verifyClient(test, memory, auth.EmailVerificationEnforce, &testutil.Mailbox{})
+	client.expect(client.call("POST", "/auth/register", credentials(email, password)), http.StatusCreated, "")
+
+	client.expect(client.call("POST", "/auth/login", credentials(email, "Wrong-Pass1")), http.StatusUnauthorized, "invalid_credentials")
+	before := onlyUser(test, memory)
+	client.expect(client.call("POST", "/auth/login", credentials(email, password)), http.StatusForbidden, "email_verification_required")
+	if client.cookie() != nil {
+		test.Fatal("the refused login started a session")
+	}
+	if after := onlyUser(test, memory); after.AttemptCount != before.AttemptCount || after.AttemptCount == 0 {
+		test.Fatalf("attempt count %d then %d, want unchanged and counted from the wrong password", before.AttemptCount, after.AttemptCount)
+	}
+}
+
+func TestEnforceLockedAccountAnswers429BeforeTheVerificationRefusal(test *testing.T) {
+	memory := testutil.NewMemory()
+	client := verifyClient(test, memory, auth.EmailVerificationEnforce, &testutil.Mailbox{})
+	client.expect(client.call("POST", "/auth/register", credentials(email, password)), http.StatusCreated, "")
+	for attempt := 0; attempt < 5; attempt++ {
+		client.call("POST", "/auth/login", credentials(email, "Wrong-Pass1"))
+	}
+	client.expect(client.call("POST", "/auth/login", credentials(email, password)), http.StatusTooManyRequests, "account_locked")
+}
+
+func TestEnforceLoginAcceptsVerifiedAndExemptAccounts(test *testing.T) {
+	proof := func(user *gen.AppUser) { user.EmailVerifiedAt = pgtype.Timestamptz{Time: time.Now(), Valid: true} }
+	exempt := func(user *gen.AppUser) { user.EmailVerificationExempt = true }
+	for name, change := range map[string]func(*gen.AppUser){"verified": proof, "exempt": exempt} {
+		test.Run(name, func(test *testing.T) {
+			memory := testutil.NewMemory()
+			verifyClient(test, memory, auth.EmailVerificationSend, &testutil.Mailbox{}).
+				call("POST", "/auth/register", credentials(email, password))
+			changeOnlyUser(test, memory, change)
+			client := verifyClient(test, memory, auth.EmailVerificationEnforce, &testutil.Mailbox{})
+			client.expect(client.call("POST", "/auth/login", credentials(email, password)), http.StatusOK, "")
+			if client.cookie() == nil {
+				test.Fatal("login set no session cookie")
+			}
+			client.expect(client.me(), http.StatusOK, "")
+		})
+	}
+}
+
+func TestSendModeKeepsAnUnverifiedAccountSignedIn(test *testing.T) {
+	client := verifyClient(test, testutil.NewMemory(), auth.EmailVerificationSend, &testutil.Mailbox{})
+	client.expect(client.call("POST", "/auth/register", credentials(email, password)), http.StatusCreated, "")
+	client.expect(client.me(), http.StatusOK, "")
+	client.expect(client.call("POST", "/auth/login", credentials(email, password)), http.StatusOK, "")
+}
+
+func TestEnforceTurnsAnExistingUnverifiedSessionAnonymousUntilProof(test *testing.T) {
+	memory, mailbox := testutil.NewMemory(), &testutil.Mailbox{}
+	sendClient := verifyClient(test, memory, auth.EmailVerificationSend, mailbox)
+	token := registeredToken(test, sendClient, mailbox)
+	cookie := sendClient.cookie()
+
+	client := verifyClient(test, memory, auth.EmailVerificationEnforce, mailbox).withCookie(cookie)
+	client.expect(client.me(), http.StatusUnauthorized, "unauthorized")
+	client.expect(client.call("POST", "/auth/logout", nil), http.StatusOK, "")
+	if len(memory.Sessions) != 1 {
+		test.Fatal("anonymous logout changed the blocked account's session rows")
+	}
+	client.expect(client.me(), http.StatusUnauthorized, "unauthorized")
+	postVerify(test, client, token, pointer(password)).expect(test, http.StatusOK, "")
+	client.expect(client.me(), http.StatusOK, "") // the session row was kept
+}
+
+func TestEnforceGoogleSignIn(test *testing.T) {
+	googleClient := func(test *testing.T, google *fakeGoogle, memory *testutil.Memory) *session {
+		return newClientWith(test, memory, auth.Config{
+			EmailVerification: auth.EmailVerificationEnforce, AppURL: "http://app.test", APIURL: "http://api.test",
+			Mailer: &testutil.Mailbox{}, Google: google.Config(),
+		})
+	}
+	test.Run("new subject", func(test *testing.T) {
+		client := googleClient(test, newFakeGoogle(test), testutil.NewMemory())
+		client.signInWithGoogle("/")
+		client.expect(client.me(), http.StatusOK, "")
+	})
+	test.Run("returning exempt subject", func(test *testing.T) {
+		memory := testutil.NewMemory()
+		provider, subject, id := "google", "g-1", uuid.New()
+		memory.Users[id] = gen.AppUser{ID: id, Email: email, Oauth2Provider: &provider, Oauth2Uid: &subject, EmailVerificationExempt: true}
+		client := googleClient(test, newFakeGoogle(test), memory)
+		client.signInWithGoogle("/")
+		client.expect(client.me(), http.StatusOK, "")
+	})
+	test.Run("new subject on a verified password account", func(test *testing.T) {
+		memory := testutil.NewMemory()
+		verifyClient(test, memory, auth.EmailVerificationSend, &testutil.Mailbox{}).
+			call("POST", "/auth/register", credentials(email, password))
+		changeOnlyUser(test, memory, func(user *gen.AppUser) { user.EmailVerifiedAt = pgtype.Timestamptz{Time: time.Now(), Valid: true} })
+		client := googleClient(test, newFakeGoogle(test), memory)
+		if landing := client.signInWithGoogle("/"); landing != "http://app.test/login?error=account_conflict" {
+			test.Fatalf("landed on %q, want account_conflict", landing)
+		}
+		client.expect(client.me(), http.StatusUnauthorized, "unauthorized")
+	})
+}

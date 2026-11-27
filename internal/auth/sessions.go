@@ -100,7 +100,11 @@ func (sessions *sessionStore) lookup(request *http.Request) (*User, []byte, erro
 	if err != nil {
 		return nil, nil, err
 	}
-	return fromRow(row), tokenHash, nil
+	user := fromRow(row)
+	if user.blocked(sessions.storer.mode) {
+		return nil, nil, nil // anonymous until the address is verified; the session row stays
+	}
+	return user, tokenHash, nil
 }
 
 // WriteState applies authboss's changes. Every sign-in replaces the request's session with a

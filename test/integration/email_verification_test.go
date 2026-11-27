@@ -20,9 +20,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"meta-frames-server/internal/auth"
+	"meta-frames-server/internal/common/clock"
+	"meta-frames-server/internal/controllers"
+	"meta-frames-server/internal/server"
+	"meta-frames-server/internal/services"
+	"meta-frames-server/internal/storage"
 
 	"meta-frames-server/internal/db"
 	"meta-frames-server/internal/db/gen"
+	"meta-frames-server/internal/testutil"
 )
 
 const rateLimitWindowSeconds = 15 * 60
@@ -736,5 +742,72 @@ func TestLoginWaitsForAResetThatHoldsTheRowAndStartsNoSession(test *testing.T) {
 		if cookie.Name == auth.SessionCookie && cookie.Value != "" {
 			test.Fatal("the login must not set a session cookie")
 		}
+	}
+}
+
+// enforceHandler serves the harness database with EMAIL_VERIFICATION=enforce.
+func (harness *harness) enforceHandler() http.Handler {
+	harness.test.Helper()
+	store := db.NewPostgresStore(harness.pool)
+	accounts, err := auth.New(store, auth.Config{EmailVerification: auth.EmailVerificationEnforce, AppURL: "http://app.test", APIURL: "http://api.test", Mailer: &harness.mail})
+	if err != nil {
+		harness.test.Fatal(err)
+	}
+	files, err := storage.NewLocal(harness.test.TempDir())
+	if err != nil {
+		harness.test.Fatal(err)
+	}
+	handler, err := server.NewHandler(controllers.New(services.New(store, files, clock.System{})), accounts, []string{"*"})
+	if err != nil {
+		harness.test.Fatal(err)
+	}
+	return handler
+}
+
+func TestEnforceTurnsAnUnverifiedSessionAnonymousAndWritesNothingUntilProof(test *testing.T) {
+	harness := newHarnessWithVerification(test, auth.EmailVerificationSend) // the "tester" account is unverified
+	seeded := seedGear(harness)
+	rollID := harness.addRolls(seeded, 1)[0]
+	edit := func(description string) map[string]any {
+		return map[string]any{"filmStockId": seeded.stockID, "format": 135, "exposures": 36, "description": description}
+	}
+	login := httptest.NewRequest("POST", "/auth/login", strings.NewReader(`{"email":"`+actorEmail("tester")+`","password":"`+verifyTestPassword+`"}`))
+	login.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	harness.app.ServeHTTP(recorder, login)
+	var cookie *http.Cookie
+	for _, candidate := range recorder.Result().Cookies() {
+		if candidate.Name == auth.SessionCookie {
+			cookie = candidate
+		}
+	}
+	if recorder.Code != http.StatusOK || cookie == nil {
+		test.Fatalf("login in send mode = %d, cookie %v", recorder.Code, cookie)
+	}
+
+	enforced := testutil.SignedIn(harness.enforceHandler(), cookie)
+	send := func(method, path string, body any) int {
+		payload, _ := json.Marshal(body)
+		request := httptest.NewRequest(method, path, bytes.NewReader(payload))
+		request.Header.Set("Content-Type", "application/json")
+		result := httptest.NewRecorder()
+		enforced.ServeHTTP(result, request)
+		return result.Code
+	}
+	if status := send("GET", "/auth/me", nil); status != http.StatusUnauthorized {
+		test.Fatalf("GET /auth/me under enforce = %d, want 401", status)
+	}
+	if status := send("PUT", "/rolls/"+rollID, edit("blocked edit")); status != http.StatusUnauthorized {
+		test.Fatalf("PUT /rolls under enforce = %d, want 401", status)
+	}
+	if roll := harness.rollOf(rollID); roll["description"] == "blocked edit" {
+		test.Fatalf("a refused write changed the roll: %v", roll)
+	}
+
+	if status, _, _ := harness.postVerify(harness.verificationTokenFromLastMail(), verifyTestPassword); status != http.StatusOK {
+		test.Fatalf("verify = %d, want 200", status)
+	}
+	if status := send("GET", "/auth/me", nil); status != http.StatusOK {
+		test.Fatalf("GET /auth/me after proof = %d, want 200 with the same cookie", status)
 	}
 }

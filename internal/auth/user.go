@@ -76,6 +76,12 @@ func fromRow(row gen.AppUser) *User {
 	}
 }
 
+// blocked tells whether the access gate refuses the account: only in enforce mode, and only while the
+// address has no proof and the account is not exempt.
+func (user *User) blocked(mode EmailVerificationMode) bool {
+	return mode == EmailVerificationEnforce && user.EmailVerifiedAt.IsZero() && !user.EmailVerificationExempt
+}
+
 // PublicUser is the public view of an account row: the one mapping from a stored account to api.User.
 func PublicUser(row gen.AppUser) api.User { return fromRow(row).API() }
 
