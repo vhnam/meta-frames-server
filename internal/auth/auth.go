@@ -91,6 +91,8 @@ type Auth struct {
 	storer   *Storer
 	sessions *sessionStore
 	google   bool
+	// trustedProxyHops is Config.TrustedProxyHops: it picks the source address the limiters count.
+	trustedProxyHops int
 
 	googleWebClientID string
 	googleAudiences   []string
@@ -113,6 +115,8 @@ func New(store db.Store, config Config) (*Auth, error) {
 		storer:   storer,
 		sessions: &sessionStore{store: store, storer: storer, secure: config.SecureCookie, sameSite: sameSite},
 		google:   config.Google.enabled(),
+
+		trustedProxyHops: config.TrustedProxyHops,
 
 		googleWebClientID: config.Google.ClientID,
 		googleAudiences:   config.Google.audiences(),
