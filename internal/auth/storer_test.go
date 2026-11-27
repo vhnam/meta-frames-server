@@ -8,10 +8,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"meta-frames-server/internal/api"
 	"meta-frames-server/internal/auth"
@@ -21,6 +23,41 @@ import (
 
 func googleDetails(uid, email string) map[string]string {
 	return map[string]string{"uid": uid, "email": email, "email_verified": "true", "name": "Ansel"}
+}
+
+func TestLoadPreservesEmailVerificationState(test *testing.T) {
+	verifiedAt := time.Date(2026, 11, 26, 1, 2, 3, 0, time.UTC)
+	for _, scenario := range []struct {
+		name       string
+		verifiedAt time.Time
+		exempt     bool
+	}{
+		{name: "unverified"},
+		{name: "verified", verifiedAt: verifiedAt},
+		{name: "legacy exempt", exempt: true},
+	} {
+		test.Run(scenario.name, func(test *testing.T) {
+			const email = "ansel@example.com"
+			memory := testutil.NewMemory()
+			id := uuid.New()
+			memory.Users[id] = gen.AppUser{
+				ID:                      id,
+				Email:                   email,
+				EmailVerifiedAt:         pgtype.Timestamptz{Time: scenario.verifiedAt, Valid: !scenario.verifiedAt.IsZero()},
+				EmailVerificationExempt: scenario.exempt,
+			}
+			storer := auth.NewStorer(testutil.Store{Querier: memory})
+			loaded, err := storer.Load(test.Context(), email)
+			if err != nil {
+				test.Fatal(err)
+			}
+			account := loaded.(*auth.User)
+			if !account.EmailVerifiedAt.Equal(scenario.verifiedAt) || account.EmailVerificationExempt != scenario.exempt {
+				test.Errorf("verification state = (%v, %t), want (%v, %t)",
+					account.EmailVerifiedAt, account.EmailVerificationExempt, scenario.verifiedAt, scenario.exempt)
+			}
+		})
+	}
 }
 
 func TestSaveOAuth2RefusesAStaleCreate(test *testing.T) {

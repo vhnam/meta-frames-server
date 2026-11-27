@@ -1527,6 +1527,11 @@ type SpendBucket struct {
 	ProcessingCost int `json:"processingCost"`
 }
 
+// StatusMessage defines model for StatusMessage.
+type StatusMessage struct {
+	Message string `json:"message"`
+}
+
 // StepActor Who does a step. self is the owner at home.
 type StepActor string
 
@@ -1547,6 +1552,19 @@ type User struct {
 	Email          openapi_types.Email `json:"email"`
 	Id             openapi_types.UUID  `json:"id"`
 	Name           *string             `json:"name,omitempty"`
+}
+
+// VerificationInput defines model for VerificationInput.
+type VerificationInput struct {
+	Password *string `json:"password,omitempty"`
+	Token    string  `json:"token"`
+}
+
+// VerificationResendInput Example: {"email":"ansel@example.com"}
+type VerificationResendInput struct {
+	// Email The raw value is at most 1024 characters. The server trims surrounding whitespace. The trimmed value must be
+	// a bare email address (no display name) of at most 254 characters.
+	Email string `json:"email"`
 }
 
 // YearSpending defines model for YearSpending.

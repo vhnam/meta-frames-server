@@ -58,6 +58,11 @@ type response struct {
 }
 
 func newHarness(test *testing.T) *harness {
+	return newHarnessWithVerification(test, auth.EmailVerificationOff)
+}
+
+// newHarnessWithVerification starts a harness whose auth runs in the given EMAIL_VERIFICATION mode.
+func newHarnessWithVerification(test *testing.T, mode auth.EmailVerificationMode) *harness {
 	test.Helper()
 	if testing.Short() {
 		test.Skip("integration tests need Docker; skipped with -short")
@@ -97,10 +102,11 @@ func newHarness(test *testing.T) *harness {
 	harness := &harness{test: test, pool: pool}
 	harness.google = testutil.NewFakeGoogle(test, "http://api.test/auth/oauth2/callback/google")
 	accounts, err := auth.New(store, auth.Config{
-		AppURL: "http://app.test",
-		APIURL: "http://api.test",
-		Mailer: &harness.mail,
-		Google: harness.google.Config(),
+		EmailVerification: mode,
+		AppURL:            "http://app.test",
+		APIURL:            "http://api.test",
+		Mailer:            &harness.mail,
+		Google:            harness.google.Config(),
 	})
 	if err != nil {
 		test.Fatal(err)
