@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
-	"net/smtp"
 	"os"
 	"os/signal"
 	"strings"
@@ -14,7 +12,6 @@ import (
 	"time"
 
 	"github.com/aarondl/authboss/v3"
-	"github.com/aarondl/authboss/v3/defaults"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"meta-frames-server/internal/auth"
@@ -133,6 +130,8 @@ func newAccounts(cfg config.Config, store db.Store) (*auth.Auth, error) {
 		return nil, err
 	}
 	return auth.New(store, auth.Config{
+		EmailVerification: auth.EmailVerificationMode(cfg.EmailVerification),
+		TrustedProxyHops:  cfg.TrustedProxyHops,
 		// Browsers drop SameSite=None cookies that are not Secure.
 		SecureCookie: cfg.Production || sameSite == http.SameSiteNoneMode,
 		SameSite:     sameSite,
@@ -166,14 +165,9 @@ func parseSameSite(value string) (http.SameSite, error) {
 func newMailer(cfg config.Config) authboss.Mailer {
 	if cfg.SMTPAddr == "" {
 		if cfg.Production {
-			slog.Warn("SMTP_ADDR is not set; password-recovery emails are only printed to stdout")
+			slog.Warn("SMTP_ADDR is not set; password-recovery and verification emails are only printed to stdout")
 		}
 		return nil
 	}
-	var smtpAuth smtp.Auth
-	if cfg.SMTPUsername != "" {
-		host, _, _ := net.SplitHostPort(cfg.SMTPAddr)
-		smtpAuth = smtp.PlainAuth("", cfg.SMTPUsername, cfg.SMTPPassword, host)
-	}
-	return auth.AsyncMailer{Mailer: defaults.NewSMTPMailer(cfg.SMTPAddr, smtpAuth)}
+	return auth.NewSMTPMailer(cfg.SMTPAddr, cfg.SMTPUsername, cfg.SMTPPassword, cfg.Production)
 }

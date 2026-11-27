@@ -9,7 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Settings `EMAIL_VERIFICATION` (`off`, `send`, `enforce`; default `off`) and `TRUSTED_PROXY_HOPS` (default `0`). While `EMAIL_VERIFICATION` is `off`, verification stays disabled. Email sending now also changes for password recovery: at most 8 sends run at once (extra mail is dropped and logged), each send stops after 1 minute, logs hold only a category and SMTP code, and in production the SMTP relay must offer STARTTLS with a valid certificate and authentication.
 - Internal: migration `00022` adds the email verification columns on `app_user` and the `auth_rate_limit` table. No existing row changes and no behavior changes yet.
+
+### Changed
+
+- In production, a server with `SMTP_ADDR` set now refuses to start unless `SMTP_USERNAME` and `SMTP_PASSWORD` are also set, in every `EMAIL_VERIFICATION` mode.
 
 ### Security
 

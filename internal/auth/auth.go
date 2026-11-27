@@ -54,7 +54,21 @@ var routes = []string{"/register", "/login", "/logout", "/recover", "/recover/en
 // browser navigates to them.
 var googleRoutes = []string{"/oauth2/" + googleProvider, "/oauth2/callback/" + googleProvider}
 
+// EmailVerificationMode is the EMAIL_VERIFICATION setting. Code tests for Send and Enforce only, so
+// the zero value behaves as off.
+type EmailVerificationMode string
+
+const (
+	EmailVerificationOff     EmailVerificationMode = "off"
+	EmailVerificationSend    EmailVerificationMode = "send"
+	EmailVerificationEnforce EmailVerificationMode = "enforce"
+)
+
 type Config struct {
+	// EmailVerification is off, send or enforce.
+	EmailVerification EmailVerificationMode
+	// TrustedProxyHops is how many proxies append to X-Forwarded-For; 0 uses RemoteAddr.
+	TrustedProxyHops int
 	// SecureCookie sends the session cookie over HTTPS only.
 	SecureCookie bool
 	// SameSite is the session cookie's SameSite mode; zero means Lax.
