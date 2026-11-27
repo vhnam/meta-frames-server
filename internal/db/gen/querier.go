@@ -96,6 +96,8 @@ type Querier interface {
 	InsertScan(ctx context.Context, arg InsertScanParams) (Scan, error)
 	InsertScanner(ctx context.Context, arg InsertScannerParams) (Scanner, error)
 	InsertSession(ctx context.Context, arg InsertSessionParams) error
+	// Starts a session only while the password hash is still the one the login checked.
+	InsertSessionForPassword(ctx context.Context, arg InsertSessionForPasswordParams) (int64, error)
 	InsertUser(ctx context.Context, arg InsertUserParams) (AppUser, error)
 	InventoryRows(ctx context.Context, arg InventoryRowsParams) ([]InventoryRowsRow, error)
 	// Issues a verification challenge: one statement, so the row lock serializes concurrent issues. No row
@@ -197,8 +199,12 @@ type Querier interface {
 	UpdateProcessing(ctx context.Context, arg UpdateProcessingParams) (Processing, error)
 	UpdateRoll(ctx context.Context, arg UpdateRollParams) (Roll, error)
 	UpdateScanner(ctx context.Context, arg UpdateScannerParams) (Scanner, error)
+	// Writes the password only when set_password, and the recovery fields only when set_recovery, so a
+	// stale user value cannot restore either. A right-side column reads the old row.
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (AppUser, error)
 	UpdateUserCurrency(ctx context.Context, arg UpdateUserCurrencyParams) (AppUser, error)
+	// Login bookkeeping: writes no credential field, so a stale user value cannot restore an old password.
+	UpdateUserState(ctx context.Context, arg UpdateUserStateParams) (AppUser, error)
 	// The roll is checked to belong to the account first; the composite foreign key refuses a frame
 	// whose owner differs from its roll's.
 	UpsertFrame(ctx context.Context, arg UpsertFrameParams) (Frame, error)

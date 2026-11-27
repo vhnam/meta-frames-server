@@ -66,28 +66,47 @@ func (storer *Storer) Load(ctx context.Context, pid string) (authboss.User, erro
 	return fromRow(row), nil
 }
 
-// Save writes back the fields authboss changes: password, name, recovery and lockout state.
+// Save writes back the fields authboss changes. Credentials (password and recovery fields) go out
+// only after a credential setter ran; login bookkeeping writes name, lockout state and avatar.
 func (storer *Storer) Save(ctx context.Context, user authboss.User) error {
 	account, err := asUser(user)
 	if err != nil {
 		return err
 	}
-	_, err = storer.store.Queries().UpdateUser(ctx, gen.UpdateUserParams{
-		ID:                 account.ID,
-		Name:               emptyToNil(account.Name),
-		PasswordHash:       emptyToNil(account.PasswordHash),
-		RecoverSelector:    emptyToNil(account.RecoverSelector),
-		RecoverVerifier:    emptyToNil(account.RecoverVerifier),
-		RecoverTokenExpiry: timestamp(account.RecoverExpiry),
-		AttemptCount:       int32(min(account.AttemptCount, math.MaxInt32)),
-		LastAttempt:        timestamp(account.LastAttempt),
-		LockedUntil:        timestamp(account.LockedUntil),
-		Oauth2Provider:     emptyToNil(account.OAuth2Provider),
-		Oauth2Uid:          emptyToNil(account.OAuth2UID),
-		AvatarUrl:          emptyToNil(account.AvatarURL),
-	})
+	if account.passwordChanged || account.recoveryChanged {
+		_, err = storer.store.Queries().UpdateUser(ctx, gen.UpdateUserParams{
+			ID:                 account.ID,
+			SetPassword:        account.passwordChanged,
+			SetRecovery:        account.recoveryChanged,
+			Name:               emptyToNil(account.Name),
+			PasswordHash:       emptyToNil(account.PasswordHash),
+			RecoverSelector:    emptyToNil(account.RecoverSelector),
+			RecoverVerifier:    emptyToNil(account.RecoverVerifier),
+			RecoverTokenExpiry: timestamp(account.RecoverExpiry),
+			AttemptCount:       int32(min(account.AttemptCount, math.MaxInt32)),
+			LastAttempt:        timestamp(account.LastAttempt),
+			LockedUntil:        timestamp(account.LockedUntil),
+			Oauth2Provider:     emptyToNil(account.OAuth2Provider),
+			Oauth2Uid:          emptyToNil(account.OAuth2UID),
+			AvatarUrl:          emptyToNil(account.AvatarURL),
+		})
+	} else {
+		_, err = storer.store.Queries().UpdateUserState(ctx, gen.UpdateUserStateParams{
+			ID:             account.ID,
+			Name:           emptyToNil(account.Name),
+			AttemptCount:   int32(min(account.AttemptCount, math.MaxInt32)),
+			LastAttempt:    timestamp(account.LastAttempt),
+			LockedUntil:    timestamp(account.LockedUntil),
+			AvatarUrl:      emptyToNil(account.AvatarURL),
+			Oauth2Provider: emptyToNil(account.OAuth2Provider),
+			Oauth2Uid:      emptyToNil(account.OAuth2UID),
+		})
+	}
 	if db.IsNoRows(err) {
 		return authboss.ErrUserNotFound
+	}
+	if err == nil {
+		account.passwordChanged, account.recoveryChanged = false, false
 	}
 	return err
 }

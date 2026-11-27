@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A password reset now ends an open verification link. A login starts a session only while the account still has the password it checked, so a reset that lands during a login starts no session.
 - A Google sign-in to a locked account no longer refreshes the name or picture on the web route.
 
 ### Changed

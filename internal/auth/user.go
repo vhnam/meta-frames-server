@@ -35,6 +35,9 @@ type User struct {
 	EmailVerifiedAt         time.Time // zero until the server records proof of the address
 	EmailVerificationExempt bool      // legacy access exemption; never set together with proof
 
+	// Set by the setters. Save writes the password or the recovery fields only when the matching flag is set.
+	passwordChanged, recoveryChanged bool
+
 	verificationToken string // the raw token, only from Create to the register handler; never stored
 }
 
@@ -96,18 +99,26 @@ func (user *User) API() api.User {
 func (user *User) GetPID() string    { return user.Email }
 func (user *User) PutPID(pid string) { user.Email = normalizeEmail(pid) }
 
-func (user *User) GetPassword() string         { return user.PasswordHash }
-func (user *User) PutPassword(password string) { user.PasswordHash = password }
+func (user *User) GetPassword() string { return user.PasswordHash }
+func (user *User) PutPassword(password string) {
+	user.PasswordHash, user.passwordChanged = password, true
+}
 
 func (user *User) GetEmail() string      { return user.Email }
 func (user *User) PutEmail(email string) { user.Email = normalizeEmail(email) }
 
-func (user *User) GetRecoverSelector() string         { return user.RecoverSelector }
-func (user *User) PutRecoverSelector(selector string) { user.RecoverSelector = selector }
-func (user *User) GetRecoverVerifier() string         { return user.RecoverVerifier }
-func (user *User) PutRecoverVerifier(verifier string) { user.RecoverVerifier = verifier }
-func (user *User) GetRecoverExpiry() time.Time        { return user.RecoverExpiry }
-func (user *User) PutRecoverExpiry(expiry time.Time)  { user.RecoverExpiry = expiry }
+func (user *User) GetRecoverSelector() string { return user.RecoverSelector }
+func (user *User) PutRecoverSelector(selector string) {
+	user.RecoverSelector, user.recoveryChanged = selector, true
+}
+func (user *User) GetRecoverVerifier() string { return user.RecoverVerifier }
+func (user *User) PutRecoverVerifier(verifier string) {
+	user.RecoverVerifier, user.recoveryChanged = verifier, true
+}
+func (user *User) GetRecoverExpiry() time.Time { return user.RecoverExpiry }
+func (user *User) PutRecoverExpiry(expiry time.Time) {
+	user.RecoverExpiry, user.recoveryChanged = expiry, true
+}
 
 // The lock module counts wrong passwords and locks the account for a while.
 func (user *User) GetAttemptCount() int          { return user.AttemptCount }

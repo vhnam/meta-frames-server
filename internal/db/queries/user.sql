@@ -19,14 +19,37 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING *;
 
 -- name: UpdateUser :one
+-- Writes the password only when set_password, and the recovery fields only when set_recovery, so a
+-- stale user value cannot restore either. A right-side column reads the old row.
 UPDATE app_user
-SET name = $2, password_hash = $3, recover_selector = $4, recover_verifier = $5, recover_token_expiry = $6,
-    attempt_count = $7, last_attempt = $8, locked_until = $9, avatar_url = $10
-WHERE id = $1 AND oauth2_provider IS NOT DISTINCT FROM $11 AND oauth2_uid IS NOT DISTINCT FROM $12
+SET name = sqlc.arg(name),
+    password_hash = CASE WHEN sqlc.arg(set_password)::boolean THEN sqlc.arg(password_hash) ELSE password_hash END,
+    recover_selector = CASE WHEN sqlc.arg(set_recovery)::boolean THEN sqlc.arg(recover_selector) ELSE recover_selector END,
+    recover_verifier = CASE WHEN sqlc.arg(set_recovery)::boolean THEN sqlc.arg(recover_verifier) ELSE recover_verifier END,
+    recover_token_expiry = CASE WHEN sqlc.arg(set_recovery)::boolean THEN sqlc.arg(recover_token_expiry) ELSE recover_token_expiry END,
+    attempt_count = sqlc.arg(attempt_count), last_attempt = sqlc.arg(last_attempt), locked_until = sqlc.arg(locked_until),
+    avatar_url = sqlc.arg(avatar_url),
+    -- A password change (recovery) ends the open challenge.
+    email_verification_selector = CASE WHEN sqlc.arg(set_password)::boolean AND password_hash IS DISTINCT FROM sqlc.arg(password_hash) THEN NULL ELSE email_verification_selector END,
+    email_verification_verifier = CASE WHEN sqlc.arg(set_password)::boolean AND password_hash IS DISTINCT FROM sqlc.arg(password_hash) THEN NULL ELSE email_verification_verifier END,
+    email_verification_expires_at = CASE WHEN sqlc.arg(set_password)::boolean AND password_hash IS DISTINCT FROM sqlc.arg(password_hash) THEN NULL ELSE email_verification_expires_at END
+WHERE id = sqlc.arg(id) AND oauth2_provider IS NOT DISTINCT FROM sqlc.arg(oauth2_provider) AND oauth2_uid IS NOT DISTINCT FROM sqlc.arg(oauth2_uid)
+RETURNING *;
+
+-- Login bookkeeping: writes no credential field, so a stale user value cannot restore an old password.
+-- name: UpdateUserState :one
+UPDATE app_user
+SET name = $2, attempt_count = $3, last_attempt = $4, locked_until = $5, avatar_url = $6
+WHERE id = $1 AND oauth2_provider IS NOT DISTINCT FROM $7 AND oauth2_uid IS NOT DISTINCT FROM $8
 RETURNING *;
 
 -- name: InsertSession :exec
 INSERT INTO user_session (token_hash, user_id, expires_at) VALUES ($1, $2, $3);
+
+-- Starts a session only while the password hash is still the one the login checked.
+-- name: InsertSessionForPassword :execrows
+INSERT INTO user_session (token_hash, user_id, expires_at)
+SELECT $1, $2, $3 FROM app_user WHERE id = $2 AND password_hash = $4;
 
 -- name: GetSessionUser :one
 SELECT app_user.* FROM user_session JOIN app_user ON app_user.id = user_session.user_id

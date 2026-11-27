@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/aarondl/authboss/v3"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"meta-frames-server/internal/auth"
 
@@ -597,5 +599,142 @@ func TestResendAfterVerifyCommitsIssuesNothing(test *testing.T) {
 	}
 	if count, kept := harness.issuedCount("late@example.com"); kept || count != 1 || len(harness.mail.Sent()) != mailBefore {
 		test.Fatalf("resend after proof: issued count %d, challenge kept %v, mail %d (was %d)", count, kept, len(harness.mail.Sent()), mailBefore)
+	}
+}
+
+// verificationTokenFromLastMail returns the token in the last mailed verification link.
+func (harness *harness) verificationTokenFromLastMail() string {
+	harness.test.Helper()
+	sent := harness.mail.Sent()
+	for _, word := range strings.Fields(sent[len(sent)-1].TextBody) {
+		if token, found := strings.CutPrefix(word, "http://api.test/auth/verify-email#token="); found {
+			return token
+		}
+	}
+	harness.test.Fatal("no verification link in the mail")
+	return ""
+}
+
+func TestRecoveryClearsTheChallengeAndAResendVerifiesWithTheNewPassword(test *testing.T) {
+	harness := newHarnessWithVerification(test, auth.EmailVerificationSend)
+	oldToken := harness.registerForToken("recover@example.com")
+	browser := harness.browser()
+	harness.expect(browser.call("POST", "/auth/recover", map[string]string{"email": "recover@example.com"}), http.StatusOK)
+	newPassword := "Fresh-Neg4tive"
+	harness.expect(browser.call("POST", "/auth/recover/end", map[string]string{"token": harness.mail.RecoverToken(), "password": newPassword}), http.StatusOK)
+
+	if _, kept := harness.verified("recover@example.com"); kept {
+		test.Fatal("a reset must clear the open challenge")
+	}
+	if status, code, _ := harness.postVerify(oldToken, newPassword); status != http.StatusUnprocessableEntity || code != "invalid_token" {
+		test.Fatalf("token from before the reset = %d %q, want 422 invalid_token", status, code)
+	}
+	harness.execSQL("UPDATE app_user SET email_verification_last_issued_at = now() - interval '2 minutes' WHERE email = 'recover@example.com'")
+	if status := harness.postResend("recover@example.com"); status != http.StatusAccepted {
+		test.Fatalf("resend = %d, want 202", status)
+	}
+	if status, _, _ := harness.postVerify(harness.verificationTokenFromLastMail(), newPassword); status != http.StatusOK {
+		test.Fatalf("verify with the new password = %d, want 200", status)
+	}
+}
+
+func TestLoginKeepsTheChallengeAndFailedLoginsToo(test *testing.T) {
+	harness := newHarnessWithVerification(test, auth.EmailVerificationSend)
+	harness.registerForToken("keep@example.com")
+	browser := harness.browser()
+	harness.expect(browser.call("POST", "/auth/login", map[string]string{"email": "keep@example.com", "password": "Wrong-Pass1"}), http.StatusUnauthorized)
+	if _, kept := harness.verified("keep@example.com"); !kept {
+		test.Fatal("a failed login must keep the challenge")
+	}
+	harness.expect(browser.call("POST", "/auth/login", map[string]string{"email": "keep@example.com", "password": verifyTestPassword}), http.StatusOK)
+	if _, kept := harness.verified("keep@example.com"); !kept {
+		test.Fatal("a login must keep the challenge")
+	}
+}
+
+func TestInsertSessionForPasswordRefusesAChangedHash(test *testing.T) {
+	harness := newHarnessWithVerification(test, auth.EmailVerificationSend)
+	harness.registerForToken("session@example.com")
+	queries := gen.New(harness.pool)
+	row, err := queries.GetUserByEmail(context.Background(), "session@example.com")
+	if err != nil {
+		test.Fatal(err)
+	}
+	insert := func(token string, hash *string) int64 {
+		inserted, err := queries.InsertSessionForPassword(context.Background(), gen.InsertSessionForPasswordParams{
+			TokenHash: []byte(token), UserID: row.ID, PasswordHash: hash,
+			ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		})
+		if err != nil {
+			test.Fatal(err)
+		}
+		return inserted
+	}
+	changed := *row.PasswordHash + "x"
+	if inserted := insert("stale", &changed); inserted != 0 {
+		test.Fatalf("a changed hash inserted %d rows, want 0", inserted)
+	}
+	if inserted := insert("current", row.PasswordHash); inserted != 1 {
+		test.Fatalf("the current hash inserted %d rows, want 1", inserted)
+	}
+}
+
+// A reset that holds the account row makes a login wait. The login must then see the new hash and
+// start no session.
+func TestLoginWaitsForAResetThatHoldsTheRowAndStartsNoSession(test *testing.T) {
+	harness := newHarnessWithVerification(test, auth.EmailVerificationSend)
+	harness.registerForToken("waits@example.com")
+	ctx := context.Background()
+	countSessions := func() (count int) {
+		if err := harness.pool.QueryRow(ctx, "SELECT count(*) FROM user_session").Scan(&count); err != nil {
+			test.Fatal(err)
+		}
+		return count
+	}
+	sessionsBefore := countSessions()
+	holder, err := harness.pool.Begin(ctx)
+	if err != nil {
+		test.Fatal(err)
+	}
+	defer func() { _ = holder.Rollback(ctx) }()
+	if _, err := holder.Exec(ctx, "SELECT 1 FROM app_user WHERE email = 'waits@example.com' FOR UPDATE"); err != nil {
+		test.Fatal(err)
+	}
+
+	browser := harness.browser()
+	answer := make(chan int, 1)
+	go func() {
+		answer <- browser.call("POST", "/auth/login", map[string]string{"email": "waits@example.com", "password": verifyTestPassword}).Status
+	}()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		var waiting bool
+		if err := harness.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_locks WHERE NOT granted AND locktype = 'transactionid')`).Scan(&waiting); err != nil {
+			test.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+		if time.Now().After(deadline) {
+			test.Fatal("timed out waiting for the login to wait for the row lock")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if _, err := holder.Exec(ctx, "UPDATE app_user SET password_hash = password_hash || 'x' WHERE email = 'waits@example.com'"); err != nil {
+		test.Fatal(err)
+	}
+	if err := holder.Commit(ctx); err != nil {
+		test.Fatal(err)
+	}
+	<-answer
+
+	if count := countSessions(); count != sessionsBefore {
+		test.Fatalf("sessions = %d (was %d), want no new session", count, sessionsBefore)
+	}
+	serverURL, _ := url.Parse(browser.server.URL)
+	for _, cookie := range browser.client.Jar.Cookies(serverURL) {
+		if cookie.Name == auth.SessionCookie && cookie.Value != "" {
+			test.Fatal("the login must not set a session cookie")
+		}
 	}
 }

@@ -365,6 +365,32 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) er
 	return err
 }
 
+const insertSessionForPassword = `-- name: InsertSessionForPassword :execrows
+INSERT INTO user_session (token_hash, user_id, expires_at)
+SELECT $1, $2, $3 FROM app_user WHERE id = $2 AND password_hash = $4
+`
+
+type InsertSessionForPasswordParams struct {
+	TokenHash    []byte
+	UserID       uuid.UUID
+	ExpiresAt    pgtype.Timestamptz
+	PasswordHash *string
+}
+
+// Starts a session only while the password hash is still the one the login checked.
+func (q *Queries) InsertSessionForPassword(ctx context.Context, arg InsertSessionForPasswordParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertSessionForPassword,
+		arg.TokenHash,
+		arg.UserID,
+		arg.ExpiresAt,
+		arg.PasswordHash,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const insertUser = `-- name: InsertUser :one
 INSERT INTO app_user (id, email, name, password_hash, oauth2_provider, oauth2_uid, avatar_url)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -518,16 +544,26 @@ func (q *Queries) SetUserCurrencyLocked(ctx context.Context, id uuid.UUID) error
 
 const updateUser = `-- name: UpdateUser :one
 UPDATE app_user
-SET name = $2, password_hash = $3, recover_selector = $4, recover_verifier = $5, recover_token_expiry = $6,
-    attempt_count = $7, last_attempt = $8, locked_until = $9, avatar_url = $10
-WHERE id = $1 AND oauth2_provider IS NOT DISTINCT FROM $11 AND oauth2_uid IS NOT DISTINCT FROM $12
+SET name = $1,
+    password_hash = CASE WHEN $2::boolean THEN $3 ELSE password_hash END,
+    recover_selector = CASE WHEN $4::boolean THEN $5 ELSE recover_selector END,
+    recover_verifier = CASE WHEN $4::boolean THEN $6 ELSE recover_verifier END,
+    recover_token_expiry = CASE WHEN $4::boolean THEN $7 ELSE recover_token_expiry END,
+    attempt_count = $8, last_attempt = $9, locked_until = $10,
+    avatar_url = $11,
+    -- A password change (recovery) ends the open challenge.
+    email_verification_selector = CASE WHEN $2::boolean AND password_hash IS DISTINCT FROM $3 THEN NULL ELSE email_verification_selector END,
+    email_verification_verifier = CASE WHEN $2::boolean AND password_hash IS DISTINCT FROM $3 THEN NULL ELSE email_verification_verifier END,
+    email_verification_expires_at = CASE WHEN $2::boolean AND password_hash IS DISTINCT FROM $3 THEN NULL ELSE email_verification_expires_at END
+WHERE id = $12 AND oauth2_provider IS NOT DISTINCT FROM $13 AND oauth2_uid IS NOT DISTINCT FROM $14
 RETURNING id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked, email_verified_at, email_verification_source, email_verification_exempt, email_verification_selector, email_verification_verifier, email_verification_expires_at, email_verification_last_issued_at, email_verification_window_started_at, email_verification_issued_count
 `
 
 type UpdateUserParams struct {
-	ID                 uuid.UUID
 	Name               *string
+	SetPassword        bool
 	PasswordHash       *string
+	SetRecovery        bool
 	RecoverSelector    *string
 	RecoverVerifier    *string
 	RecoverTokenExpiry pgtype.Timestamptz
@@ -535,15 +571,19 @@ type UpdateUserParams struct {
 	LastAttempt        pgtype.Timestamptz
 	LockedUntil        pgtype.Timestamptz
 	AvatarUrl          *string
+	ID                 uuid.UUID
 	Oauth2Provider     *string
 	Oauth2Uid          *string
 }
 
+// Writes the password only when set_password, and the recovery fields only when set_recovery, so a
+// stale user value cannot restore either. A right-side column reads the old row.
 func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (AppUser, error) {
 	row := q.db.QueryRow(ctx, updateUser,
-		arg.ID,
 		arg.Name,
+		arg.SetPassword,
 		arg.PasswordHash,
+		arg.SetRecovery,
 		arg.RecoverSelector,
 		arg.RecoverVerifier,
 		arg.RecoverTokenExpiry,
@@ -551,6 +591,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (AppUser
 		arg.LastAttempt,
 		arg.LockedUntil,
 		arg.AvatarUrl,
+		arg.ID,
 		arg.Oauth2Provider,
 		arg.Oauth2Uid,
 	)
@@ -597,6 +638,68 @@ type UpdateUserCurrencyParams struct {
 
 func (q *Queries) UpdateUserCurrency(ctx context.Context, arg UpdateUserCurrencyParams) (AppUser, error) {
 	row := q.db.QueryRow(ctx, updateUserCurrency, arg.ID, arg.CurrencyCode)
+	var i AppUser
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Name,
+		&i.PasswordHash,
+		&i.RecoverSelector,
+		&i.RecoverVerifier,
+		&i.RecoverTokenExpiry,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AttemptCount,
+		&i.LastAttempt,
+		&i.LockedUntil,
+		&i.Oauth2Provider,
+		&i.Oauth2Uid,
+		&i.AvatarUrl,
+		&i.CurrencyCode,
+		&i.CurrencyLocked,
+		&i.EmailVerifiedAt,
+		&i.EmailVerificationSource,
+		&i.EmailVerificationExempt,
+		&i.EmailVerificationSelector,
+		&i.EmailVerificationVerifier,
+		&i.EmailVerificationExpiresAt,
+		&i.EmailVerificationLastIssuedAt,
+		&i.EmailVerificationWindowStartedAt,
+		&i.EmailVerificationIssuedCount,
+	)
+	return i, err
+}
+
+const updateUserState = `-- name: UpdateUserState :one
+UPDATE app_user
+SET name = $2, attempt_count = $3, last_attempt = $4, locked_until = $5, avatar_url = $6
+WHERE id = $1 AND oauth2_provider IS NOT DISTINCT FROM $7 AND oauth2_uid IS NOT DISTINCT FROM $8
+RETURNING id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked, email_verified_at, email_verification_source, email_verification_exempt, email_verification_selector, email_verification_verifier, email_verification_expires_at, email_verification_last_issued_at, email_verification_window_started_at, email_verification_issued_count
+`
+
+type UpdateUserStateParams struct {
+	ID             uuid.UUID
+	Name           *string
+	AttemptCount   int32
+	LastAttempt    pgtype.Timestamptz
+	LockedUntil    pgtype.Timestamptz
+	AvatarUrl      *string
+	Oauth2Provider *string
+	Oauth2Uid      *string
+}
+
+// Login bookkeeping: writes no credential field, so a stale user value cannot restore an old password.
+func (q *Queries) UpdateUserState(ctx context.Context, arg UpdateUserStateParams) (AppUser, error) {
+	row := q.db.QueryRow(ctx, updateUserState,
+		arg.ID,
+		arg.Name,
+		arg.AttemptCount,
+		arg.LastAttempt,
+		arg.LockedUntil,
+		arg.AvatarUrl,
+		arg.Oauth2Provider,
+		arg.Oauth2Uid,
+	)
 	var i AppUser
 	err := row.Scan(
 		&i.ID,

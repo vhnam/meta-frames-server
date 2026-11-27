@@ -53,6 +53,15 @@ func (accounts *Auth) sendVerification(_ http.ResponseWriter, request *http.Requ
 	return false, nil
 }
 
+// recordPasswordHash hands the password hash that the login just checked to the session store, which
+// starts the session only while the account still has it. It runs after the lock module's handler.
+func (accounts *Auth) recordPasswordHash(w http.ResponseWriter, request *http.Request, _ bool) (bool, error) {
+	if user, ok := request.Context().Value(authboss.CTXKeyUser).(*User); ok {
+		authboss.PutSession(w, passwordHashKey, user.PasswordHash)
+	}
+	return false, nil
+}
+
 // mailVerification builds the verification mail and hands it to the configured mailer, which in
 // production sends in the background.
 func mailVerification(ctx context.Context, ab *authboss.Config, recipient, token string) error {

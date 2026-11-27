@@ -158,6 +158,7 @@ func New(store db.Store, config Config) (*Auth, error) {
 	if err := accounts.authboss.Init(modules...); err != nil {
 		return nil, err
 	}
+	accounts.authboss.Events.Before(authboss.EventAuth, accounts.recordPasswordHash)
 	accounts.authboss.Events.After(authboss.EventRecoverEnd, accounts.afterPasswordReset)
 	accounts.authboss.Events.After(authboss.EventRegister, accounts.sendVerification)
 	return accounts, nil

@@ -1289,10 +1289,28 @@ func (queries *Memory) UpdateUser(_ context.Context, arg gen.UpdateUserParams) (
 	if !equalOptional(user.Oauth2Provider, arg.Oauth2Provider) || !equalOptional(user.Oauth2Uid, arg.Oauth2Uid) {
 		return gen.AppUser{}, pgx.ErrNoRows
 	}
-	user.Name, user.PasswordHash = arg.Name, arg.PasswordHash
-	user.RecoverSelector, user.RecoverVerifier, user.RecoverTokenExpiry = arg.RecoverSelector, arg.RecoverVerifier, arg.RecoverTokenExpiry
+	if arg.SetPassword {
+		if !equalOptional(user.PasswordHash, arg.PasswordHash) { // a password change ends the open challenge
+			user.EmailVerificationSelector, user.EmailVerificationVerifier, user.EmailVerificationExpiresAt = nil, nil, pgtype.Timestamptz{}
+		}
+		user.PasswordHash = arg.PasswordHash
+	}
+	if arg.SetRecovery {
+		user.RecoverSelector, user.RecoverVerifier, user.RecoverTokenExpiry = arg.RecoverSelector, arg.RecoverVerifier, arg.RecoverTokenExpiry
+	}
+	user.Name = arg.Name
 	user.AttemptCount, user.LastAttempt, user.LockedUntil = arg.AttemptCount, arg.LastAttempt, arg.LockedUntil
 	user.AvatarUrl = arg.AvatarUrl
+	queries.Users[arg.ID] = user
+	return user, nil
+}
+
+func (queries *Memory) UpdateUserState(_ context.Context, arg gen.UpdateUserStateParams) (gen.AppUser, error) {
+	user, found := queries.Users[arg.ID]
+	if !found || !equalOptional(user.Oauth2Provider, arg.Oauth2Provider) || !equalOptional(user.Oauth2Uid, arg.Oauth2Uid) {
+		return gen.AppUser{}, pgx.ErrNoRows
+	}
+	user.Name, user.AttemptCount, user.LastAttempt, user.LockedUntil, user.AvatarUrl = arg.Name, arg.AttemptCount, arg.LastAttempt, arg.LockedUntil, arg.AvatarUrl
 	queries.Users[arg.ID] = user
 	return user, nil
 }
@@ -1385,6 +1403,16 @@ func (queries *Memory) ClaimUnownedData(context.Context, uuid.UUID) error { retu
 func (queries *Memory) InsertSession(_ context.Context, arg gen.InsertSessionParams) error {
 	queries.Sessions[string(arg.TokenHash)] = gen.UserSession{TokenHash: arg.TokenHash, UserID: arg.UserID, ExpiresAt: arg.ExpiresAt}
 	return nil
+}
+
+// InsertSessionForPassword inserts only while the user still has the given password hash.
+func (queries *Memory) InsertSessionForPassword(_ context.Context, arg gen.InsertSessionForPasswordParams) (int64, error) {
+	user, found := queries.Users[arg.UserID]
+	if !found || !equalOptional(user.PasswordHash, arg.PasswordHash) || user.PasswordHash == nil {
+		return 0, nil
+	}
+	queries.Sessions[string(arg.TokenHash)] = gen.UserSession{TokenHash: arg.TokenHash, UserID: arg.UserID, ExpiresAt: arg.ExpiresAt}
+	return 1, nil
 }
 
 func (queries *Memory) GetSessionUser(_ context.Context, tokenHash []byte) (gen.AppUser, error) {

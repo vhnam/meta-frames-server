@@ -37,6 +37,10 @@ type sessionStore struct {
 // oauth2Keys are the session values the oauth2 module keeps between its start and callback.
 var oauth2Keys = []string{authboss.SessionOAuth2State, authboss.SessionOAuth2Params}
 
+// passwordHashKey carries the password hash that a login checked, from the Before(EventAuth)
+// handler to WriteState. WriteState keeps it in memory: it never reaches a cookie or a log.
+const passwordHashKey = "meta_frames_password_hash"
+
 var _ authboss.ClientStateReadWriter = (*sessionStore)(nil)
 
 // sessionState is the session a request arrived with.
@@ -106,7 +110,7 @@ func (sessions *sessionStore) WriteState(w http.ResponseWriter, state authboss.C
 	if current, ok := state.(*sessionState); ok {
 		before = current
 	}
-	pid, signedIn := before.pid, false
+	pid, signedIn, passwordHash := before.pid, false, ""
 	oauth2 := maps.Clone(before.oauth2)
 	if oauth2 == nil {
 		oauth2 = map[string]string{}
@@ -116,6 +120,8 @@ func (sessions *sessionStore) WriteState(w http.ResponseWriter, state authboss.C
 		case authboss.ClientStateEventPut:
 			if event.Key == authboss.SessionKey {
 				pid, signedIn = event.Value, true
+			} else if event.Key == passwordHashKey {
+				passwordHash = event.Value
 			} else if slices.Contains(oauth2Keys, event.Key) {
 				oauth2[event.Key] = event.Value
 			}
@@ -153,7 +159,7 @@ func (sessions *sessionStore) WriteState(w http.ResponseWriter, state authboss.C
 		http.SetCookie(w, sessions.cookie("", -1))
 		return nil
 	}
-	return sessions.start(ctx, w, pid)
+	return sessions.startChecked(ctx, w, pid, passwordHash)
 }
 
 func (sessions *sessionStore) writeOAuth2Cookie(w http.ResponseWriter, values map[string]string) error {
@@ -177,6 +183,12 @@ func (sessions *sessionStore) writeOAuth2Cookie(w http.ResponseWriter, values ma
 }
 
 func (sessions *sessionStore) start(ctx context.Context, w http.ResponseWriter, pid string) error {
+	return sessions.startChecked(ctx, w, pid, "")
+}
+
+// startChecked opens a session. A password login passes the hash it checked: the row is inserted only
+// while the account still has that hash, so a reset between the check and here starts no session.
+func (sessions *sessionStore) startChecked(ctx context.Context, w http.ResponseWriter, pid, passwordHash string) error {
 	queries := sessions.store.Queries()
 	user, err := sessions.storer.Load(ctx, pid) // an email, or an oauth2 pid after Google sign-in
 	if err != nil {
@@ -186,13 +198,35 @@ func (sessions *sessionStore) start(ctx context.Context, w http.ResponseWriter, 
 		return err
 	}
 	token := rand.Text()
-	err = queries.InsertSession(ctx, gen.InsertSessionParams{
-		TokenHash: hashToken(token),
-		UserID:    user.(*User).ID,
-		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(sessionMaxAge), Valid: true},
-	})
-	if err != nil {
-		return err
+	expiresAt := pgtype.Timestamptz{Time: time.Now().Add(sessionMaxAge), Valid: true}
+	userID := user.(*User).ID
+	if passwordHash == "" {
+		err = queries.InsertSession(ctx, gen.InsertSessionParams{TokenHash: hashToken(token), UserID: userID, ExpiresAt: expiresAt})
+		if err != nil {
+			return err
+		}
+	} else {
+		// Lock the account row first: a reset that holds it makes this wait and then see the new hash,
+		// and a session committed before the reset commits is revoked by it.
+		inserted := false
+		err = sessions.store.InTransaction(ctx, func(locked gen.Querier) error {
+			if _, err := locked.LockUserForCurrency(ctx, userID); db.IsNoRows(err) {
+				return nil
+			} else if err != nil {
+				return err
+			}
+			rows, err := locked.InsertSessionForPassword(ctx, gen.InsertSessionForPasswordParams{
+				TokenHash: hashToken(token), UserID: userID, ExpiresAt: expiresAt, PasswordHash: &passwordHash,
+			})
+			inserted = rows > 0
+			return err
+		})
+		if err != nil {
+			return err
+		}
+		if !inserted {
+			return nil // the password changed during the login: no session, no cookie
+		}
 	}
 	http.SetCookie(w, sessions.cookie(token, int(sessionMaxAge/time.Second)))
 	return nil
