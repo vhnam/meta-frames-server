@@ -15,7 +15,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `GET` and `HEAD /auth/verify-email` serve the page behind the link in the verification email. The page reads the token from the URL fragment, removes it from the address bar, and posts it only after an explicit submit. The request reads and writes no data, so mail scanners and link previews change nothing.
 - `POST /auth/verify-email/resend` mails a new verification link to an unverified, unlocked account and replaces the old link. It answers `202` with the same body and headers for every valid address, so it cannot be used to discover accounts. An account gets one new link per 60 seconds and five per 24 hours. Each source address may send 30 requests per 15 minutes (then `429` with `Retry-After`). With `EMAIL_VERIFICATION=off` it answers `202` and does nothing.
 - With `EMAIL_VERIFICATION=enforce`, an account without email proof cannot use the API. `POST /auth/register` answers `201` with `verificationRequired: true` and starts no session. `POST /auth/login` with the right password answers `403 email_verification_required` and sets no cookie. An existing session of such an account answers `401` until the address is verified, and the same cookie then works again. Verified accounts, exempt accounts and Google accounts are not affected. In `off` and `send` nothing changes.
-- Internal: migration `00022` adds the email verification columns on `app_user` and the `auth_rate_limit` table. No existing row changes and no behavior changes yet.
 
 ### Changed
 
