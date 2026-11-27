@@ -31,6 +31,11 @@ type User struct {
 	CurrencyCode    string // read-only here: only the currency endpoint writes it
 	CurrencyLocked  bool   // read-only here: money writes set it
 	CreatedAt       time.Time
+
+	EmailVerifiedAt         time.Time // zero until the server records proof of the address
+	EmailVerificationExempt bool      // legacy access exemption; never set together with proof
+
+	verificationToken string // the raw token, only from Create to the register handler; never stored
 }
 
 var (
@@ -62,6 +67,9 @@ func fromRow(row gen.AppUser) *User {
 		CurrencyCode:    row.CurrencyCode,
 		CurrencyLocked:  row.CurrencyLocked,
 		CreatedAt:       db.Timestamp(row.CreatedAt),
+
+		EmailVerifiedAt:         db.Timestamp(row.EmailVerifiedAt),
+		EmailVerificationExempt: row.EmailVerificationExempt,
 	}
 }
 

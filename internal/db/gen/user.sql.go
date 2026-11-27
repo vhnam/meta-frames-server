@@ -22,6 +22,73 @@ func (q *Queries) ClaimUnownedData(ctx context.Context, newOwner uuid.UUID) erro
 	return err
 }
 
+const consumeEmailVerification = `-- name: ConsumeEmailVerification :one
+UPDATE app_user
+SET email_verified_at = clock_timestamp(), email_verification_source = 'link', email_verification_exempt = false,
+    email_verification_selector = NULL, email_verification_verifier = NULL, email_verification_expires_at = NULL
+WHERE id = $1
+  AND email_verification_selector = $2
+  AND email_verification_verifier = $3
+  AND email_verification_expires_at > clock_timestamp()
+  AND (locked_until IS NULL OR locked_until <= clock_timestamp())
+  AND password_hash IS NOT DISTINCT FROM $4
+  AND email = $5
+  AND email_verified_at IS NULL
+RETURNING id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked, email_verified_at, email_verification_source, email_verification_exempt, email_verification_selector, email_verification_verifier, email_verification_expires_at, email_verification_last_issued_at, email_verification_window_started_at, email_verification_issued_count
+`
+
+type ConsumeEmailVerificationParams struct {
+	ID           uuid.UUID
+	Selector     []byte
+	Verifier     []byte
+	PasswordHash *string
+	Email        string
+}
+
+// Records proof of the address and consumes the challenge in one statement. It needs the checked account
+// id, selector, verifier, password hash and email to still match, an unexpired challenge and no active lock.
+// No row means the token no longer works. It uses clock_timestamp(): PostgreSQL re-checks the WHERE after it
+// gets the row lock, and now() would still hold the time from before the wait.
+func (q *Queries) ConsumeEmailVerification(ctx context.Context, arg ConsumeEmailVerificationParams) (AppUser, error) {
+	row := q.db.QueryRow(ctx, consumeEmailVerification,
+		arg.ID,
+		arg.Selector,
+		arg.Verifier,
+		arg.PasswordHash,
+		arg.Email,
+	)
+	var i AppUser
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Name,
+		&i.PasswordHash,
+		&i.RecoverSelector,
+		&i.RecoverVerifier,
+		&i.RecoverTokenExpiry,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AttemptCount,
+		&i.LastAttempt,
+		&i.LockedUntil,
+		&i.Oauth2Provider,
+		&i.Oauth2Uid,
+		&i.AvatarUrl,
+		&i.CurrencyCode,
+		&i.CurrencyLocked,
+		&i.EmailVerifiedAt,
+		&i.EmailVerificationSource,
+		&i.EmailVerificationExempt,
+		&i.EmailVerificationSelector,
+		&i.EmailVerificationVerifier,
+		&i.EmailVerificationExpiresAt,
+		&i.EmailVerificationLastIssuedAt,
+		&i.EmailVerificationWindowStartedAt,
+		&i.EmailVerificationIssuedCount,
+	)
+	return i, err
+}
+
 const deleteExpiredSessions = `-- name: DeleteExpiredSessions :exec
 DELETE FROM user_session WHERE expires_at <= now()
 `
@@ -50,7 +117,7 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, userID uuid.UUID) erro
 }
 
 const getSessionUser = `-- name: GetSessionUser :one
-SELECT app_user.id, app_user.email, app_user.name, app_user.password_hash, app_user.recover_selector, app_user.recover_verifier, app_user.recover_token_expiry, app_user.created_at, app_user.updated_at, app_user.attempt_count, app_user.last_attempt, app_user.locked_until, app_user.oauth2_provider, app_user.oauth2_uid, app_user.avatar_url, app_user.currency_code, app_user.currency_locked FROM user_session JOIN app_user ON app_user.id = user_session.user_id
+SELECT app_user.id, app_user.email, app_user.name, app_user.password_hash, app_user.recover_selector, app_user.recover_verifier, app_user.recover_token_expiry, app_user.created_at, app_user.updated_at, app_user.attempt_count, app_user.last_attempt, app_user.locked_until, app_user.oauth2_provider, app_user.oauth2_uid, app_user.avatar_url, app_user.currency_code, app_user.currency_locked, app_user.email_verified_at, app_user.email_verification_source, app_user.email_verification_exempt, app_user.email_verification_selector, app_user.email_verification_verifier, app_user.email_verification_expires_at, app_user.email_verification_last_issued_at, app_user.email_verification_window_started_at, app_user.email_verification_issued_count FROM user_session JOIN app_user ON app_user.id = user_session.user_id
 WHERE user_session.token_hash = $1 AND user_session.expires_at > now()
 `
 
@@ -75,12 +142,21 @@ func (q *Queries) GetSessionUser(ctx context.Context, tokenHash []byte) (AppUser
 		&i.AvatarUrl,
 		&i.CurrencyCode,
 		&i.CurrencyLocked,
+		&i.EmailVerifiedAt,
+		&i.EmailVerificationSource,
+		&i.EmailVerificationExempt,
+		&i.EmailVerificationSelector,
+		&i.EmailVerificationVerifier,
+		&i.EmailVerificationExpiresAt,
+		&i.EmailVerificationLastIssuedAt,
+		&i.EmailVerificationWindowStartedAt,
+		&i.EmailVerificationIssuedCount,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked FROM app_user WHERE email = $1
+SELECT id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked, email_verified_at, email_verification_source, email_verification_exempt, email_verification_selector, email_verification_verifier, email_verification_expires_at, email_verification_last_issued_at, email_verification_window_started_at, email_verification_issued_count FROM app_user WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (AppUser, error) {
@@ -104,12 +180,59 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (AppUser, er
 		&i.AvatarUrl,
 		&i.CurrencyCode,
 		&i.CurrencyLocked,
+		&i.EmailVerifiedAt,
+		&i.EmailVerificationSource,
+		&i.EmailVerificationExempt,
+		&i.EmailVerificationSelector,
+		&i.EmailVerificationVerifier,
+		&i.EmailVerificationExpiresAt,
+		&i.EmailVerificationLastIssuedAt,
+		&i.EmailVerificationWindowStartedAt,
+		&i.EmailVerificationIssuedCount,
+	)
+	return i, err
+}
+
+const getUserByEmailVerificationSelector = `-- name: GetUserByEmailVerificationSelector :one
+SELECT id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked, email_verified_at, email_verification_source, email_verification_exempt, email_verification_selector, email_verification_verifier, email_verification_expires_at, email_verification_last_issued_at, email_verification_window_started_at, email_verification_issued_count FROM app_user WHERE email_verification_selector = $1
+`
+
+func (q *Queries) GetUserByEmailVerificationSelector(ctx context.Context, emailVerificationSelector []byte) (AppUser, error) {
+	row := q.db.QueryRow(ctx, getUserByEmailVerificationSelector, emailVerificationSelector)
+	var i AppUser
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Name,
+		&i.PasswordHash,
+		&i.RecoverSelector,
+		&i.RecoverVerifier,
+		&i.RecoverTokenExpiry,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AttemptCount,
+		&i.LastAttempt,
+		&i.LockedUntil,
+		&i.Oauth2Provider,
+		&i.Oauth2Uid,
+		&i.AvatarUrl,
+		&i.CurrencyCode,
+		&i.CurrencyLocked,
+		&i.EmailVerifiedAt,
+		&i.EmailVerificationSource,
+		&i.EmailVerificationExempt,
+		&i.EmailVerificationSelector,
+		&i.EmailVerificationVerifier,
+		&i.EmailVerificationExpiresAt,
+		&i.EmailVerificationLastIssuedAt,
+		&i.EmailVerificationWindowStartedAt,
+		&i.EmailVerificationIssuedCount,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked FROM app_user WHERE id = $1
+SELECT id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked, email_verified_at, email_verification_source, email_verification_exempt, email_verification_selector, email_verification_verifier, email_verification_expires_at, email_verification_last_issued_at, email_verification_window_started_at, email_verification_issued_count FROM app_user WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (AppUser, error) {
@@ -133,12 +256,21 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (AppUser, error
 		&i.AvatarUrl,
 		&i.CurrencyCode,
 		&i.CurrencyLocked,
+		&i.EmailVerifiedAt,
+		&i.EmailVerificationSource,
+		&i.EmailVerificationExempt,
+		&i.EmailVerificationSelector,
+		&i.EmailVerificationVerifier,
+		&i.EmailVerificationExpiresAt,
+		&i.EmailVerificationLastIssuedAt,
+		&i.EmailVerificationWindowStartedAt,
+		&i.EmailVerificationIssuedCount,
 	)
 	return i, err
 }
 
 const getUserByOAuth2 = `-- name: GetUserByOAuth2 :one
-SELECT id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked FROM app_user WHERE oauth2_provider = $1 AND oauth2_uid = $2
+SELECT id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked, email_verified_at, email_verification_source, email_verification_exempt, email_verification_selector, email_verification_verifier, email_verification_expires_at, email_verification_last_issued_at, email_verification_window_started_at, email_verification_issued_count FROM app_user WHERE oauth2_provider = $1 AND oauth2_uid = $2
 `
 
 type GetUserByOAuth2Params struct {
@@ -167,12 +299,21 @@ func (q *Queries) GetUserByOAuth2(ctx context.Context, arg GetUserByOAuth2Params
 		&i.AvatarUrl,
 		&i.CurrencyCode,
 		&i.CurrencyLocked,
+		&i.EmailVerifiedAt,
+		&i.EmailVerificationSource,
+		&i.EmailVerificationExempt,
+		&i.EmailVerificationSelector,
+		&i.EmailVerificationVerifier,
+		&i.EmailVerificationExpiresAt,
+		&i.EmailVerificationLastIssuedAt,
+		&i.EmailVerificationWindowStartedAt,
+		&i.EmailVerificationIssuedCount,
 	)
 	return i, err
 }
 
 const getUserByRecoverSelector = `-- name: GetUserByRecoverSelector :one
-SELECT id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked FROM app_user WHERE recover_selector = $1
+SELECT id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked, email_verified_at, email_verification_source, email_verification_exempt, email_verification_selector, email_verification_verifier, email_verification_expires_at, email_verification_last_issued_at, email_verification_window_started_at, email_verification_issued_count FROM app_user WHERE recover_selector = $1
 `
 
 func (q *Queries) GetUserByRecoverSelector(ctx context.Context, recoverSelector *string) (AppUser, error) {
@@ -196,6 +337,15 @@ func (q *Queries) GetUserByRecoverSelector(ctx context.Context, recoverSelector 
 		&i.AvatarUrl,
 		&i.CurrencyCode,
 		&i.CurrencyLocked,
+		&i.EmailVerifiedAt,
+		&i.EmailVerificationSource,
+		&i.EmailVerificationExempt,
+		&i.EmailVerificationSelector,
+		&i.EmailVerificationVerifier,
+		&i.EmailVerificationExpiresAt,
+		&i.EmailVerificationLastIssuedAt,
+		&i.EmailVerificationWindowStartedAt,
+		&i.EmailVerificationIssuedCount,
 	)
 	return i, err
 }
@@ -218,7 +368,7 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) er
 const insertUser = `-- name: InsertUser :one
 INSERT INTO app_user (id, email, name, password_hash, oauth2_provider, oauth2_uid, avatar_url)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked
+RETURNING id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked, email_verified_at, email_verification_source, email_verification_exempt, email_verification_selector, email_verification_verifier, email_verification_expires_at, email_verification_last_issued_at, email_verification_window_started_at, email_verification_issued_count
 `
 
 type InsertUserParams struct {
@@ -260,12 +410,56 @@ func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) (AppUser
 		&i.AvatarUrl,
 		&i.CurrencyCode,
 		&i.CurrencyLocked,
+		&i.EmailVerifiedAt,
+		&i.EmailVerificationSource,
+		&i.EmailVerificationExempt,
+		&i.EmailVerificationSelector,
+		&i.EmailVerificationVerifier,
+		&i.EmailVerificationExpiresAt,
+		&i.EmailVerificationLastIssuedAt,
+		&i.EmailVerificationWindowStartedAt,
+		&i.EmailVerificationIssuedCount,
 	)
 	return i, err
 }
 
+const issueEmailVerification = `-- name: IssueEmailVerification :one
+UPDATE app_user
+SET email_verification_selector = $1, email_verification_verifier = $2,
+    email_verification_expires_at = now() + interval '24 hours',
+    email_verification_last_issued_at = now(),
+    email_verification_window_started_at = CASE
+      WHEN email_verification_window_started_at IS NULL OR email_verification_window_started_at <= now() - interval '24 hours'
+      THEN now() ELSE email_verification_window_started_at END,
+    email_verification_issued_count = CASE
+      WHEN email_verification_window_started_at IS NULL OR email_verification_window_started_at <= now() - interval '24 hours'
+      THEN 1 ELSE email_verification_issued_count + 1 END
+WHERE email = $3
+  AND email_verified_at IS NULL
+  AND (locked_until IS NULL OR locked_until <= now())
+  AND (email_verification_last_issued_at IS NULL OR email_verification_last_issued_at <= now() - interval '60 seconds')
+  AND (email_verification_window_started_at IS NULL OR email_verification_window_started_at <= now() - interval '24 hours'
+       OR email_verification_issued_count < 5)
+RETURNING email
+`
+
+type IssueEmailVerificationParams struct {
+	Selector []byte
+	Verifier []byte
+	Email    string
+}
+
+// Issues a verification challenge: one statement, so the row lock serializes concurrent issues. No row
+// means no issue (verified, locked, inside the 60-second cooldown, or 5 issues in the 24-hour window).
+func (q *Queries) IssueEmailVerification(ctx context.Context, arg IssueEmailVerificationParams) (string, error) {
+	row := q.db.QueryRow(ctx, issueEmailVerification, arg.Selector, arg.Verifier, arg.Email)
+	var email string
+	err := row.Scan(&email)
+	return email, err
+}
+
 const lockUserForCurrency = `-- name: LockUserForCurrency :one
-SELECT id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked FROM app_user WHERE id = $1 FOR NO KEY UPDATE
+SELECT id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked, email_verified_at, email_verification_source, email_verification_exempt, email_verification_selector, email_verification_verifier, email_verification_expires_at, email_verification_last_issued_at, email_verification_window_started_at, email_verification_issued_count FROM app_user WHERE id = $1 FOR NO KEY UPDATE
 `
 
 func (q *Queries) LockUserForCurrency(ctx context.Context, id uuid.UUID) (AppUser, error) {
@@ -289,8 +483,28 @@ func (q *Queries) LockUserForCurrency(ctx context.Context, id uuid.UUID) (AppUse
 		&i.AvatarUrl,
 		&i.CurrencyCode,
 		&i.CurrencyLocked,
+		&i.EmailVerifiedAt,
+		&i.EmailVerificationSource,
+		&i.EmailVerificationExempt,
+		&i.EmailVerificationSelector,
+		&i.EmailVerificationVerifier,
+		&i.EmailVerificationExpiresAt,
+		&i.EmailVerificationLastIssuedAt,
+		&i.EmailVerificationWindowStartedAt,
+		&i.EmailVerificationIssuedCount,
 	)
 	return i, err
+}
+
+const markEmailVerifiedByGoogle = `-- name: MarkEmailVerifiedByGoogle :exec
+UPDATE app_user
+SET email_verified_at = now(), email_verification_source = 'google', email_verification_exempt = false
+WHERE id = $1 AND email_verified_at IS NULL
+`
+
+func (q *Queries) MarkEmailVerifiedByGoogle(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, markEmailVerifiedByGoogle, id)
+	return err
 }
 
 const setUserCurrencyLocked = `-- name: SetUserCurrencyLocked :exec
@@ -307,7 +521,7 @@ UPDATE app_user
 SET name = $2, password_hash = $3, recover_selector = $4, recover_verifier = $5, recover_token_expiry = $6,
     attempt_count = $7, last_attempt = $8, locked_until = $9, avatar_url = $10
 WHERE id = $1 AND oauth2_provider IS NOT DISTINCT FROM $11 AND oauth2_uid IS NOT DISTINCT FROM $12
-RETURNING id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked
+RETURNING id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked, email_verified_at, email_verification_source, email_verification_exempt, email_verification_selector, email_verification_verifier, email_verification_expires_at, email_verification_last_issued_at, email_verification_window_started_at, email_verification_issued_count
 `
 
 type UpdateUserParams struct {
@@ -359,12 +573,21 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (AppUser
 		&i.AvatarUrl,
 		&i.CurrencyCode,
 		&i.CurrencyLocked,
+		&i.EmailVerifiedAt,
+		&i.EmailVerificationSource,
+		&i.EmailVerificationExempt,
+		&i.EmailVerificationSelector,
+		&i.EmailVerificationVerifier,
+		&i.EmailVerificationExpiresAt,
+		&i.EmailVerificationLastIssuedAt,
+		&i.EmailVerificationWindowStartedAt,
+		&i.EmailVerificationIssuedCount,
 	)
 	return i, err
 }
 
 const updateUserCurrency = `-- name: UpdateUserCurrency :one
-UPDATE app_user SET currency_code = $2 WHERE id = $1 RETURNING id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked
+UPDATE app_user SET currency_code = $2 WHERE id = $1 RETURNING id, email, name, password_hash, recover_selector, recover_verifier, recover_token_expiry, created_at, updated_at, attempt_count, last_attempt, locked_until, oauth2_provider, oauth2_uid, avatar_url, currency_code, currency_locked, email_verified_at, email_verification_source, email_verification_exempt, email_verification_selector, email_verification_verifier, email_verification_expires_at, email_verification_last_issued_at, email_verification_window_started_at, email_verification_issued_count
 `
 
 type UpdateUserCurrencyParams struct {
@@ -393,6 +616,15 @@ func (q *Queries) UpdateUserCurrency(ctx context.Context, arg UpdateUserCurrency
 		&i.AvatarUrl,
 		&i.CurrencyCode,
 		&i.CurrencyLocked,
+		&i.EmailVerifiedAt,
+		&i.EmailVerificationSource,
+		&i.EmailVerificationExempt,
+		&i.EmailVerificationSelector,
+		&i.EmailVerificationVerifier,
+		&i.EmailVerificationExpiresAt,
+		&i.EmailVerificationLastIssuedAt,
+		&i.EmailVerificationWindowStartedAt,
+		&i.EmailVerificationIssuedCount,
 	)
 	return i, err
 }

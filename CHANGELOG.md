@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Internal: migration `00022` adds the email verification columns on `app_user` and the `auth_rate_limit` table. No existing row changes and no behavior changes yet.
+
 ### Security
 
 - A Google sign-in no longer links to an existing account with the same email. It is refused with `account_conflict` until email verification exists.
