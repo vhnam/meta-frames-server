@@ -19,21 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - In production, a server with `SMTP_ADDR` set now refuses to start unless `SMTP_USERNAME` and `SMTP_PASSWORD` are also set, in every `EMAIL_VERIFICATION` mode.
-
-### Security
-
-- A Google sign-in no longer links to an existing account with the same email. It is refused with `account_conflict` until email verification exists.
-- Two Google sign-ins, or a registration and a Google sign-in, on the same new email at the same time: the second Google request gets `account_conflict`, not an internal error. A save can no longer change an account's Google identity.
+- Internal: `make lint` reports no issues. Unused test helpers are removed, and ignored `Close` errors are discarded explicitly. Runtime behavior does not change.
+- The pre-commit hook also runs `make lint` and blocks the commit when it fails. It lints the working tree, not only the staged changes.
+- The example settings file is now `.env.example` at the repository root; `configs/.env.example` is removed. It lists every setting the server reads, with empty values.
 
 ### Fixed
 
 - A password reset now ends an open verification link. A login starts a session only while the account still has the password it checked, so a reset that lands during a login starts no session.
 - A Google sign-in to a locked account no longer refreshes the name or picture on the web route.
 
-### Changed
+### Security
 
-- Internal: `make lint` reports no issues. Unused test helpers are removed, and ignored `Close` errors are discarded explicitly. Runtime behavior does not change.
-- The pre-commit hook also runs `make lint` and blocks the commit when it fails. It lints the working tree, not only the staged changes.
+- A Google sign-in no longer links to an existing account with the same email. It is refused with `account_conflict` until email verification exists.
+- Two Google sign-ins, or a registration and a Google sign-in, on the same new email at the same time: the second Google request gets `account_conflict`, not an internal error. A save can no longer change an account's Google identity.
 
 ## [5.2.0] - 2026-11-25
 
