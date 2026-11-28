@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.0] - 2026-11-28
+
 ### Added
 
 - Settings `EMAIL_VERIFICATION` (`off`, `send`, `enforce`; default `off`) and `TRUSTED_PROXY_HOPS` (default `0`). While `EMAIL_VERIFICATION` is `off`, verification stays disabled. Email sending now also changes for password recovery: at most 8 sends run at once (extra mail is dropped and logged), each send stops after 1 minute, logs hold only a category and SMTP code, and in production the SMTP relay must offer STARTTLS with a valid certificate and authentication.
@@ -190,7 +192,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `POST /rolls/bulk` with an `Idempotency-Key` failed while saving the response, because the JSON was sent as bytea hex.
 - `GET /cameras` returned 500 when a loaded roll had no start date. The camera now reports `daysLoaded` as 0 in that case.
 
-[Unreleased]: https://github.com/vhnam/meta-frames/compare/v5.2.0...HEAD
+[Unreleased]: https://github.com/vhnam/meta-frames/compare/v6.0.0...HEAD
+[6.0.0]: https://github.com/vhnam/meta-frames/compare/v5.2.0...v6.0.0
 [5.2.0]: https://github.com/vhnam/meta-frames/compare/v5.1.0...v5.2.0
 [5.1.0]: https://github.com/vhnam/meta-frames/compare/v5.0.0...v5.1.0
 [5.0.0]: https://github.com/vhnam/meta-frames/compare/v4.0.0...v5.0.0
