@@ -15,26 +15,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `GET` and `HEAD /auth/verify-email` serve the page behind the link in the verification email. The page reads the token from the URL fragment, removes it from the address bar, and posts it only after an explicit submit. The request reads and writes no data, so mail scanners and link previews change nothing.
 - `POST /auth/verify-email/resend` mails a new verification link to an unverified, unlocked account and replaces the old link. It answers `202` with the same body and headers for every valid address, so it cannot be used to discover accounts. An account gets one new link per 60 seconds and five per 24 hours. Each source address may send 30 requests per 15 minutes (then `429` with `Retry-After`). With `EMAIL_VERIFICATION=off` it answers `202` and does nothing.
 - With `EMAIL_VERIFICATION=enforce`, an account without email proof cannot use the API. `POST /auth/register` answers `201` with `verificationRequired: true` and starts no session. `POST /auth/login` with the right password answers `403 email_verification_required` and sets no cookie. An existing session of such an account answers `401` until the address is verified, and the same cookie then works again. Verified accounts, exempt accounts and Google accounts are not affected. In `off` and `send` nothing changes.
-- Internal: migration `00022` adds the email verification columns on `app_user` and the `auth_rate_limit` table. No existing row changes and no behavior changes yet.
 
 ### Changed
 
 - In production, a server with `SMTP_ADDR` set now refuses to start unless `SMTP_USERNAME` and `SMTP_PASSWORD` are also set, in every `EMAIL_VERIFICATION` mode.
-
-### Security
-
-- A Google sign-in no longer links to an existing account with the same email. It is refused with `account_conflict` until email verification exists.
-- Two Google sign-ins, or a registration and a Google sign-in, on the same new email at the same time: the second Google request gets `account_conflict`, not an internal error. A save can no longer change an account's Google identity.
+- Internal: `make lint` reports no issues. Unused test helpers are removed, and ignored `Close` errors are discarded explicitly. Runtime behavior does not change.
+- The pre-commit hook also runs `make lint` and blocks the commit when it fails. It lints the working tree, not only the staged changes.
+- The example settings file is now `.env.example` at the repository root; `configs/.env.example` is removed. It lists every setting the server reads, with empty values.
 
 ### Fixed
 
 - A password reset now ends an open verification link. A login starts a session only while the account still has the password it checked, so a reset that lands during a login starts no session.
 - A Google sign-in to a locked account no longer refreshes the name or picture on the web route.
 
-### Changed
+### Security
 
-- Internal: `make lint` reports no issues. Unused test helpers are removed, and ignored `Close` errors are discarded explicitly. Runtime behavior does not change.
-- The pre-commit hook also runs `make lint` and blocks the commit when it fails. It lints the working tree, not only the staged changes.
+- A Google sign-in no longer links to an existing account with the same email. It is refused with `account_conflict` until email verification exists.
+- Two Google sign-ins, or a registration and a Google sign-in, on the same new email at the same time: the second Google request gets `account_conflict`, not an internal error. A save can no longer change an account's Google identity.
 
 ## [5.2.0] - 2026-11-25
 

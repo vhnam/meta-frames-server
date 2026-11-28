@@ -27,7 +27,7 @@ make run                     # runs migrations, serves :8080
 curl localhost:8080/health
 ```
 
-Settings come from environment variables. See [configs/.env.example](configs/.env.example). Copy it to `.env` at the repository root: `make run` and `make dev` load that file, and its values override the current environment. A plain `go run ./cmd/api` does not load it. `make run-prod` is the same local server, with `DATABASE_URL` taken from `.env.prod`. Startup still runs migrations, so that command migrates the production database.
+Settings come from environment variables. See [.env.example](.env.example). Copy it to `.env` at the repository root: `make run` and `make dev` load that file, and its values override the current environment. A plain `go run ./cmd/api` does not load it. `make run-prod` is the same local server, with `DATABASE_URL` taken from `.env.prod`. Startup still runs migrations, so that command migrates the production database.
 
 ## Development
 
